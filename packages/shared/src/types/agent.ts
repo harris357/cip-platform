@@ -1,17 +1,38 @@
 import { z } from 'zod';
+import type { ExtractionResult } from './certification.js';
 
-// Base state injected into every LangGraph agent graph
 export interface AgentState {
-  tenantId: string;
-  userId: string;
-  workflowId: string;
-  activityId: string;
-  model: 'cip-vision' | 'cip-chat' | 'cip-lightweight' | 'cip-reasoning';
-  messages: Array<{ role: 'user' | 'assistant' | 'system'; content: string }>;
+  tenantId: string;       // REQUIRED on every agent state
+  runId: string;
+  startedAt: string;      // ISO 8601
+  completedAt?: string;   // ISO 8601
   error?: string;
 }
 
-// Vision Agent output — returned from RunVisionAgentActivity
+export interface VisionAgentState extends AgentState {
+  certId: string;
+  documentUrl: string;
+  documentBase64?: string;
+  extraction?: ExtractionResult;
+  requiresHitl: boolean;
+  hitlResolution?: HitlResolution;
+}
+
+export interface HitlResolution {
+  reviewedBy: string;
+  resolvedAt: string;     // ISO 8601
+  approved: boolean;
+  corrections?: Partial<ExtractionResult['extracted']>;
+}
+
+export interface IntentResult {
+  intent: 'UPLOAD_CERT' | 'QUERY_COMPLIANCE' | 'RESPOND_HITL' | 'UNKNOWN';
+  confidence: number;
+  entities: Record<string, string>;
+  tenantId: string;       // REQUIRED
+}
+
+// Zod schemas — re-exported by utils/zod-schemas.ts
 export const ExtractionResultSchema = z.object({
   certType: z.string(),
   extractedFields: z.record(z.object({
@@ -27,9 +48,7 @@ export const ExtractionResultSchema = z.object({
   tokensUsed: z.number(),
   costUsd: z.number(),
 });
-export type ExtractionResult = z.infer<typeof ExtractionResultSchema>;
 
-// Teams Bot intent router output — Tier 2 single structured LLM call
 export const IntentResultSchema = z.object({
   intent: z.enum([
     'cert_upload',
@@ -43,9 +62,7 @@ export const IntentResultSchema = z.object({
   entities: z.record(z.string()).optional(),
   rawMessage: z.string(),
 });
-export type IntentResult = z.infer<typeof IntentResultSchema>;
 
-// Compliance Assessment Agent output
 export const ComplianceResultSchema = z.object({
   workerId: z.string(),
   siteId: z.string(),
@@ -60,4 +77,3 @@ export const ComplianceResultSchema = z.object({
   assessedAt: z.string().datetime(),
   modelUsed: z.string(),
 });
-export type ComplianceResult = z.infer<typeof ComplianceResultSchema>;

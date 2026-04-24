@@ -13,5 +13,8 @@ module.exports = {
     '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
     '@typescript-eslint/explicit-function-return-type': 'off',
     '@typescript-eslint/no-explicit-any': 'warn',
+    'no-restricted-imports': ['error', {
+      patterns: [{ group: ['@anthropic-ai/*'], message: 'Use createLiteLLMClient() from @cip/shared instead' }],
+    }],
   },
 };

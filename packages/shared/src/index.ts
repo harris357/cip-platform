@@ -1,7 +1,7 @@
 // Types
 export * from './types/tenant.js';
-export * from './types/agent.js';
 export * from './types/certification.js';
+export * from './types/agent.js';
 export * from './types/workflow.js';
 export * from './types/events.js';
 

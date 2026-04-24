@@ -1,26 +1,30 @@
-// CertificationProcessingWorkflow input
+import type { CertStatus, ExtractionResult } from './certification.js';
+
 export interface CertProcessingInput {
   tenantId: string;
+  certId: string;
   workerId: string;
-  certificationId: string;
-  objectStoreKey: string;
+  documentUrl: string;
   uploadedBy: string;
 }
 
-// HITL signal payload — sent to resume a paused workflow
-export interface HITLDecisionSignal {
-  approved: boolean;
-  reviewedBy: string;
-  correctedFields?: Record<string, string>;
-  rejectionReason?: string;
-  reviewedAt: string; // ISO datetime
+export interface CertProcessingOutput {
+  tenantId: string;
+  certId: string;
+  status: CertStatus;
+  extractionResult?: ExtractionResult;
+  hitlRequired: boolean;
 }
 
-// TenantProvisioningWorkflow input
 export interface TenantProvisioningInput {
   tenantId: string;
   tenantName: string;
   adminEmail: string;
-  tier: 'standard' | 'premium' | 'enterprise';
-  budgetLimitUsd: number;
+}
+
+export interface TenantProvisioningOutput {
+  tenantId: string;
+  success: boolean;
+  provisionedAt: string;      // ISO 8601
+  litellmVirtualKey: string;
 }
