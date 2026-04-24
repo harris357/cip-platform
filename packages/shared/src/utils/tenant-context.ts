@@ -1,5 +1,5 @@
 import { jwtVerify, createRemoteJWKSet } from 'jose';
-import type { TenantContext } from '../types/tenant.js';
+import type { TenantContext, TenantConfig } from '../types/tenant.js';
 import type { Request, Response, NextFunction } from 'express';
 
 const KEYCLOAK_URL = process.env['KEYCLOAK_URL'] ?? 'https://keycloak.dev.cip.io';
@@ -28,19 +28,28 @@ export async function withTenantContext(
   try {
     const { payload } = await jwtVerify(token, JWKS);
 
-    const tenantId   = payload['tenantId'] as string | undefined;
-    const systemRole = payload['systemRole'] as string | undefined;
-    const userId     = payload['sub'] as string | undefined;
+    const tenantId = payload['tenantId'] as string | undefined;
+    const userId   = payload['sub'] as string | undefined;
 
     if (!tenantId) {
       res.status(401).json({ error: 'JWT missing tenantId claim — check Keycloak Protocol Mapper' });
       return;
     }
 
+    // Stub until tenant-config service is wired — hydrate from DB/cache in a later slice.
+    const tenantConfig: TenantConfig = {
+      tenantId,
+      name: tenantId,
+      litellmVirtualKey: '',
+      keycloakRealm: KEYCLOAK_REALM,
+      natsPrefix: `cip.${tenantId}`,
+      langfuseTags: {},
+    };
+
     req.tenantContext = {
       tenantId,
       userId: userId ?? '',
-      systemRole: (systemRole ?? 'worker') as TenantContext['systemRole'],
+      tenantConfig,
     };
 
     next();

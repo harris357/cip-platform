@@ -25,15 +25,35 @@
 
 ## Open Notes
 
-<!-- New notes go here. Move to Resolved once fixed. -->
+### CS-002
+- **Logged in:** Cross-slice session (2026-04-24)
+- **Affects:** `packages/platform-core`
+- **File:** `packages/shared/src/types/events.ts`
+- **Status:** OPEN
+- **Issue:** `packages/platform-core/src/activities/provision-complete-notify.activity.ts` imports `TenantProvisionedEvent` from `@cip/shared/src/types/events.js` but that export does not exist.
+- **Why it matters:** `platform-core` typecheck fails; the provisioning activity cannot compile.
+- **Fix:** Add and export `TenantProvisionedEvent` to `packages/shared/src/types/events.ts`. Shape must satisfy what `provision-complete-notify.activity.ts` expects.
 
-*(none yet)*
+### CS-003
+- **Logged in:** Cross-slice session (2026-04-24)
+- **Affects:** `packages/platform-core`
+- **File:** `packages/shared/src/types/workflow.ts` (or wherever `TenantProvisioningInput` is defined)
+- **Status:** OPEN
+- **Issue:** `packages/platform-core/src/workflows/tenant-provisioning.workflow.ts` (lines 47–48) accesses `input.tier` and `input.budgetLimitUsd` on `TenantProvisioningInput`, but those fields do not exist on the type.
+- **Why it matters:** `platform-core` typecheck fails; the tenant provisioning workflow cannot compile.
+- **Fix:** Add `tier: string` and `budgetLimitUsd: number` to `TenantProvisioningInput` in the shared types package.
 
 ---
 
 ## Resolved Notes
 
-*(none yet)*
+### CS-001 — RESOLVED 2026-04-24
+- **Logged in:** Slice 02 (Shared Types)
+- **Affects:** scaffold utils (tenant-context.ts)
+- **File:** `packages/shared/src/utils/tenant-context.ts`
+- **Status:** RESOLVED 2026-04-24
+- **Issue:** `systemRole` was removed from `TenantContext` but the middleware still extracted it from the JWT and used it to build the context object. `tenantConfig: TenantConfig` (now required) was missing entirely.
+- **Fix applied:** Removed `systemRole` extraction; added a stub `tenantConfig` built from JWT `tenantId` + env vars (`KEYCLOAK_REALM`). Hydration from DB/cache is deferred to the tenant-config service slice.
 
 ---
 
