@@ -29,6 +29,36 @@
 
 ## Resolved Notes
 
+### CS-011 — RESOLVED 2026-04-24
+- **Logged in:** Cross-slice session (2026-04-24)
+- **Affects:** `packages/platform-core`
+- **File:** `packages/shared/src/clients/nats.ts`
+- **Status:** RESOLVED 2026-04-24
+- **Fix applied:** Added `export const sc = StringCodec()` and `export async function getNatsConnection(): Promise<NatsConnection>` (lazy singleton pattern) to `nats.ts`. Imported `StringCodec` from `nats`.
+
+### CS-012 — RESOLVED 2026-04-24
+- **Logged in:** Cross-slice session (2026-04-24)
+- **Affects:** `packages/platform-core`
+- **File:** `packages/shared/src/utils/subject-builder.ts`
+- **Status:** RESOLVED 2026-04-24
+- **Fix applied:** Added `tenantProvisioned: (tenantId: string) => buildSubject({ tenantId, domain: 'tenant', event: 'provisioned' })` to the `Subjects` constant.
+
+### CS-013 — RESOLVED 2026-04-24
+- **Logged in:** Cross-slice session (2026-04-24)
+- **Affects:** `packages/platform-core`
+- **File:** `packages/platform-core/src/server.ts`
+- **Status:** RESOLVED 2026-04-24
+- **Fix applied:** Replaced `import { withTenantContext }` with `import { tenantAuthMiddleware }` and replaced `app.use(withTenantContext as express.RequestHandler)` with `app.use(tenantAuthMiddleware)`. `tenantAuthMiddleware` already has the correct Express `(req, res, next)` signature.
+
+### CS-014 — RESOLVED 2026-04-24
+- **Logged in:** Cross-slice session (2026-04-24)
+- **Affects:** `packages/teams-bot`
+- **File:** `packages/teams-bot/src/agents/intent-router/index.ts`
+- **Status:** RESOLVED 2026-04-24
+- **Fix applied:** Replaced `createLiteLLMClient('cip-lightweight')` with `createLiteLLMClient({ tenantId, virtualKey: process.env['LITELLM_VIRTUAL_KEY'] ?? '' })`. The `'cip-lightweight'` alias is a model name passed at call time, not a client option.
+
+
+
 ### CS-004 — RESOLVED 2026-04-24
 - **Logged in:** Cross-slice session (2026-04-24)
 - **Affects:** `packages/hr-service`

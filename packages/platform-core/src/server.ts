@@ -1,5 +1,5 @@
 import express, { type Express } from 'express';
-import { withTenantContext } from '@cip/shared/src/utils/tenant-context.js';
+import { tenantAuthMiddleware } from '@cip/shared/src/utils/tenant-context.js';
 import { healthRouter } from './routes/health.js';
 import { tenantRouter } from './routes/tenant.js';
 
@@ -9,7 +9,7 @@ export function createApp(): Express {
 
   app.use(healthRouter);
 
-  app.use(withTenantContext as express.RequestHandler);
+  app.use(tenantAuthMiddleware);
   app.use(tenantRouter);
 
   return app;

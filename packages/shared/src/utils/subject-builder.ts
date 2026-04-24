@@ -24,4 +24,6 @@ export const Subjects = {
     buildSubject({ tenantId, domain: 'cert', event: 'expired' }),
   complianceDrifted: (tenantId: string) =>
     buildSubject({ tenantId, domain: 'compliance', event: 'drifted' }),
+  tenantProvisioned: (tenantId: string) =>
+    buildSubject({ tenantId, domain: 'tenant', event: 'provisioned' }),
 } as const;
