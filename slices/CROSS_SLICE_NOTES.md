@@ -25,23 +25,61 @@
 
 ## Open Notes
 
-### CS-002
+### CS-002 — RESOLVED 2026-04-24
 - **Logged in:** Cross-slice session (2026-04-24)
 - **Affects:** `packages/platform-core`
 - **File:** `packages/shared/src/types/events.ts`
-- **Status:** OPEN
-- **Issue:** `packages/platform-core/src/activities/provision-complete-notify.activity.ts` imports `TenantProvisionedEvent` from `@cip/shared/src/types/events.js` but that export does not exist.
-- **Why it matters:** `platform-core` typecheck fails; the provisioning activity cannot compile.
-- **Fix:** Add and export `TenantProvisionedEvent` to `packages/shared/src/types/events.ts`. Shape must satisfy what `provision-complete-notify.activity.ts` expects.
+- **Status:** RESOLVED 2026-04-24
+- **Issue:** `packages/platform-core/src/activities/provision-complete-notify.activity.ts` imports `TenantProvisionedEvent` from `@cip/shared/src/types/events.js` but that export did not exist.
+- **Fix applied:** Added `TenantProvisionedEvent { tenantId, tenantName, provisionedAt }` to `packages/shared/src/types/events.ts`.
 
-### CS-003
+### CS-003 — RESOLVED 2026-04-24
 - **Logged in:** Cross-slice session (2026-04-24)
 - **Affects:** `packages/platform-core`
-- **File:** `packages/shared/src/types/workflow.ts` (or wherever `TenantProvisioningInput` is defined)
+- **File:** `packages/shared/src/types/workflow.ts`
+- **Status:** RESOLVED 2026-04-24
+- **Issue:** `TenantProvisioningWorkflow` accessed `input.tier` and `input.budgetLimitUsd` but `TenantProvisioningInput` lacked those fields.
+- **Fix applied:** Added `tier: 'standard' | 'premium' | 'enterprise'` and `budgetLimitUsd: number` to `TenantProvisioningInput`. Union type matches the constraint in `issueLiteLLMVirtualKey` activity.
+
+### CS-004
+- **Logged in:** Cross-slice session (2026-04-24)
+- **Affects:** `packages/hr-service`
+- **File:** `packages/shared/src/types/agent.ts`
 - **Status:** OPEN
-- **Issue:** `packages/platform-core/src/workflows/tenant-provisioning.workflow.ts` (lines 47–48) accesses `input.tier` and `input.budgetLimitUsd` on `TenantProvisioningInput`, but those fields do not exist on the type.
-- **Why it matters:** `platform-core` typecheck fails; the tenant provisioning workflow cannot compile.
-- **Fix:** Add `tier: string` and `budgetLimitUsd: number` to `TenantProvisioningInput` in the shared types package.
+- **Issue:** `ExtractionResult` is declared in `agent.ts` but not exported; five `hr-service` files fail to import it (`notify-hitl.activity.ts`, `persist-cert.activity.ts`, `run-vision-agent.activity.ts`, `validate-extraction.activity.ts`, `agents/vision-agent/index.ts`).
+- **Why it matters:** `hr-service` typecheck fails completely; all cert-processing activities and the vision agent cannot compile.
+- **Fix:** Export `ExtractionResult` from `packages/shared/src/types/agent.ts` (add `export` keyword or re-export from the existing declaration).
+
+### CS-005
+- **Logged in:** Cross-slice session (2026-04-24)
+- **Affects:** `packages/hr-service`
+- **File:** `packages/shared/src/types/workflow.ts`
+- **Status:** OPEN
+- **Issue:** `HITLDecisionSignal` is imported by `hr-service/src/activities/persist-cert.activity.ts` and `hr-service/src/workflows/certification-processing.workflow.ts` but does not exist in `workflow.ts`.
+- **Why it matters:** `hr-service` typecheck fails; the HITL signal/handler in the certification workflow cannot compile.
+- **Fix:** Add and export `HITLDecisionSignal` to `packages/shared/src/types/workflow.ts`. Shape must satisfy what `persist-cert.activity.ts` and `certification-processing.workflow.ts` expect (review both files to derive the exact shape before adding).
+
+### CS-006
+- **Logged in:** Cross-slice session (2026-04-24)
+- **Affects:** `packages/hr-service`
+- **File:** `packages/shared/src/types/events.ts`
+- **Status:** OPEN
+- **Issue:** `hr-service/src/nats/watcher.ts` imports `CertificationUploadedEvent` and `WorkerAllocatedToSiteEvent` from `events.ts`, but neither is defined there.
+- **Why it matters:** `hr-service` NATS watcher cannot compile; no cert-upload or worker-allocation events can be consumed.
+- **Fix:** Add and export `CertificationUploadedEvent` and `WorkerAllocatedToSiteEvent` to `packages/shared/src/types/events.ts`. Read `watcher.ts` first to derive the exact shape expected for each type.
+
+### CS-007
+- **Logged in:** Cross-slice session (2026-04-24)
+- **Affects:** `packages/hr-service`
+- **File:** `packages/shared/src/types/agent.ts` and `packages/shared/src/types/workflow.ts`
+- **Status:** OPEN
+- **Issue:** Two groups of errors in `hr-service`:
+  1. `VisionAgentState` is missing the field `userId` (used in `agents/vision-agent/index.ts` line 40).
+  2. `CertProcessingInput` is missing the fields `objectStoreKey` and `certificationId` (used in `certification-processing.workflow.ts` at multiple lines).
+- **Why it matters:** `hr-service` typecheck fails; the vision agent and certification workflow cannot compile.
+- **Fix:**
+  1. Add `userId: string` to `VisionAgentState` in `packages/shared/src/types/agent.ts`.
+  2. Add `objectStoreKey: string` and `certificationId: string` to `CertProcessingInput` in `packages/shared/src/types/workflow.ts`.
 
 ---
 

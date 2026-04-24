@@ -20,6 +20,8 @@ export interface TenantProvisioningInput {
   tenantId: string;
   tenantName: string;
   adminEmail: string;
+  tier: 'standard' | 'premium' | 'enterprise';
+  budgetLimitUsd: number;
 }
 
 export interface TenantProvisioningOutput {

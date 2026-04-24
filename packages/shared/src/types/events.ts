@@ -32,3 +32,9 @@ export interface ComplianceDriftedEvent {
   driftType: 'missing_cert' | 'expired_cert' | 'allocation_mismatch';
   detectedAt: string;     // ISO 8601
 }
+
+export interface TenantProvisionedEvent {
+  tenantId: string;
+  tenantName: string;
+  provisionedAt: string;  // ISO 8601
+}
