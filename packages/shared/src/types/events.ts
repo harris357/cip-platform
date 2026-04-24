@@ -38,3 +38,19 @@ export interface TenantProvisionedEvent {
   tenantName: string;
   provisionedAt: string;  // ISO 8601
 }
+
+export interface CertificationUploadedEvent {
+  tenantId: string;
+  workerId: string;
+  certificationId: string;
+  objectStoreKey: string;
+  uploadedBy: string;
+  uploadedAt: string;     // ISO 8601
+}
+
+export interface WorkerAllocatedToSiteEvent {
+  tenantId: string;
+  workerId: string;
+  siteId: string;
+  allocatedAt: string;    // ISO 8601
+}

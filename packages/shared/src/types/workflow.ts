@@ -1,8 +1,17 @@
 import type { CertStatus, ExtractionResult } from './certification.js';
 
+export interface HITLDecisionSignal {
+  approved: boolean;
+  correctedFields?: Record<string, string>;
+  reviewedBy: string;
+  reviewedAt: string;   // ISO 8601
+}
+
 export interface CertProcessingInput {
   tenantId: string;
   certId: string;
+  certificationId: string;
+  objectStoreKey: string;
   workerId: string;
   documentUrl: string;
   uploadedBy: string;

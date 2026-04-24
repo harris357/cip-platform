@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import type { ExtractionResult } from './certification.js';
+export type { ExtractionResult };
 
 export interface AgentState {
   tenantId: string;       // REQUIRED on every agent state
@@ -11,6 +12,7 @@ export interface AgentState {
 
 export interface VisionAgentState extends AgentState {
   certId: string;
+  userId: string;
   documentUrl: string;
   documentBase64?: string;
   extraction?: ExtractionResult;

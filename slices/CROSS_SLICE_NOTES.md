@@ -25,6 +25,64 @@
 
 ## Open Notes
 
+### CS-008
+- **Logged in:** Cross-slice session (2026-04-24)
+- **Affects:** `packages/hr-service`, `packages/shared`
+- **Files:** `packages/shared/src/types/certification.ts`, `packages/shared/src/types/agent.ts`
+- **Status:** OPEN
+- **Issue:** `ExtractionResult` in `certification.ts` has shape `{tenantId, certId, extracted, confidence, rawText, warnings}`, but `ExtractionResultSchema` in `agent.ts` (and all `hr-service` activities/workflow) use shape `{certType, extractedFields, overallConfidence, requiresHITL, promptVersion, modelUsed, tokensUsed, costUsd}`. These are completely different types. Three compile errors remain: `run-vision-agent.activity.ts:28`, `validate-extraction.activity.ts:15`, `certification-processing.workflow.ts:61` (`extraction.requiresHITL`).
+- **Why it matters:** `hr-service` typecheck fails; the vision agent activity, validation activity, and certification workflow all use the Zod-inferred shape but the TypeScript type declares a different domain shape.
+- **Fix:** Choose one of: (a) replace `ExtractionResult` in `certification.ts` with `z.infer<typeof ExtractionResultSchema>` re-exported from `agent.ts` — remove the hand-written interface; or (b) keep both types and rename: call the certification.ts version `PersistedExtractionResult` and expose `z.infer<typeof ExtractionResultSchema>` as `ExtractionResult`. Option (b) also requires updating `CertProcessingOutput.extractionResult` in `workflow.ts` and `persist-cert.activity.ts` to use `PersistedExtractionResult`. Read `certification.ts`, `agent.ts`, `CertProcessingOutput`, and `persist-cert.activity.ts` before deciding.
+
+### CS-009
+- **Logged in:** Cross-slice session (2026-04-24)
+- **Affects:** `packages/teams-bot`
+- **File:** `packages/teams-bot/src/bot.ts`
+- **Status:** OPEN
+- **Issue:** Two errors in `bot.ts`: (1) references `tenantContext.systemRole` which was removed from `TenantContext` in CS-001; (2) compares `intent.intent` against `'cert_upload'` / `'compliance_query'` (snake_case) but `IntentResult.intent` is typed as `'UPLOAD_CERT' | 'QUERY_COMPLIANCE' | 'RESPOND_HITL' | 'UNKNOWN'` (UPPER_SNAKE_CASE). Note: `IntentResultSchema` Zod schema also uses snake_case — this is a schema/type inconsistency.
+- **Why it matters:** `teams-bot` typecheck fails completely; the bot cannot compile.
+- **Fix:** (1) Remove `systemRole` usage from `bot.ts` — derive role from `tenantContext.tenantConfig` or remove entirely. (2) Align intent enum: either update `bot.ts` to use `'UPLOAD_CERT'` etc., or update `IntentResult` interface and `IntentResultSchema` to use snake_case consistently. Read `bot.ts` before making changes.
+
+---
+
+## Resolved Notes
+
+### CS-004 — RESOLVED 2026-04-24
+- **Logged in:** Cross-slice session (2026-04-24)
+- **Affects:** `packages/hr-service`
+- **File:** `packages/shared/src/types/agent.ts`
+- **Status:** RESOLVED 2026-04-24
+- **Fix applied:** Added `export type { ExtractionResult }` re-export to `agent.ts`. Note: resolving this export revealed a deeper shape mismatch (logged as CS-008).
+
+### CS-005 — RESOLVED 2026-04-24
+- **Logged in:** Cross-slice session (2026-04-24)
+- **Affects:** `packages/hr-service`
+- **File:** `packages/shared/src/types/workflow.ts`
+- **Status:** RESOLVED 2026-04-24
+- **Fix applied:** Added and exported `HITLDecisionSignal { approved: boolean; correctedFields?: Record<string, string>; reviewedBy: string; reviewedAt: string }` to `workflow.ts`. Shape derived from `persist-cert.activity.ts` and `certification-processing.workflow.ts`.
+
+### CS-006 — RESOLVED 2026-04-24
+- **Logged in:** Cross-slice session (2026-04-24)
+- **Affects:** `packages/hr-service`
+- **File:** `packages/shared/src/types/events.ts`
+- **Status:** RESOLVED 2026-04-24
+- **Fix applied:** Added `CertificationUploadedEvent { tenantId, workerId, certificationId, objectStoreKey, uploadedBy, uploadedAt }` and `WorkerAllocatedToSiteEvent { tenantId, workerId, siteId, allocatedAt }` to `events.ts`. Shapes derived from `watcher.ts` field access patterns.
+
+### CS-007 — RESOLVED 2026-04-24
+- **Logged in:** Cross-slice session (2026-04-24)
+- **Affects:** `packages/hr-service`
+- **Files:** `packages/shared/src/types/agent.ts`, `packages/shared/src/types/workflow.ts`, `packages/hr-service/src/agents/vision-agent/state.ts`
+- **Status:** RESOLVED 2026-04-24
+- **Fix applied:** (1) Added `userId: string` to shared `VisionAgentState` in `agent.ts`. The note had the wrong target — the vision agent actually uses the local `state.ts`; `userId`, `workflowId`, `activityId`, `model`, `messages` were all added there. `runId`/`startedAt` made optional via `Omit<AgentState, 'runId' | 'startedAt'>` since the LangGraph initial state does not carry them. (2) Added `certificationId: string` and `objectStoreKey: string` to `CertProcessingInput` in `workflow.ts`.
+
+### CS-001 — RESOLVED 2026-04-24
+- **Logged in:** Slice 02 (Shared Types)
+- **Affects:** scaffold utils (tenant-context.ts)
+- **File:** `packages/shared/src/utils/tenant-context.ts`
+- **Status:** RESOLVED 2026-04-24
+- **Issue:** `systemRole` was removed from `TenantContext` but the middleware still extracted it from the JWT and used it to build the context object. `tenantConfig: TenantConfig` (now required) was missing entirely.
+- **Fix applied:** Removed `systemRole` extraction; added a stub `tenantConfig` built from JWT `tenantId` + env vars (`KEYCLOAK_REALM`). Hydration from DB/cache is deferred to the tenant-config service slice.
+
 ### CS-002 — RESOLVED 2026-04-24
 - **Logged in:** Cross-slice session (2026-04-24)
 - **Affects:** `packages/platform-core`
@@ -41,57 +99,6 @@
 - **Issue:** `TenantProvisioningWorkflow` accessed `input.tier` and `input.budgetLimitUsd` but `TenantProvisioningInput` lacked those fields.
 - **Fix applied:** Added `tier: 'standard' | 'premium' | 'enterprise'` and `budgetLimitUsd: number` to `TenantProvisioningInput`. Union type matches the constraint in `issueLiteLLMVirtualKey` activity.
 
-### CS-004
-- **Logged in:** Cross-slice session (2026-04-24)
-- **Affects:** `packages/hr-service`
-- **File:** `packages/shared/src/types/agent.ts`
-- **Status:** OPEN
-- **Issue:** `ExtractionResult` is declared in `agent.ts` but not exported; five `hr-service` files fail to import it (`notify-hitl.activity.ts`, `persist-cert.activity.ts`, `run-vision-agent.activity.ts`, `validate-extraction.activity.ts`, `agents/vision-agent/index.ts`).
-- **Why it matters:** `hr-service` typecheck fails completely; all cert-processing activities and the vision agent cannot compile.
-- **Fix:** Export `ExtractionResult` from `packages/shared/src/types/agent.ts` (add `export` keyword or re-export from the existing declaration).
-
-### CS-005
-- **Logged in:** Cross-slice session (2026-04-24)
-- **Affects:** `packages/hr-service`
-- **File:** `packages/shared/src/types/workflow.ts`
-- **Status:** OPEN
-- **Issue:** `HITLDecisionSignal` is imported by `hr-service/src/activities/persist-cert.activity.ts` and `hr-service/src/workflows/certification-processing.workflow.ts` but does not exist in `workflow.ts`.
-- **Why it matters:** `hr-service` typecheck fails; the HITL signal/handler in the certification workflow cannot compile.
-- **Fix:** Add and export `HITLDecisionSignal` to `packages/shared/src/types/workflow.ts`. Shape must satisfy what `persist-cert.activity.ts` and `certification-processing.workflow.ts` expect (review both files to derive the exact shape before adding).
-
-### CS-006
-- **Logged in:** Cross-slice session (2026-04-24)
-- **Affects:** `packages/hr-service`
-- **File:** `packages/shared/src/types/events.ts`
-- **Status:** OPEN
-- **Issue:** `hr-service/src/nats/watcher.ts` imports `CertificationUploadedEvent` and `WorkerAllocatedToSiteEvent` from `events.ts`, but neither is defined there.
-- **Why it matters:** `hr-service` NATS watcher cannot compile; no cert-upload or worker-allocation events can be consumed.
-- **Fix:** Add and export `CertificationUploadedEvent` and `WorkerAllocatedToSiteEvent` to `packages/shared/src/types/events.ts`. Read `watcher.ts` first to derive the exact shape expected for each type.
-
-### CS-007
-- **Logged in:** Cross-slice session (2026-04-24)
-- **Affects:** `packages/hr-service`
-- **File:** `packages/shared/src/types/agent.ts` and `packages/shared/src/types/workflow.ts`
-- **Status:** OPEN
-- **Issue:** Two groups of errors in `hr-service`:
-  1. `VisionAgentState` is missing the field `userId` (used in `agents/vision-agent/index.ts` line 40).
-  2. `CertProcessingInput` is missing the fields `objectStoreKey` and `certificationId` (used in `certification-processing.workflow.ts` at multiple lines).
-- **Why it matters:** `hr-service` typecheck fails; the vision agent and certification workflow cannot compile.
-- **Fix:**
-  1. Add `userId: string` to `VisionAgentState` in `packages/shared/src/types/agent.ts`.
-  2. Add `objectStoreKey: string` and `certificationId: string` to `CertProcessingInput` in `packages/shared/src/types/workflow.ts`.
-
----
-
-## Resolved Notes
-
-### CS-001 — RESOLVED 2026-04-24
-- **Logged in:** Slice 02 (Shared Types)
-- **Affects:** scaffold utils (tenant-context.ts)
-- **File:** `packages/shared/src/utils/tenant-context.ts`
-- **Status:** RESOLVED 2026-04-24
-- **Issue:** `systemRole` was removed from `TenantContext` but the middleware still extracted it from the JWT and used it to build the context object. `tenantConfig: TenantConfig` (now required) was missing entirely.
-- **Fix applied:** Removed `systemRole` extraction; added a stub `tenantConfig` built from JWT `tenantId` + env vars (`KEYCLOAK_REALM`). Hydration from DB/cache is deferred to the tenant-config service slice.
 
 ---
 
