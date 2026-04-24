@@ -25,6 +25,15 @@
 
 ## Open Notes
 
+### CS-015
+- **Logged in:** Slice 07 (Vision Agent)
+- **Affects:** Slice 02 (Shared Types)
+- **File:** `packages/shared/src/types/agent.ts`
+- **Status:** OPEN
+- **Issue:** `ExtractionResultSchema` (and the inferred `ExtractionResult` type) does not include `tenantId: string`. Non-negotiable #1 requires `tenantId` on every domain interface. `VisionAgentAnnotation` carries `tenantId` in state, but `ExtractionResult` — the persisted output of the vision agent — does not.
+- **Why it matters:** `ExtractionResult` is passed to `persistCert` activity and stored in the `certifications` table. Without `tenantId` on the type, the activity cannot enforce tenant attribution at the TypeScript boundary. Also, `zod-schemas.ts` already has `tenantId` on its `ExtractionResultSchema` — the two schemas are out of sync.
+- **Fix:** Add `tenantId: z.string().uuid()` to `ExtractionResultSchema` in `agent.ts`. Update `nodes.ts` `parseExtractionResponse` to include `tenantId` from `state.tenantId`. Sync `zod-schemas.ts` `ExtractionResultSchema` shape with `agent.ts` to resolve the mismatch flagged in CS-008.
+
 ---
 
 ## Resolved Notes
