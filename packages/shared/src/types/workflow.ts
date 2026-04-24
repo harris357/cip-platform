@@ -1,4 +1,4 @@
-import type { CertStatus, ExtractionResult } from './certification.js';
+import type { CertStatus, PersistedExtractionResult } from './certification.js';
 
 export interface HITLDecisionSignal {
   approved: boolean;
@@ -21,7 +21,7 @@ export interface CertProcessingOutput {
   tenantId: string;
   certId: string;
   status: CertStatus;
-  extractionResult?: ExtractionResult;
+  extractionResult?: PersistedExtractionResult;
   hitlRequired: boolean;
 }
 

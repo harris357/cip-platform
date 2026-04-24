@@ -1,6 +1,4 @@
 import { z } from 'zod';
-import type { ExtractionResult } from './certification.js';
-export type { ExtractionResult };
 
 export interface AgentState {
   tenantId: string;       // REQUIRED on every agent state
@@ -24,7 +22,7 @@ export interface HitlResolution {
   reviewedBy: string;
   resolvedAt: string;     // ISO 8601
   approved: boolean;
-  corrections?: Partial<ExtractionResult['extracted']>;
+  corrections?: Record<string, string>;
 }
 
 export interface IntentResult {
@@ -50,6 +48,8 @@ export const ExtractionResultSchema = z.object({
   tokensUsed: z.number(),
   costUsd: z.number(),
 });
+
+export type ExtractionResult = z.infer<typeof ExtractionResultSchema>;
 
 export const IntentResultSchema = z.object({
   intent: z.enum([

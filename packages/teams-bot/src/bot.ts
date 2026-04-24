@@ -10,20 +10,28 @@ export class CIPTeamsBot extends TeamsActivityHandler {
 
     this.onMessage(async (context: TurnContext, next) => {
       // TODO: extract TenantContext from Teams auth token (SSO)
+      const tenantId = process.env['DEV_TENANT_ID'] ?? '';
       const tenantContext: TenantContext = {
-        tenantId: process.env['DEV_TENANT_ID'] ?? '',
+        tenantId,
         userId: context.activity.from.id,
-        systemRole: 'worker',
+        tenantConfig: {
+          tenantId,
+          name: process.env['DEV_TENANT_NAME'] ?? tenantId,
+          litellmVirtualKey: process.env['LITELLM_VIRTUAL_KEY'] ?? '',
+          keycloakRealm: process.env['KEYCLOAK_REALM'] ?? tenantId,
+          natsPrefix: `cip.${tenantId}`,
+          langfuseTags: {},
+        },
       };
 
       const text = context.activity.text?.trim() ?? '';
       const intent = await routeIntent(text, tenantContext.tenantId);
 
       switch (intent.intent) {
-        case 'cert_upload':
+        case 'UPLOAD_CERT':
           await handleCertUpload(context, tenantContext);
           break;
-        case 'compliance_query':
+        case 'QUERY_COMPLIANCE':
           await handleComplianceQuery(context, tenantContext);
           break;
         default:

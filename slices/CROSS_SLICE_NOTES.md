@@ -25,23 +25,19 @@
 
 ## Open Notes
 
-### CS-008
+### CS-008 — RESOLVED 2026-04-24
 - **Logged in:** Cross-slice session (2026-04-24)
 - **Affects:** `packages/hr-service`, `packages/shared`
 - **Files:** `packages/shared/src/types/certification.ts`, `packages/shared/src/types/agent.ts`
-- **Status:** OPEN
-- **Issue:** `ExtractionResult` in `certification.ts` has shape `{tenantId, certId, extracted, confidence, rawText, warnings}`, but `ExtractionResultSchema` in `agent.ts` (and all `hr-service` activities/workflow) use shape `{certType, extractedFields, overallConfidence, requiresHITL, promptVersion, modelUsed, tokensUsed, costUsd}`. These are completely different types. Three compile errors remain: `run-vision-agent.activity.ts:28`, `validate-extraction.activity.ts:15`, `certification-processing.workflow.ts:61` (`extraction.requiresHITL`).
-- **Why it matters:** `hr-service` typecheck fails; the vision agent activity, validation activity, and certification workflow all use the Zod-inferred shape but the TypeScript type declares a different domain shape.
-- **Fix:** Choose one of: (a) replace `ExtractionResult` in `certification.ts` with `z.infer<typeof ExtractionResultSchema>` re-exported from `agent.ts` — remove the hand-written interface; or (b) keep both types and rename: call the certification.ts version `PersistedExtractionResult` and expose `z.infer<typeof ExtractionResultSchema>` as `ExtractionResult`. Option (b) also requires updating `CertProcessingOutput.extractionResult` in `workflow.ts` and `persist-cert.activity.ts` to use `PersistedExtractionResult`. Read `certification.ts`, `agent.ts`, `CertProcessingOutput`, and `persist-cert.activity.ts` before deciding.
+- **Status:** RESOLVED 2026-04-24
+- **Fix applied:** Option (b). Renamed `ExtractionResult` → `PersistedExtractionResult` in `certification.ts`. Added `export type ExtractionResult = z.infer<typeof ExtractionResultSchema>` in `agent.ts` (removed the re-export from certification.ts). Updated `CertProcessingOutput.extractionResult` in `workflow.ts` to use `PersistedExtractionResult`. Fixed `HitlResolution.corrections` (was `Partial<ExtractionResult['extracted']>`, now `Record<string, string>` — `.extracted` does not exist on the Zod-inferred shape).
 
-### CS-009
+### CS-009 — RESOLVED 2026-04-24
 - **Logged in:** Cross-slice session (2026-04-24)
 - **Affects:** `packages/teams-bot`
 - **File:** `packages/teams-bot/src/bot.ts`
-- **Status:** OPEN
-- **Issue:** Two errors in `bot.ts`: (1) references `tenantContext.systemRole` which was removed from `TenantContext` in CS-001; (2) compares `intent.intent` against `'cert_upload'` / `'compliance_query'` (snake_case) but `IntentResult.intent` is typed as `'UPLOAD_CERT' | 'QUERY_COMPLIANCE' | 'RESPOND_HITL' | 'UNKNOWN'` (UPPER_SNAKE_CASE). Note: `IntentResultSchema` Zod schema also uses snake_case — this is a schema/type inconsistency.
-- **Why it matters:** `teams-bot` typecheck fails completely; the bot cannot compile.
-- **Fix:** (1) Remove `systemRole` usage from `bot.ts` — derive role from `tenantContext.tenantConfig` or remove entirely. (2) Align intent enum: either update `bot.ts` to use `'UPLOAD_CERT'` etc., or update `IntentResult` interface and `IntentResultSchema` to use snake_case consistently. Read `bot.ts` before making changes.
+- **Status:** RESOLVED 2026-04-24
+- **Fix applied:** (1) Removed `systemRole: 'worker'`; added stub `tenantConfig` built from env vars (`DEV_TENANT_ID`, `DEV_TENANT_NAME`, `LITELLM_VIRTUAL_KEY`, `KEYCLOAK_REALM`) — same pattern as CS-001 fix in `tenant-context.ts`. (2) Changed switch cases from `'cert_upload'`/`'compliance_query'` to `'UPLOAD_CERT'`/`'QUERY_COMPLIANCE'` to match `IntentResult.intent` UPPER_SNAKE_CASE union. Note: `IntentResultSchema` still uses snake_case — schema/type mismatch remains a runtime risk but is out of scope for this note.
 
 ---
 
