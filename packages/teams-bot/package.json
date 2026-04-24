@@ -1,0 +1,22 @@
+{
+  "name": "@cip/teams-bot",
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@cip/shared": "workspace:*",
+    "botbuilder": "^4.23.0",
+    "@langchain/core": "^0.3.0",
+    "express": "^4.19.0"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.0",
+    "tsx": "^4.0.0",
+    "typescript": "^5.4.0"
+  }
+}

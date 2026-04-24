@@ -1,0 +1,6 @@
+apiVersion: v2
+name: teams-bot
+description: CIP Microsoft Teams Bot
+type: application
+version: 0.1.0
+appVersion: "0.1.0"

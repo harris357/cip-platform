@@ -1,0 +1,27 @@
+# Two PVCs — create once with bootstrap, NEVER delete.
+# Each becomes one OVH Cinder volume (10GB minimum per volume).
+# Cinder volumes persist independently of the node — safe to scale to 0.
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgres-pvc
+  namespace: cip-infra
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: csi-cinder-high-speed-gen2
+  resources:
+    requests:
+      storage: 10Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: nats-pvc
+  namespace: cip-infra
+spec:
+  accessModes: [ReadWriteOnce]
+  storageClassName: csi-cinder-high-speed-gen2
+  resources:
+    requests:
+      storage: 10Gi

@@ -1,0 +1,27 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm install *)",
+      "Read(//usr/local/bin/**)",
+      "Read(//home/harris/.local/share/pnpm/**)",
+      "Read(//usr/bin/**)",
+      "Read(//home/harris/.nvm/**)",
+      "Read(//usr/local/nvm/**)",
+      "Bash(command -v nvm)",
+      "Bash(curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh)",
+      "Bash(bash)",
+      "Bash(xargs -I{} sh -c 'echo \"=== {} ===\" && cat {} | grep -E '\"'\"'\"name\"|\"version\"'\"'\"'')"
+    ],
+    "deny": [
+      "Read(node_modules/**)",
+      "Read(dist/**)",
+      "Read(.pnpm-store/**)",
+      "Read(**/*.env)",
+      "Read(**/.envrc)",
+      "Read(**/helm/charts/**)",
+      "Write(**/*.env)",
+      "Write(**/.envrc)",
+      "Write(infra/terraform/**/.terraform/**)"
+    ]
+  }
+}

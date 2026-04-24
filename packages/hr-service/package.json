@@ -1,0 +1,35 @@
+{
+  "name": "@cip/hr-service",
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@cip/shared": "workspace:*",
+    "@temporalio/worker": "^1.10.0",
+    "@temporalio/workflow": "^1.10.0",
+    "@temporalio/activity": "^1.10.0",
+    "@langchain/core": "^0.3.0",
+    "@langchain/langgraph": "^0.2.0",
+    "@langchain/openai": "^0.4.0",
+    "@langfuse/langchain": "^5.0.0",
+    "pg": "^8.11.0",
+    "zod": "^3.23.0",
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "express": "^4.19.0",
+    "multer": "^1.4.5-lts.1",
+    "@aws-sdk/client-s3": "^3.600.0",
+    "@aws-sdk/s3-request-presigner": "^3.600.0"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.0",
+    "@types/multer": "^1.4.0",
+    "@types/pg": "^8.11.0",
+    "tsx": "^4.0.0",
+    "typescript": "^5.4.0"
+  }
+}

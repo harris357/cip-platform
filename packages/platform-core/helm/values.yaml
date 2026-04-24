@@ -1,0 +1,21 @@
+replicaCount: 1
+
+image:
+  repository: ghcr.io/YOUR_ORG/platform-core
+  tag: dev
+  pullPolicy: IfNotPresent
+
+service:
+  type: ClusterIP
+  port: 3001
+
+env:
+  LITELLM_BASE_URL: http://litellm.cip-app.svc.cluster.local:4000
+  NATS_URL: nats://nats.cip-infra.svc.cluster.local:4222
+  TEMPORAL_TASK_QUEUE: cip-platform-tasks
+  KEYCLOAK_URL: https://keycloak.dev.cip.io
+  KEYCLOAK_REALM: cip-dev
+
+envFrom:
+  - secretRef:
+      name: platform-core-credentials

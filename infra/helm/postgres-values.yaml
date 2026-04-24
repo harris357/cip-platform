@@ -1,0 +1,13 @@
+# Chart: bitnami/postgresql
+# helm repo add bitnami https://charts.bitnami.com/bitnami
+# helm upgrade --install postgres bitnami/postgresql -n cip-infra -f infra/helm/postgres-values.yaml
+global:
+  postgresql:
+    auth:
+      username: cipuser
+      existingSecret: postgres-credentials   # K8s secret with postgres-password key
+      database: cip_hr
+primary:
+  persistence:
+    enabled: true
+    existingClaim: postgres-pvc              # binds to the Cinder volume — do NOT remove

@@ -1,0 +1,11 @@
+# Chart: nats/nats
+# helm repo add nats https://nats-io.github.io/k8s/helm/charts
+# helm upgrade --install nats nats/nats -n cip-infra -f infra/helm/nats-values.yaml
+config:
+  jetstream:
+    enabled: true
+    fileStore:
+      enabled: true
+      pvc:
+        enabled: true
+        existingClaim: nats-pvc              # binds to the Cinder volume — do NOT remove

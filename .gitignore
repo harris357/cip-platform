@@ -1,0 +1,14 @@
+node_modules/
+dist/
+.env
+.envrc
+*.tfvars
+*.tfvars.json
+.terraform/
+.terraform.lock.hcl
+terraform.tfstate
+terraform.tfstate.backup
+.ingress-ip
+~/.kube/cip-dev.yaml
+*.pem
+*.key

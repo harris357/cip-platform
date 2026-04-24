@@ -1,0 +1,20 @@
+replicaCount: 1
+
+image:
+  repository: ghcr.io/YOUR_ORG/teams-bot
+  tag: dev
+  pullPolicy: IfNotPresent
+
+service:
+  type: ClusterIP
+  port: 3978
+
+env:
+  LITELLM_BASE_URL: http://litellm.cip-app.svc.cluster.local:4000
+  NATS_URL: nats://nats.cip-infra.svc.cluster.local:4222
+  KEYCLOAK_URL: https://keycloak.dev.cip.io
+  KEYCLOAK_REALM: cip-dev
+
+envFrom:
+  - secretRef:
+      name: teams-bot-credentials
