@@ -131,9 +131,6 @@ importers:
 
   packages/shared:
     dependencies:
-      '@langchain/openai':
-        specifier: ^0.4.0
-        version: 0.4.9(@langchain/core@0.3.80(@opentelemetry/api@1.9.1)(openai@4.104.0(zod@3.25.76)))
       '@langfuse/langchain':
         specifier: ^5.0.0
         version: 5.2.0(@langchain/core@0.3.80(@opentelemetry/api@1.9.1)(openai@4.104.0(zod@3.25.76)))(@opentelemetry/api@1.9.1)
@@ -161,6 +158,9 @@ importers:
       nats:
         specifier: ^2.28.0
         version: 2.29.3
+      openai:
+        specifier: ^4.0.0
+        version: 4.104.0(zod@3.25.76)
       pg:
         specifier: ^8.11.0
         version: 8.20.0

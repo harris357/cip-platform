@@ -9,7 +9,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@langchain/openai": "^0.4.0",
+    "openai": "^4.0.0",
     "langfuse": "^3.0.0",
     "@langfuse/langchain": "^5.0.0",
     "@temporalio/client": "^1.10.0",

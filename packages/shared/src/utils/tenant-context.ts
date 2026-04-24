@@ -5,14 +5,13 @@ import type { Request, Response, NextFunction } from 'express';
 const KEYCLOAK_URL = process.env['KEYCLOAK_URL'] ?? 'https://keycloak.dev.cip.io';
 const KEYCLOAK_REALM = process.env['KEYCLOAK_REALM'] ?? 'cip-dev';
 
-const JWKS_URL = `${KEYCLOAK_URL}/realms/${KEYCLOAK_REALM}/protocol/openid-connect/certs`;
-const JWKS = createRemoteJWKSet(new URL(JWKS_URL));
+const JWKS = createRemoteJWKSet(new URL(
+  `${KEYCLOAK_URL}/realms/${KEYCLOAK_REALM}/protocol/openid-connect/certs`,
+));
 
-/**
- * Express middleware that validates the Bearer JWT and attaches TenantContext to req.
- * tenantId is ALWAYS extracted from the JWT — never from request body or params.
- */
-export async function withTenantContext(
+// Express middleware — verifies Bearer JWT and attaches TenantContext to req
+// tenantId is ALWAYS extracted from the JWT, never from request body or params
+export async function tenantAuthMiddleware(
   req: Request & { tenantContext?: TenantContext },
   res: Response,
   next: NextFunction,
@@ -24,19 +23,16 @@ export async function withTenantContext(
   }
 
   const token = authHeader.slice(7);
-
   try {
     const { payload } = await jwtVerify(token, JWKS);
-
     const tenantId = payload['tenantId'] as string | undefined;
-    const userId   = payload['sub'] as string | undefined;
+    const userId = payload['sub'] as string | undefined;
 
     if (!tenantId) {
       res.status(401).json({ error: 'JWT missing tenantId claim — check Keycloak Protocol Mapper' });
       return;
     }
 
-    // Stub until tenant-config service is wired — hydrate from DB/cache in a later slice.
     const tenantConfig: TenantConfig = {
       tenantId,
       name: tenantId,
@@ -46,14 +42,30 @@ export async function withTenantContext(
       langfuseTags: {},
     };
 
-    req.tenantContext = {
-      tenantId,
-      userId: userId ?? '',
-      tenantConfig,
-    };
-
+    req.tenantContext = { tenantId, userId: userId ?? '', tenantConfig };
     next();
   } catch (_err) {
     res.status(401).json({ error: 'Invalid or expired JWT' });
   }
+}
+
+// Extracts TenantContext from a request that has passed through tenantAuthMiddleware
+// Throws if tenantId is missing — this is a hard requirement
+export function extractTenantContext(req: Request & { tenantContext?: TenantContext }): TenantContext {
+  if (req.tenantContext) return req.tenantContext;
+  const payload = (req as unknown as Record<string, unknown>)['jwtPayload'] as Record<string, unknown> | undefined;
+  if (!payload?.['tenantId']) throw new Error('Missing tenantId in JWT payload');
+  return {
+    tenantId: payload['tenantId'] as string,
+    userId: (payload['sub'] as string | undefined) ?? '',
+    tenantConfig: payload['tenantConfig'] as TenantConfig,
+  };
+}
+
+// Convenience wrapper for async operations that need a tenant context
+export async function withTenantContext<T>(
+  ctx: TenantContext,
+  fn: (ctx: TenantContext) => Promise<T>,
+): Promise<T> {
+  return fn(ctx);
 }

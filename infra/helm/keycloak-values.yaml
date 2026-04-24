@@ -1,8 +1,26 @@
-# TODO: Keycloak Helm values
 # Chart: bitnami/keycloak
-# Reference: https://github.com/bitnami/charts/tree/main/bitnami/keycloak
+# helm repo add bitnami https://charts.bitnami.com/bitnami
+# helm upgrade --install keycloak bitnami/keycloak -n cip-infra -f infra/helm/keycloak-values.yaml
 auth:
   adminUser: admin
-  # adminPassword: set via K8s secret
+  existingSecret: keycloak-credentials
 production: true
 proxy: edge
+resources:
+  requests:
+    memory: 512Mi
+    cpu: 100m
+extraEnvVars:
+  - name: JAVA_OPTS_APPEND
+    value: "-Xms256m -Xmx512m"
+postgresql:
+  auth:
+    existingSecret: keycloak-db-credentials
+  primary:
+    persistence:
+      enabled: true
+      existingClaim: keycloak-data
+    resources:
+      requests:
+        memory: 128Mi
+        cpu: 50m

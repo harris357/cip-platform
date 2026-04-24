@@ -33,7 +33,7 @@ export async function runVisionAgent(input: {
     },
   });
 
-  const model = createLiteLLMClient('cip-vision');
+  const model = createLiteLLMClient({ tenantId: input.tenantId, virtualKey: process.env['LITELLM_VIRTUAL_KEY'] ?? '' });
 
   const initialState: VisionAgentState = {
     tenantId: input.tenantId,

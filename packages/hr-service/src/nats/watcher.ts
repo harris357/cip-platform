@@ -1,4 +1,4 @@
-import { getNatsConnection, sc } from '@cip/shared/src/clients/nats.js';
+import { createNatsClient } from '@cip/shared/src/clients/nats.js';
 import { createTemporalClient } from '@cip/shared/src/clients/temporal.js';
 import type { CertificationUploadedEvent, WorkerAllocatedToSiteEvent } from '@cip/shared/src/types/events.js';
 
@@ -11,7 +11,7 @@ import type { CertificationUploadedEvent, WorkerAllocatedToSiteEvent } from '@ci
  * Extracted to its own container at production scale.
  */
 export async function startAmbientWatcher(tenantId: string): Promise<void> {
-  const nc = await getNatsConnection();
+  const nc = await createNatsClient();
 
   // Subscribe to all events for this tenant
   const sub = nc.subscribe(`cip.${tenantId}.>`);
@@ -20,7 +20,7 @@ export async function startAmbientWatcher(tenantId: string): Promise<void> {
 
   for await (const msg of sub) {
     const subject = msg.subject;
-    const data = JSON.parse(sc.decode(msg.data)) as unknown;
+    const data = JSON.parse(new TextDecoder().decode(msg.data)) as unknown;
 
     if (subject.endsWith('.certificationUploaded')) {
       await handleCertUploaded(data as CertificationUploadedEvent);

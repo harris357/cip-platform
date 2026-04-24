@@ -1,12 +1,14 @@
-import { connect, NatsConnection, StringCodec } from 'nats';
+import { connect, NatsConnection, JetStreamManager } from 'nats';
 
-let _connection: NatsConnection | null = null;
-
-export async function getNatsConnection(): Promise<NatsConnection> {
-  if (_connection) return _connection;
-  const url = process.env['NATS_URL'] ?? 'nats://nats.cip-infra.svc.cluster.local:4222';
-  _connection = await connect({ servers: url });
-  return _connection;
+export interface NatsClientOptions {
+  url?: string;
 }
 
-export const sc = StringCodec();
+export async function createNatsClient(opts?: NatsClientOptions): Promise<NatsConnection> {
+  const url = opts?.url ?? process.env['NATS_URL'] ?? 'nats://localhost:4222';
+  return connect({ servers: url });
+}
+
+export async function createJetStreamManager(nc: NatsConnection): Promise<JetStreamManager> {
+  return nc.jetstreamManager();
+}

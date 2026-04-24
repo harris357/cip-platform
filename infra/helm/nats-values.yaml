@@ -8,4 +8,10 @@ config:
       enabled: true
       pvc:
         enabled: true
-        existingClaim: nats-pvc              # binds to the Cinder volume — do NOT remove
+        existingClaim: nats-data
+container:
+  merge:
+    resources:
+      requests:
+        memory: 64Mi
+        cpu: 25m

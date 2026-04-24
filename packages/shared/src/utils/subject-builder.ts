@@ -1,28 +1,27 @@
-/**
- * Canonical NATS subject builder.
- * ALL subject construction must go through this function.
- * Never build subject strings ad-hoc in individual services.
- *
- * Schema: cip.{tenantId}.{domain}.{eventName}
- */
-export function buildSubject(
-  tenantId: string,
-  domain: 'hr' | 'ops' | 'platform' | 'agents',
-  eventName: string,
-): string {
-  if (!tenantId || !domain || !eventName) {
-    throw new Error('buildSubject: all parameters required');
-  }
-  return `cip.${tenantId}.${domain}.${eventName}`;
+// ALL NATS subjects must be constructed here. Never construct raw subject strings elsewhere.
+
+export type NatsDomain = 'cert' | 'worker' | 'compliance' | 'tenant';
+export type NatsVersion = 'v1';
+
+export interface SubjectParts {
+  tenantId: string;
+  domain: NatsDomain;
+  event: string;
+  version?: NatsVersion;
 }
 
-// Typed subject constants — use these, not raw strings
+export function buildSubject(parts: SubjectParts): string {
+  const v = parts.version ?? 'v1';
+  return `cip.${parts.tenantId}.${parts.domain}.${parts.event}.${v}`;
+}
+
 export const Subjects = {
-  certificationUploaded: (t: string) => buildSubject(t, 'hr', 'certificationUploaded'),
-  certificationValidated: (t: string) => buildSubject(t, 'hr', 'certificationValidated'),
-  certificationExpired: (t: string) => buildSubject(t, 'hr', 'certificationExpired'),
-  workerOnboarded: (t: string) => buildSubject(t, 'hr', 'workerOnboarded'),
-  workerAllocatedToSite: (t: string) => buildSubject(t, 'ops', 'workerAllocatedToSite'),
-  incidentOccurred: (t: string) => buildSubject(t, 'ops', 'incidentOccurred'),
-  tenantProvisioned: (t: string) => buildSubject(t, 'platform', 'tenantProvisioned'),
+  certUploaded: (tenantId: string) =>
+    buildSubject({ tenantId, domain: 'cert', event: 'uploaded' }),
+  certProcessed: (tenantId: string) =>
+    buildSubject({ tenantId, domain: 'cert', event: 'processed' }),
+  certExpired: (tenantId: string) =>
+    buildSubject({ tenantId, domain: 'cert', event: 'expired' }),
+  complianceDrifted: (tenantId: string) =>
+    buildSubject({ tenantId, domain: 'compliance', event: 'drifted' }),
 } as const;

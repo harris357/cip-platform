@@ -32,7 +32,7 @@ data:
 
     general_settings:
       master_key: os.environ/LITELLM_MASTER_KEY
-      database_url: postgresql://cipuser:REPLACE_WITH_PASSWORD@postgres-postgresql.cip-infra:5432/cip_litellm
+      database_url: os.environ/LITELLM_DATABASE_URL
 
     litellm_settings:
       success_callback: ["langfuse"]

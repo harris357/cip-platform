@@ -5,9 +5,13 @@ global:
   postgresql:
     auth:
       username: cipuser
-      existingSecret: postgres-credentials   # K8s secret with postgres-password key
+      existingSecret: postgres-credentials
       database: cip_hr
 primary:
   persistence:
     enabled: true
-    existingClaim: postgres-pvc              # binds to the Cinder volume — do NOT remove
+    existingClaim: postgres-data
+  resources:
+    requests:
+      memory: 128Mi
+      cpu: 50m

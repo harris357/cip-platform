@@ -1,16 +1,27 @@
 # Chart: prometheus-community/kube-prometheus-stack
 # helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
 # helm upgrade --install monitoring prometheus-community/kube-prometheus-stack -n cip-observe -f infra/helm/monitoring-values.yaml
-#
-# Dev: no persistent storage — metrics and dashboards reset on node restart.
-# Dashboards should be defined as ConfigMaps (grafana.sidecar.dashboards.enabled).
 grafana:
   persistence:
     enabled: false
   sidecar:
     dashboards:
       enabled: true
+  resources:
+    requests:
+      memory: 128Mi
+      cpu: 50m
 prometheus:
   prometheusSpec:
-    retention: 6h                            # only keep 6h of metrics in dev
-    storageSpec: {}                          # emptyDir — no PVC
+    retention: 6h
+    storageSpec: {}
+    resources:
+      requests:
+        memory: 256Mi
+        cpu: 100m
+alertmanager:
+  alertmanagerSpec:
+    resources:
+      requests:
+        memory: 64Mi
+        cpu: 25m

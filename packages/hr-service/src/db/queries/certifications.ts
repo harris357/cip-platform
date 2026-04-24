@@ -1,36 +1,31 @@
-import type { Pool } from 'pg';
-import { setTenantContext } from '@cip/shared/src/clients/postgres.js';
-import type { Certification, CertStatus } from '@cip/shared/src/types/certification.js';
+import type { PoolClient } from 'pg';
+import type { Certification } from '@cip/shared/src/types/certification.js';
 
-export async function getCertificationsByWorker(
-  pool: Pool,
-  tenantId: string,
-  workerId: string,
-): Promise<Certification[]> {
-  const client = await pool.connect();
-  try {
-    await setTenantContext(client, tenantId);
-    // TODO: implement query
-    void workerId;
-    throw new Error('getCertificationsByWorker: not implemented');
-  } finally {
-    client.release();
-  }
+// All functions take PoolClient (not Pool) — caller manages the withTenantRLS wrapper
+
+export async function findCertificationById(
+  client: PoolClient,
+  id: string,
+): Promise<Certification | null> {
+  const result = await client.query(
+    'SELECT * FROM certifications WHERE id = $1',
+    [id],
+  );
+  return (result.rows[0] as Certification) ?? null;
 }
 
-export async function updateCertificationStatus(
-  pool: Pool,
-  tenantId: string,
-  certificationId: string,
-  status: CertStatus,
-): Promise<void> {
-  const client = await pool.connect();
-  try {
-    await setTenantContext(client, tenantId);
-    void certificationId;
-    void status;
-    throw new Error('updateCertificationStatus: not implemented');
-  } finally {
-    client.release();
-  }
+export async function upsertCertification(
+  client: PoolClient,
+  cert: Omit<Certification, 'createdAt' | 'updatedAt'>,
+): Promise<Certification> {
+  void cert;
+  throw new Error('not implemented');
+}
+
+export async function findExpiredCertifications(
+  client: PoolClient,
+  beforeDate: string,
+): Promise<Certification[]> {
+  void beforeDate;
+  throw new Error('not implemented');
 }

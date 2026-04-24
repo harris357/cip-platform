@@ -25,13 +25,6 @@
 
 ## Open Notes
 
-### CS-010 — RESOLVED 2026-04-24
-- **Logged in:** Slice 05 (HR Service Database Layer)
-- **Affects:** Slice 02 (Shared Types) and all downstream consumers of `Worker`
-- **File:** `packages/shared/src/types/worker.ts` (new file)
-- **Status:** RESOLVED 2026-04-24
-- **Fix applied:** Created `packages/shared/src/types/worker.ts` with the `Worker` interface. Added `export * from './types/worker.js'` to `packages/shared/src/index.ts`. Updated `packages/hr-service/src/db/queries/workers.ts` to import `Worker` via deep path `@cip/shared/src/types/worker.js` (bare package import not supported under Node16 module resolution without an `exports` field) and re-export it. Both `@cip/shared` and `@cip/hr-service` typecheck clean.
-
 ---
 
 ## Resolved Notes
@@ -101,6 +94,13 @@
 - **File:** `packages/teams-bot/src/bot.ts`
 - **Status:** RESOLVED 2026-04-24
 - **Fix applied:** (1) Removed `systemRole: 'worker'`; added stub `tenantConfig` built from env vars (`DEV_TENANT_ID`, `DEV_TENANT_NAME`, `LITELLM_VIRTUAL_KEY`, `KEYCLOAK_REALM`) — same pattern as CS-001 fix in `tenant-context.ts`. (2) Changed switch cases from `'cert_upload'`/`'compliance_query'` to `'UPLOAD_CERT'`/`'QUERY_COMPLIANCE'` to match `IntentResult.intent` UPPER_SNAKE_CASE union. Note: `IntentResultSchema` still uses snake_case — schema/type mismatch remains a runtime risk but is out of scope for this note.
+
+### CS-010 — RESOLVED 2026-04-24
+- **Logged in:** Slice 05 (HR Service Database Layer)
+- **Affects:** Slice 02 (Shared Types) and all downstream consumers of `Worker`
+- **File:** `packages/shared/src/types/worker.ts` (new file)
+- **Status:** RESOLVED 2026-04-24
+- **Fix applied:** Created `packages/shared/src/types/worker.ts` with the `Worker` interface. Added `export * from './types/worker.js'` to `packages/shared/src/index.ts`. Updated `packages/hr-service/src/db/queries/workers.ts` to import `Worker` via deep path `@cip/shared/src/types/worker.js` (bare package import not supported under Node16 module resolution without an `exports` field) and re-export it. Both `@cip/shared` and `@cip/hr-service` typecheck clean.
 
 ---
 
