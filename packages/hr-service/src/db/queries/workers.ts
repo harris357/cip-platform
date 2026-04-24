@@ -1,28 +1,25 @@
-import type { Pool } from 'pg';
-import { setTenantContext } from '@cip/shared/src/clients/postgres.js';
+import type { PoolClient } from 'pg';
+import type { Worker } from '@cip/shared/src/types/worker.js';
 
-export interface Worker {
-  id: string;
-  tenantId: string;
-  email: string;
-  fullName: string;
-  keycloakId: string;
-  createdAt: Date;
-  updatedAt: Date;
+export type { Worker };
+
+// All functions take PoolClient (not Pool) — caller manages the withTenantRLS wrapper
+
+export async function findWorkerById(
+  client: PoolClient,
+  id: string,
+): Promise<Worker | null> {
+  const result = await client.query(
+    'SELECT * FROM workers WHERE id = $1',
+    [id],
+  );
+  return (result.rows[0] as Worker) ?? null;
 }
 
-export async function getWorkerById(
-  pool: Pool,
-  tenantId: string,
-  workerId: string,
-): Promise<Worker | null> {
-  const client = await pool.connect();
-  try {
-    await setTenantContext(client, tenantId);
-    void workerId;
-    // TODO: implement query
-    throw new Error('getWorkerById: not implemented');
-  } finally {
-    client.release();
-  }
+export async function upsertWorker(
+  client: PoolClient,
+  worker: Omit<Worker, 'createdAt' | 'updatedAt'>,
+): Promise<Worker> {
+  void worker;
+  throw new Error('not implemented');
 }
