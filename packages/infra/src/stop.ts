@@ -1,22 +1,31 @@
-import { scaleNodePool } from './scale-nodepool.js';
 import { execSync } from 'child_process';
+import { createOvhClient } from './ovh-client.js';
+import { scaleNodepool } from './scale-nodepool.js';
 
-// Helm releases to uninstall — order matters (app before infra)
-const HELM_RELEASES = [
-  { name: 'hr-service',     namespace: 'cip-app' },
-  { name: 'platform-core',  namespace: 'cip-app' },
-  { name: 'teams-bot',      namespace: 'cip-app' },
-  { name: 'monitoring',     namespace: 'cip-observe' },
-  { name: 'keycloak',       namespace: 'cip-auth' },
-  { name: 'nats',           namespace: 'cip-infra' },
-  { name: 'postgres',       namespace: 'cip-infra' },
+interface HelmRelease {
+  name: string;
+  namespace: string;
+}
+
+// Uninstall in REVERSE order of start.ts (services first, infrastructure last)
+const HELM_RELEASES: HelmRelease[] = [
+  { name: 'teams-bot',     namespace: 'cip-app' },
+  { name: 'platform-core', namespace: 'cip-app' },
+  { name: 'hr-service',    namespace: 'cip-app' },
+  { name: 'langfuse',      namespace: 'cip-app' },
+  { name: 'litellm',       namespace: 'cip-app' },
+  { name: 'keycloak',      namespace: 'cip-auth' },
+  { name: 'nats',          namespace: 'cip-infra' },
+  { name: 'postgres',      namespace: 'cip-infra' },
 ];
 
-async function main() {
+async function main(): Promise<void> {
   console.log('=== CIP Evening Shutdown ===');
 
-  // Step 1: Uninstall Helm releases — pods gone, volumes detach from node
-  // PVCs are NOT touched — Cinder volumes remain in OVH
+  const client = createOvhClient();
+
+  // Step 1: Uninstall Helm releases — pods terminated, Cinder volumes detach from node
+  // IMPORTANT: Never delete PVCs — data is permanent
   for (const release of HELM_RELEASES) {
     console.log(`Uninstalling ${release.name}...`);
     try {
@@ -29,12 +38,11 @@ async function main() {
     }
   }
 
-  // Step 2: Scale node pool to zero — node VM destroyed, volumes detached and safe
-  await scaleNodePool(0);
+  // Step 2: Scale node pool to zero — node VM destroyed, volumes safely detached
+  await scaleNodepool(client, 0);
 
-  console.log('');
-  console.log('=== Shutdown complete ===');
-  console.log('Node destroyed. PVCs (postgres-pvc, nats-pvc) and their Cinder volumes persist.');
+  console.log('\n=== Shutdown complete ===');
+  console.log('Node destroyed. PVCs (postgres-pvc, nats-pvc) and their Cinder volumes persist safely.');
 }
 
 main().catch((err) => {
