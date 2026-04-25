@@ -54,3 +54,9 @@ export interface WorkerAllocatedToSiteEvent {
   siteId: string;
   allocatedAt: string;    // ISO 8601
 }
+
+export interface WorkerOnboardedEvent {
+  tenantId: string;
+  workerId: string;
+  onboardedAt: string;    // ISO 8601
+}

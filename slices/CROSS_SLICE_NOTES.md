@@ -25,6 +25,20 @@
 
 ## Open Notes
 
+### CS-016 — RESOLVED 2026-04-25
+- **Logged in:** Slice 08 (NATS Watcher)
+- **Affects:** Slice 02 (Shared Types)
+- **File:** `packages/shared/src/types/events.ts`
+- **Status:** RESOLVED 2026-04-25
+- **Fix applied:** Added `WorkerOnboardedEvent { tenantId: string; workerId: string; onboardedAt: string }` to `events.ts`. Both `@cip/shared` and `@cip/hr-service` typecheck clean.
+
+### CS-017 — RESOLVED 2026-04-25
+- **Logged in:** Slice 08 (NATS Watcher)
+- **Affects:** Slice 02 (Shared Types)
+- **File:** `packages/shared/src/utils/subject-builder.ts`
+- **Status:** RESOLVED 2026-04-25
+- **Fix applied:** Added `workerOnboarded: (tenantId: string) => buildSubject({ tenantId, domain: 'worker', event: 'onboarded' })` to the `Subjects` const. Both `@cip/shared` and `@cip/hr-service` typecheck clean.
+
 
 ---
 
