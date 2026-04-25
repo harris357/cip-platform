@@ -1,12 +1,14 @@
 import type { TurnContext } from 'botbuilder';
 import type { TenantContext } from '@cip/shared/src/types/tenant.js';
+import type { IntentResult } from '@cip/shared/src/types/agent.js';
 
-export async function handleComplianceQuery(
+export async function complianceQueryHandler(
   context: TurnContext,
-  tenantContext: TenantContext,
+  tenantCtx: TenantContext,
+  intent: IntentResult,
 ): Promise<void> {
   void context;
-  void tenantContext;
-  // TODO: call get_compliance_status MCP tool and format response card
-  throw new Error('handleComplianceQuery: not implemented');
+  void tenantCtx;
+  void intent;
+  throw new Error('not implemented');
 }

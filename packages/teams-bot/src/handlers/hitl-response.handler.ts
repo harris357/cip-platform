@@ -1,19 +1,31 @@
 import type { TurnContext } from 'botbuilder';
 import type { TenantContext } from '@cip/shared/src/types/tenant.js';
+import type { IntentResult } from '@cip/shared/src/types/agent.js';
 import { createTemporalClient } from '@cip/shared/src/clients/temporal.js';
 import type { HITLDecisionSignal } from '@cip/shared/src/types/workflow.js';
 
-export async function handleHITLResponse(
+export async function hitlResponseHandler(
   context: TurnContext,
-  tenantContext: TenantContext,
-  workflowId: string,
-  decision: HITLDecisionSignal,
+  tenantCtx: TenantContext,
+  intent: IntentResult,
 ): Promise<void> {
   void context;
 
-  const client = await createTemporalClient(`${tenantContext.tenantId}.cip`);
-  const handle = client.workflow.getHandle(workflowId);
+  const workflowId = intent.entities['workflowId'];
+  if (!workflowId) {
+    throw new Error('RESPOND_HITL intent missing workflowId entity');
+  }
 
-  // Send hitlDecisionSignal to resume the paused CertificationProcessingWorkflow
-  await handle.signal('hitlDecision', decision);
+  const approved = intent.entities['decision'] === 'approve';
+
+  const signal: HITLDecisionSignal = {
+    reviewedBy: tenantCtx.userId,
+    reviewedAt: new Date().toISOString(),
+    approved,
+  };
+
+  const client = await createTemporalClient();
+  const handle = client.workflow.getHandle(workflowId);
+  // Signal the paused CertificationProcessingWorkflow — never trigger a new workflow
+  await handle.signal('hitlDecision', signal);
 }

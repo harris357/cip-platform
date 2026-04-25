@@ -25,21 +25,6 @@
 
 ## Open Notes
 
-### CS-016 — RESOLVED 2026-04-25
-- **Logged in:** Slice 08 (NATS Watcher)
-- **Affects:** Slice 02 (Shared Types)
-- **File:** `packages/shared/src/types/events.ts`
-- **Status:** RESOLVED 2026-04-25
-- **Fix applied:** Added `WorkerOnboardedEvent { tenantId: string; workerId: string; onboardedAt: string }` to `events.ts`. Both `@cip/shared` and `@cip/hr-service` typecheck clean.
-
-### CS-017 — RESOLVED 2026-04-25
-- **Logged in:** Slice 08 (NATS Watcher)
-- **Affects:** Slice 02 (Shared Types)
-- **File:** `packages/shared/src/utils/subject-builder.ts`
-- **Status:** RESOLVED 2026-04-25
-- **Fix applied:** Added `workerOnboarded: (tenantId: string) => buildSubject({ tenantId, domain: 'worker', event: 'onboarded' })` to the `Subjects` const. Both `@cip/shared` and `@cip/hr-service` typecheck clean.
-
-
 ---
 
 ## Resolved Notes
@@ -151,6 +136,22 @@
 - **File:** `packages/shared/src/types/agent.ts`
 - **Status:** RESOLVED 2026-04-25
 - **Fix applied:** (1) Added `tenantId: z.string().uuid()` to `ExtractionResultSchema` in `agent.ts`. (2) Updated `parseExtractionResponse` in `nodes.ts` to accept `tenantId` parameter and include it in the `.parse()` call; updated call site to pass `state.tenantId`. (3) Replaced the standalone `ExtractionResultSchema` definition in `zod-schemas.ts` with a re-export from `../types/agent.js` — single source of truth, no shape divergence. Full repo typecheck passes clean.
+
+### CS-016 — RESOLVED 2026-04-25
+- **Logged in:** Slice 08 (NATS Watcher)
+- **Affects:** Slice 02 (Shared Types)
+- **File:** `packages/shared/src/types/events.ts`
+- **Status:** RESOLVED 2026-04-25
+- **Fix applied:** Added `WorkerOnboardedEvent { tenantId: string; workerId: string; onboardedAt: string }` to `events.ts`. Both `@cip/shared` and `@cip/hr-service` typecheck clean.
+
+### CS-017 — RESOLVED 2026-04-25
+- **Logged in:** Slice 08 (NATS Watcher)
+- **Affects:** Slice 02 (Shared Types)
+- **File:** `packages/shared/src/utils/subject-builder.ts`
+- **Status:** RESOLVED 2026-04-25
+- **Fix applied:** Added `workerOnboarded: (tenantId: string) => buildSubject({ tenantId, domain: 'worker', event: 'onboarded' })` to the `Subjects` const. Both `@cip/shared` and `@cip/hr-service` typecheck clean.
+
+
 
 ---
 

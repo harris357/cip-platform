@@ -5,6 +5,8 @@ import type { TenantProvisionedEvent } from '@cip/shared/src/types/events.js';
 export async function provisionCompleteNotify(input: {
   tenantId: string;
   tenantName: string;
+  adminEmail: string;
+  litellmVirtualKey: string;
 }): Promise<void> {
   const nc = await getNatsConnection();
 
@@ -17,5 +19,5 @@ export async function provisionCompleteNotify(input: {
   // Publish via canonical subject builder — never raw strings
   nc.publish(Subjects.tenantProvisioned(input.tenantId), sc.encode(JSON.stringify(event)));
 
-  // TODO: notify admin via email or Teams message
+  // TODO: notify admin via email or Teams message — use input.adminEmail and input.litellmVirtualKey
 }

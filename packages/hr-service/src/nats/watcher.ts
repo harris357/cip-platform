@@ -1,63 +1,71 @@
-import { createNatsClient } from '@cip/shared/src/clients/nats.js';
+import { createNatsClient, sc } from '@cip/shared/src/clients/nats.js';
 import { createTemporalClient } from '@cip/shared/src/clients/temporal.js';
-import type { CertificationUploadedEvent, WorkerAllocatedToSiteEvent } from '@cip/shared/src/types/events.js';
+import { buildSubject, Subjects } from '@cip/shared/src/utils/subject-builder.js';
+import type { CertProcessedEvent, CertExpiredEvent } from '@cip/shared/src/types/events.js';
 
-/**
- * Ambient Watcher — two-speed design:
- *   Fast pass: Tier 1 deterministic check (threshold, expiry calc) — runs on every event
- *   Slow pass: Tier 3 agent (Compliance Assessment) — triggered only when fast pass flags
- *
- * Runs in the same process as the HR service in dev.
- * Extracted to its own container at production scale.
- */
-export async function startAmbientWatcher(tenantId: string): Promise<void> {
+// WorkerOnboardedEvent not yet in @cip/shared — see CROSS-SLICE NOTE below
+interface WorkerOnboardedEvent {
+  tenantId: string;
+  workerId: string;
+  onboardedAt: string;
+}
+
+// Wildcard subjects — one watcher instance handles all tenants
+// tenantId is read from the event payload, not the subject
+const CERT_PROCESSED_SUBJECT = Subjects.certProcessed('*');
+const CERT_EXPIRED_SUBJECT = Subjects.certExpired('*');
+const WORKER_ONBOARDED_SUBJECT = buildSubject({ tenantId: '*', domain: 'worker', event: 'onboarded' });
+
+export async function startAmbientWatcher(): Promise<void> {
   const nc = await createNatsClient();
+  const js = nc.jetstream();
 
-  // Subscribe to all events for this tenant
-  const sub = nc.subscribe(`cip.${tenantId}.>`);
-
-  console.log(`Ambient Watcher started for tenant: ${tenantId}`);
-
-  for await (const msg of sub) {
-    const subject = msg.subject;
-    const data = JSON.parse(new TextDecoder().decode(msg.data)) as unknown;
-
-    if (subject.endsWith('.certificationUploaded')) {
-      await handleCertUploaded(data as CertificationUploadedEvent);
-    } else if (subject.endsWith('.workerAllocatedToSite')) {
-      await handleWorkerAllocated(data as WorkerAllocatedToSiteEvent);
-    } else if (subject.endsWith('.certificationExpired')) {
-      // TODO: trigger renewal reminder workflow
+  async function watchCertProcessed(): Promise<void> {
+    const sub = await js.subscribe(CERT_PROCESSED_SUBJECT, {});
+    for await (const msg of sub) {
+      const event = JSON.parse(sc.decode(msg.data)) as CertProcessedEvent;
+      await handleCertProcessed(event);
+      msg.ack();
     }
   }
-}
 
-async function handleCertUploaded(event: CertificationUploadedEvent): Promise<void> {
-  // Fast pass: should we process this?
-  const shouldProcess = true; // TODO: Tier 1 check against cert type registry
-
-  if (shouldProcess) {
-    const client = await createTemporalClient(
-      `${event.tenantId}.cip`, // per-tenant Temporal namespace convention
-    );
-
-    // Workflow ID convention: cert-processing-{tenantId}-{certificationId}
-    await client.workflow.start('CertificationProcessingWorkflow', {
-      taskQueue: 'cip-hr-tasks',
-      workflowId: `cert-processing-${event.tenantId}-${event.certificationId}`,
-      args: [{
-        tenantId: event.tenantId,
-        workerId: event.workerId,
-        certificationId: event.certificationId,
-        objectStoreKey: event.objectStoreKey,
-        uploadedBy: event.uploadedBy,
-      }],
-    });
+  async function watchCertExpired(): Promise<void> {
+    const sub = await js.subscribe(CERT_EXPIRED_SUBJECT, {});
+    for await (const msg of sub) {
+      const event = JSON.parse(sc.decode(msg.data)) as CertExpiredEvent;
+      await handleCertExpired(event);
+      msg.ack();
+    }
   }
+
+  async function watchWorkerOnboarded(): Promise<void> {
+    const sub = await js.subscribe(WORKER_ONBOARDED_SUBJECT, {});
+    for await (const msg of sub) {
+      const event = JSON.parse(sc.decode(msg.data)) as WorkerOnboardedEvent;
+      await handleWorkerOnboarded(event);
+      msg.ack();
+    }
+  }
+
+  await Promise.all([watchCertProcessed(), watchCertExpired(), watchWorkerOnboarded()]);
 }
 
-async function handleWorkerAllocated(event: WorkerAllocatedToSiteEvent): Promise<void> {
-  void event;
-  // TODO: Tier 1 fast compliance check
-  // If gaps detected → trigger ComplianceAssessmentWorkflow
+async function handleCertProcessed(event: CertProcessedEvent): Promise<void> {
+  // TODO: query cert expiry date from DB; if within threshold, schedule reminder workflow
+  console.log(`[watcher] cert.processed tenantId=${event.tenantId} certId=${event.certId} status=${event.status}`);
+}
+
+async function handleCertExpired(event: CertExpiredEvent): Promise<void> {
+  const client = await createTemporalClient(`${event.tenantId}.cip`);
+  // Workflow ID pattern: compliance-drift-{tenantId}-{certId}
+  await client.workflow.start('ComplianceDriftCheckWorkflow', {
+    taskQueue: 'cip-hr-tasks',
+    workflowId: `compliance-drift-${event.tenantId}-${event.certId}`,
+    args: [{ tenantId: event.tenantId, certId: event.certId, workerId: event.workerId }],
+  });
+}
+
+async function handleWorkerOnboarded(event: WorkerOnboardedEvent): Promise<void> {
+  // TODO: query required cert types for tenant + worker role; flag gaps
+  console.log(`[watcher] worker.onboarded tenantId=${event.tenantId} workerId=${event.workerId}`);
 }

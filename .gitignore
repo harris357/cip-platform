@@ -12,3 +12,4 @@ terraform.tfstate.backup
 ~/.kube/cip-dev.yaml
 *.pem
 *.key
+docs/

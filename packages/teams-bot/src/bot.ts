@@ -1,7 +1,8 @@
 import { TeamsActivityHandler, TurnContext } from 'botbuilder';
 import { routeIntent } from './agents/intent-router/index.js';
-import { handleCertUpload } from './handlers/cert-upload.handler.js';
-import { handleComplianceQuery } from './handlers/compliance-query.handler.js';
+import { certUploadHandler } from './handlers/cert-upload.handler.js';
+import { complianceQueryHandler } from './handlers/compliance-query.handler.js';
+import { hitlResponseHandler } from './handlers/hitl-response.handler.js';
 import type { TenantContext } from '@cip/shared/src/types/tenant.js';
 
 export class CIPTeamsBot extends TeamsActivityHandler {
@@ -9,9 +10,9 @@ export class CIPTeamsBot extends TeamsActivityHandler {
     super();
 
     this.onMessage(async (context: TurnContext, next) => {
-      // TODO: extract TenantContext from Teams auth token (SSO)
+      // TODO: extract TenantContext from Teams SSO token (Keycloak)
       const tenantId = process.env['DEV_TENANT_ID'] ?? '';
-      const tenantContext: TenantContext = {
+      const tenantCtx: TenantContext = {
         tenantId,
         userId: context.activity.from.id,
         tenantConfig: {
@@ -25,17 +26,20 @@ export class CIPTeamsBot extends TeamsActivityHandler {
       };
 
       const text = context.activity.text?.trim() ?? '';
-      const intent = await routeIntent(text, tenantContext.tenantId);
+      const intent = await routeIntent(text, tenantCtx);
 
       switch (intent.intent) {
         case 'UPLOAD_CERT':
-          await handleCertUpload(context, tenantContext);
+          await certUploadHandler(context, tenantCtx, intent);
           break;
         case 'QUERY_COMPLIANCE':
-          await handleComplianceQuery(context, tenantContext);
+          await complianceQueryHandler(context, tenantCtx, intent);
+          break;
+        case 'RESPOND_HITL':
+          await hitlResponseHandler(context, tenantCtx, intent);
           break;
         default:
-          await context.sendActivity(`I didn't understand that. Intent detected: ${intent.intent}`);
+          await context.sendActivity("I didn't understand that. Try uploading a certification document.");
       }
 
       await next();

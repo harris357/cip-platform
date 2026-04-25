@@ -10,7 +10,8 @@
       "Bash(command -v nvm)",
       "Bash(curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.7/install.sh)",
       "Bash(bash)",
-      "Bash(xargs -I{} sh -c 'echo \"=== {} ===\" && cat {} | grep -E '\"'\"'\"name\"|\"version\"'\"'\"'')"
+      "Bash(xargs -I{} sh -c 'echo \"=== {} ===\" && cat {} | grep -E '\"'\"'\"name\"|\"version\"'\"'\"'')",
+      "Bash(git commit -m ' *)"
     ],
     "deny": [
       "Read(node_modules/**)",

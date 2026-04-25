@@ -27,7 +27,7 @@ export async function TenantProvisioningWorkflow(
   input: TenantProvisioningInput,
 ): Promise<void> {
   // Step 1: Create Keycloak realm for tenant
-  await createKeycloakRealm({ tenantId: input.tenantId, adminEmail: input.adminEmail });
+  await createKeycloakRealm({ tenantId: input.tenantId, tenantName: input.tenantName });
 
   // Step 2: Create Temporal namespace for tenant
   await createTemporalNamespace({ tenantId: input.tenantId });
@@ -42,12 +42,17 @@ export async function TenantProvisioningWorkflow(
   await initTenantDatabase({ tenantId: input.tenantId });
 
   // Step 6: Issue LiteLLM virtual key with tier-appropriate budget
-  await issueLiteLLMVirtualKey({
+  const litellmVirtualKey = await issueLiteLLMVirtualKey({
     tenantId: input.tenantId,
     tier: input.tier,
     budgetLimitUsd: input.budgetLimitUsd,
   });
 
   // Step 7: Publish tenantProvisioned NATS event + notify admin
-  await provisionCompleteNotify({ tenantId: input.tenantId, tenantName: input.tenantName });
+  await provisionCompleteNotify({
+    tenantId: input.tenantId,
+    tenantName: input.tenantName,
+    adminEmail: input.adminEmail,
+    litellmVirtualKey,
+  });
 }
