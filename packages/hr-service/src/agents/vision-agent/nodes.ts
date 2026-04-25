@@ -10,9 +10,11 @@ function parseExtractionResponse(
   content: string,
   model: string,
   totalTokens: number,
+  tenantId: string,
 ): ExtractionResult {
   const json = JSON.parse(content) as Record<string, unknown>;
   return ExtractionResultSchema.parse({
+    tenantId,
     certType: json['certType'],
     extractedFields: json['extractedFields'],
     overallConfidence: json['overallConfidence'] ?? 0,
@@ -55,7 +57,7 @@ export async function extractFields(
 
   const content = response.choices[0]?.message?.content ?? '';
   return {
-    extraction: parseExtractionResponse(content, response.model, response.usage?.total_tokens ?? 0),
+    extraction: parseExtractionResponse(content, response.model, response.usage?.total_tokens ?? 0, state.tenantId),
   };
 }
 

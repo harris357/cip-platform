@@ -25,14 +25,6 @@
 
 ## Open Notes
 
-### CS-015
-- **Logged in:** Slice 07 (Vision Agent)
-- **Affects:** Slice 02 (Shared Types)
-- **File:** `packages/shared/src/types/agent.ts`
-- **Status:** OPEN
-- **Issue:** `ExtractionResultSchema` (and the inferred `ExtractionResult` type) does not include `tenantId: string`. Non-negotiable #1 requires `tenantId` on every domain interface. `VisionAgentAnnotation` carries `tenantId` in state, but `ExtractionResult` — the persisted output of the vision agent — does not.
-- **Why it matters:** `ExtractionResult` is passed to `persistCert` activity and stored in the `certifications` table. Without `tenantId` on the type, the activity cannot enforce tenant attribution at the TypeScript boundary. Also, `zod-schemas.ts` already has `tenantId` on its `ExtractionResultSchema` — the two schemas are out of sync.
-- **Fix:** Add `tenantId: z.string().uuid()` to `ExtractionResultSchema` in `agent.ts`. Update `nodes.ts` `parseExtractionResponse` to include `tenantId` from `state.tenantId`. Sync `zod-schemas.ts` `ExtractionResultSchema` shape with `agent.ts` to resolve the mismatch flagged in CS-008.
 
 ---
 
@@ -65,8 +57,6 @@
 - **File:** `packages/teams-bot/src/agents/intent-router/index.ts`
 - **Status:** RESOLVED 2026-04-24
 - **Fix applied:** Replaced `createLiteLLMClient('cip-lightweight')` with `createLiteLLMClient({ tenantId, virtualKey: process.env['LITELLM_VIRTUAL_KEY'] ?? '' })`. The `'cip-lightweight'` alias is a model name passed at call time, not a client option.
-
-
 
 ### CS-004 — RESOLVED 2026-04-24
 - **Logged in:** Cross-slice session (2026-04-24)
@@ -140,6 +130,13 @@
 - **File:** `packages/shared/src/types/worker.ts` (new file)
 - **Status:** RESOLVED 2026-04-24
 - **Fix applied:** Created `packages/shared/src/types/worker.ts` with the `Worker` interface. Added `export * from './types/worker.js'` to `packages/shared/src/index.ts`. Updated `packages/hr-service/src/db/queries/workers.ts` to import `Worker` via deep path `@cip/shared/src/types/worker.js` (bare package import not supported under Node16 module resolution without an `exports` field) and re-export it. Both `@cip/shared` and `@cip/hr-service` typecheck clean.
+
+### CS-015 — RESOLVED 2026-04-25
+- **Logged in:** Slice 07 (Vision Agent)
+- **Affects:** Slice 02 (Shared Types)
+- **File:** `packages/shared/src/types/agent.ts`
+- **Status:** RESOLVED 2026-04-25
+- **Fix applied:** (1) Added `tenantId: z.string().uuid()` to `ExtractionResultSchema` in `agent.ts`. (2) Updated `parseExtractionResponse` in `nodes.ts` to accept `tenantId` parameter and include it in the `.parse()` call; updated call site to pass `state.tenantId`. (3) Replaced the standalone `ExtractionResultSchema` definition in `zod-schemas.ts` with a re-export from `../types/agent.js` — single source of truth, no shape divergence. Full repo typecheck passes clean.
 
 ---
 

@@ -34,6 +34,7 @@ export interface IntentResult {
 
 // Zod schemas — re-exported by utils/zod-schemas.ts
 export const ExtractionResultSchema = z.object({
+  tenantId: z.string().uuid(),
   certType: z.string(),
   extractedFields: z.record(z.object({
     value: z.string().nullable(),
