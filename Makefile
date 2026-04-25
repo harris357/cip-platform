@@ -1,7 +1,9 @@
 # Makefile — CIP Platform
 # Daily commands: make start | make stop | make bootstrap
 
-.PHONY: start stop bootstrap bootstrap-infra status forward logs deploy verify typecheck build
+.DEFAULT_GOAL := help
+
+.PHONY: help start stop bootstrap bootstrap-infra create-secrets status forward logs deploy verify typecheck build lint
 
 # ── Daily cycle ──────────────────────────────────────────────────────────────
 
@@ -47,8 +49,8 @@ deploy:       ## Build + push + rollout restart. Usage: make deploy svc=hr-servi
 	@docker push ghcr.io/YOUR_ORG/$(svc):dev
 	@kubectl rollout restart deployment/$(svc) -n cip-app
 
-verify:       ## End-to-end health check
-	@bash scripts/verify.sh
+verify:       ## End-to-end health check (kubectl, secrets, S3, Temporal, Langfuse, Cloudflare)
+	@bash scripts/verify-readiness.sh
 
 # ── Code quality ─────────────────────────────────────────────────────────────
 
@@ -60,3 +62,11 @@ build:        ## Build all packages
 
 lint:         ## Run ESLint
 	@pnpm lint
+
+# ── Help ──────────────────────────────────────────────────────────────────────
+
+help:         ## Show this help message
+	@printf '\n  Usage: make <target>\n\n'
+	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
+		| awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2}'
+	@printf '\n'
