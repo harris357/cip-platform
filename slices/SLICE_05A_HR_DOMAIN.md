@@ -27,6 +27,7 @@ packages/hr-service/src/
     certifications/       ← cert submissions, processing, HITL
     employees/            ← employee management, onboarding
     compliance/           ← complex reporting queries
+    settings/             ← tenant-level config (channel_config, future tenant prefs)
   db/
     migrations/
       002_domain_model.sql

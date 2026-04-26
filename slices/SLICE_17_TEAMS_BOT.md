@@ -104,6 +104,21 @@ export function detectFileAttachments(context: TurnContext): Attachment[] {
       typeof (a.content as Record<string, unknown> | undefined)?.['downloadUrl'] === 'string'
     )
 }
+
+export async function downloadToObjectStore(
+  attachment: Attachment,
+  ctx: AuthContext,
+): Promise<string> {
+  // Resolve download URL from Teams CDN attachment content
+  const downloadUrl =
+    (attachment.content as Record<string, unknown> | undefined)?.['downloadUrl'] as string
+  const buffer = await fetch(downloadUrl).then(r => r.arrayBuffer())
+  const key = `${ctx.tenantId}/${ctx.employeeId}/${randomUUID()}`
+  // Upload to configured object store (env: OBJECT_STORE_BUCKET)
+  // Returns the key — passed directly to process_document MCP tool
+  throw new Error('not implemented')
+  return key
+}
 ```
 
 ---
@@ -131,9 +146,17 @@ export function getChannelRef(tenantId: string, channelType: string): Conversati
   if (!entry || Date.now() > entry.expiresAt) return null
   return entry.ref
 }
-```
 
-`updateChannelRegistry` (called from `bot.ts`): calls `get_tenant_channel_config` MCP tool (TTL-cached per tenant, 5 min), compares incoming activity's `channelId`/`teamId` against config, registers if matched.
+export async function updateChannelRegistry(
+  context: TurnContext,
+  tenantId: string,
+): Promise<void> {
+  // 1. Call get_tenant_channel_config MCP tool (result cached 5 min per tenantId)
+  // 2. Compare incoming activity channelId / teamId against each entry in channel_config
+  // 3. For any match: registerChannel(tenantId, channelType, TurnContext.getConversationReference(context.activity))
+  throw new Error('not implemented')
+}
+```
 
 ---
 
@@ -143,20 +166,25 @@ export function getChannelRef(tenantId: string, channelType: string): Conversati
 export async function resolveAuthContext(context: TurnContext): Promise<AuthContext> {
   // 1. Extract tenantId from Teams activity channelData or JWT
   // 2. Extract aadOid from context.activity.from.aadObjectId
-  // 3. Upsert employee record from JWT claims (lightweight — no Graph API)
+  // 3. Call sync_employee MCP tool — upserts employee record from JWT claims (no direct DB)
   // 4. Call get_employee_capabilities MCP tool → RoleCapabilities
   // 5. Return AuthContext
   throw new Error('not implemented')
 }
 ```
 
-No Redis. No Graph API calls. JWT claims only for identity.
+No Redis. No Graph API calls. JWT claims only for identity. No direct DB access — all persistence via MCP tools.
 
 ---
 
 ## `mcp/tool-discovery.ts`
 
+`McpTool` is the tool descriptor returned by the MCP SDK's `list_tools` response.
+Import it from `@modelcontextprotocol/sdk/types.js` as `Tool` and alias locally:
+
 ```typescript
+import type { Tool as McpTool } from '@modelcontextprotocol/sdk/types.js'
+
 // TTL cache: 5 minutes per tenantId
 // 1. Call MCP list_tools
 // 2. Filter: only tools where annotations.requiredCapability is empty
@@ -220,8 +248,29 @@ app.post('/proactive', async (req, res) => {
 
 ## `buildWelcomeMessage`
 
-Returns a plain-text welcome string listing what the bot can help with. Does not
-hardcode capability names — generates the list from the available tools description strings.
+Returns a static plain-text welcome string. At `MembersAdded` time there is no
+authenticated user context, so tool discovery cannot run. The message explains the
+bot's purpose without listing specific capabilities.
+
+```typescript
+export function buildWelcomeMessage(): string {
+  return 'Hello! I can help you manage certifications and HR tasks. ' +
+    'Send me a message or upload a certificate document to get started.'
+}
+```
+
+---
+
+## Required Environment Variables
+
+| Variable | Purpose |
+|---|---|
+| `BOT_APP_ID` | Microsoft App ID for the bot registration |
+| `BOT_APP_PASSWORD` | Microsoft App password / client secret |
+| `MCP_SERVER_URL` | Base URL of the hr-service MCP server |
+| `LITELLM_BASE_URL` | LiteLLM proxy base URL |
+| `LITELLM_VIRTUAL_KEY` | Default virtual key (overridden per-tenant via `get_tenant_channel_config`) |
+| `OBJECT_STORE_BUCKET` | Target bucket/container for uploaded files |
 
 ---
 
@@ -230,7 +279,7 @@ hardcode capability names — generates the list from the available tools descri
 1. Bot never imports from `@cip/hr-service` — MCP only
 2. No `switch (intent)` — tool selection is entirely the LLM's job
 3. No channel IDs, team IDs, or role names hardcoded in the bot
-4. `resolveAuthContext` calls `get_employee_capabilities` MCP tool — no direct DB
+4. `resolveAuthContext` calls `sync_employee` then `get_employee_capabilities` MCP tools — no direct DB
 5. `POST /proactive` is the only way the bot sends unsolicited messages
 
 ---

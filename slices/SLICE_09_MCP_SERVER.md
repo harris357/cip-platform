@@ -12,28 +12,34 @@
 packages/hr-service/src/
   mcp-server/
     index.ts                              ← server setup, registers all tools
+    auth.ts                               ← extractAuthContext(authInfo) helper
   modules/
     certifications/
       mcp-tools/
-        get-my-certifications.ts
+        index.ts                          ← registerCertificationTools(server)
+        get-my-certifications.ts          ← export registerGetMyCertifications(server)
         get-submission-status.ts
         process-document.ts
         resolve-hitl.ts
         cards/
           certifications-card.ts
           submission-status-card.ts
+          processing-ack-card.ts          ← ack card for document intake
           hitl-card.ts
     employees/
       mcp-tools/
+        index.ts                          ← registerEmployeeTools(server)
         list-staff.ts
         get-employee-capabilities.ts
+        sync-employee.ts                  ← upsert employee record from JWT claims
         cards/
           staff-card.ts
     compliance/
       mcp-tools/
-        (stubs — implemented in Slice 16)
+        index.ts                          ← registerComplianceTools(server) — stubs for Slice 16
     settings/
       mcp-tools/
+        index.ts                          ← registerSettingsTools(server)
         get-tenant-channel-config.ts
 ```
 
@@ -45,6 +51,32 @@ packages/hr-service/src/
 2. **Every tool returns `McpModuleResponse`** — `{ data, card?, message? }`
 3. **Every tool declares `requiredCapability`** — bot uses this to filter tools per user
 4. **Card builders live in `cards/`** alongside their tools — not in the bot
+5. **Each module has an `mcp-tools/index.ts`** that aggregates `register*` calls — `mcp-server/index.ts` calls only the module aggregators, never individual tools directly
+
+---
+
+## `mcp-server/auth.ts` — `extractAuthContext`
+
+Every tool calls this helper to pull identity from the MCP auth token:
+
+```typescript
+import type { RoleCapabilities } from '@cip/shared'
+
+export interface McpAuthContext {
+  tenantId: string
+  employeeId: string
+  roles: string[]
+}
+
+export function extractAuthContext(authInfo: { token: string }): McpAuthContext {
+  // Parse JWT from authInfo.token
+  // Extract: tenantId (claim), sub (employeeId), roles (claim array)
+  // Throws if any required claim is missing
+  throw new Error('not implemented')
+}
+```
+
+This is the single place JWT claims are parsed in the MCP server. All tools import from here.
 
 ---
 
@@ -119,6 +151,7 @@ export function registerGetMyCertifications(server: McpServer) {
 |---|---|---|
 | `list_staff` | `viewTeamCerts` | List employees (respects capability scope) |
 | `get_employee_capabilities` | none | Returns caller's RoleCapabilities (called by bot on connect) |
+| `sync_employee` | none | Upserts employee record from JWT claims (called by bot on each message) |
 
 ### Settings module
 

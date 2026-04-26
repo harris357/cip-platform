@@ -48,8 +48,9 @@ Employee onboarding workflow and its activities are in Slice 15.
       (activities from Slice 14 — stubs that throw 'not implemented' here)
 
 5. if extraction.confidence < 0.85 OR either match.confidence < 0.7:
-     notifyHitl(tenantId, submissionId, hitlReasonCode)
+     notifyHitl(tenantId, submissionId, hitlReasonCode: HitlReasonCode)
      wait for HITLDecisionSignal (up to 7 days)
+     // HitlReasonCode imported from registries.ts in @cip/hr-service
 
 6. persistCert(tenantId, submissionId, extraction, matchedEmployeeId, certDefId)
       → certificationId: string
