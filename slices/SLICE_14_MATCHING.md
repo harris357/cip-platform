@@ -49,6 +49,9 @@ export async function matchEmployeeActivity(input: {
   submissionId: string
   extraction: ExtractionResult
 }): Promise<EmployeeMatchResult> {
+  const virtualKey = process.env['LITELLM_VIRTUAL_KEY']
+  if (!virtualKey) throw new Error('LITELLM_VIRTUAL_KEY env var is required')
+  // createLiteLLMClient({ tenantId: input.tenantId, virtualKey }) — used only in Pass 3
   // ... three passes
   // Zod-validate result before returning
   return EmployeeMatchResultSchema.parse(result)
@@ -101,6 +104,9 @@ export async function matchCertDefinitionActivity(input: {
   submissionId: string
   extraction: ExtractionResult
 }): Promise<CertDefMatchResult> {
+  const virtualKey = process.env['LITELLM_VIRTUAL_KEY']
+  if (!virtualKey) throw new Error('LITELLM_VIRTUAL_KEY env var is required')
+  // createLiteLLMClient({ tenantId: input.tenantId, virtualKey }) — used only in Pass 2
   // ... two passes
   return CertDefMatchResultSchema.parse(result)
 }
@@ -128,12 +134,23 @@ export const CertDefMatchResultSchema = z.object({
 
 ---
 
+## Required Environment Variables
+
+| Variable | Purpose |
+|---|---|
+| `LITELLM_VIRTUAL_KEY` | Virtual key for LiteLLM proxy — required, no fallback |
+| `LITELLM_BASE_URL` | LiteLLM proxy base URL |
+| `DATABASE_URL_HR` | HR service Postgres connection string (via `getDb()`) |
+
+---
+
 ## Hard Rules
 
 1. Both activities Zod-validate their return value before returning — they are Temporal Activities
 2. LLM calls use `cip-lightweight` alias via `createLiteLLMClient()` — never a raw model string
 3. `tenantId` never appears in LLM prompts — only anonymised candidate lists
 4. DB lookups use `withTenantRLS(db, tenantId, ...)` — never raw queries
+5. `LITELLM_VIRTUAL_KEY` is checked at activity start — throw immediately if missing
 
 ---
 

@@ -118,6 +118,21 @@ export async function publishEmployeeOnboardedActivity(input: {
 
 ---
 
+## Required Environment Variables
+
+| Variable | Purpose |
+|---|---|
+| `KEYCLOAK_BASE_URL` | Keycloak base URL (e.g. `https://auth.example.com`) |
+| `KEYCLOAK_ADMIN_CLIENT_ID` | Admin client ID for Keycloak API calls |
+| `KEYCLOAK_ADMIN_CLIENT_SECRET` | Admin client secret |
+| `DATABASE_URL_HR` | HR Postgres connection string (via `getDb()`) |
+| `NATS_URL` | NATS connection URL (via `getNatsConnection()`) |
+| `TEMPORAL_TASK_QUEUE_HR` | HR task queue — read in `temporal-worker.ts` |
+
+Keycloak env vars are read only inside the activity worker — not inside Temporal workflow code.
+
+---
+
 ## Acceptance Criteria
 
 - [ ] Workflow ID follows `{workflowType}-{tenantId}-{entityId}` with comment

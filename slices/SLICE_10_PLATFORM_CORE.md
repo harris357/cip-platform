@@ -100,6 +100,23 @@ router.post('/tenants', async (req, res) => {
 
 ---
 
+## Required Environment Variables
+
+| Variable | Purpose |
+|---|---|
+| `TEMPORAL_ADDRESS` | Temporal frontend address — read by `createTemporalClient()` |
+| `TEMPORAL_NAMESPACE` | Temporal namespace (default: `default`) |
+| `TEMPORAL_TASK_QUEUE_PLATFORM` | Platform workflow task queue (fallback: `cip-platform-tasks`) |
+| `DATABASE_URL_PLATFORM` | Platform Postgres connection string |
+| `KEYCLOAK_BASE_URL` | Keycloak base URL for realm provisioning |
+| `KEYCLOAK_ADMIN_CLIENT_ID` | Keycloak admin client ID |
+| `KEYCLOAK_ADMIN_CLIENT_SECRET` | Keycloak admin client secret |
+| `LITELLM_BASE_URL` | LiteLLM proxy base URL — used by `issueLiteLLMVirtualKey` |
+| `LITELLM_ADMIN_KEY` | LiteLLM admin key for issuing virtual keys |
+| `NATS_URL` | NATS connection URL — used by `createNatsStreams` |
+
+---
+
 ## Acceptance Criteria
 
 - [ ] All 7 activities are stubs throwing `new Error('not implemented')` except where noted

@@ -59,9 +59,11 @@ import { createLiteLLMClient } from '@cip/shared'
 import { ExtractionResultSchema } from '@cip/shared'
 
 export async function extractFields(state: typeof VisionAgentAnnotation.State) {
+  const virtualKey = process.env['LITELLM_VIRTUAL_KEY']
+  if (!virtualKey) throw new Error('LITELLM_VIRTUAL_KEY env var is required')
   const client = createLiteLLMClient({
     tenantId:   state.tenantId,
-    virtualKey: process.env['LITELLM_VIRTUAL_KEY'] ?? '',
+    virtualKey,
   })
 
   const response = await client.chat.completions.create({
@@ -99,6 +101,19 @@ issueDate (YYYY-MM-DD), expiryDate (YYYY-MM-DD), certNumber.
 If a field is not present, omit it. Do not guess.
 `
 ```
+
+---
+
+## Required Environment Variables
+
+| Variable | Purpose |
+|---|---|
+| `LITELLM_VIRTUAL_KEY` | Virtual key for LiteLLM proxy — required, no fallback |
+| `LITELLM_BASE_URL` | LiteLLM proxy base URL |
+
+> Note: `LITELLM_VIRTUAL_KEY` is a service-level key used by all tenants in this deployment.
+> Per-tenant key isolation is tracked in `CROSS_SLICE_NOTES.md` as a future improvement
+> (requires adding `litellm_virtual_key` to `tenant_settings`).
 
 ---
 

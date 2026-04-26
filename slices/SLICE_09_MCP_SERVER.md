@@ -195,10 +195,17 @@ Triggers `CertificationProcessingWorkflow`. Does not wait for completion.
 async ({ objectStoreKey }, { authInfo }) => {
   const { tenantId, employeeId } = extractAuthContext(authInfo)
   const submissionId = randomUUID()
-  // Insert cert_submission row
+  const db = getDb()
+  // Insert cert_submission row via withTenantRLS
   // Start Temporal workflow
+  const temporalClient = await createTemporalClient()
   // Workflow ID pattern: {workflowType}-{tenantId}-{entityId}
   const workflowId = `CertProcess-${tenantId}-${submissionId}`
+  await temporalClient.workflow.start(certificationProcessingWorkflow, {
+    workflowId,
+    taskQueue: process.env['TEMPORAL_TASK_QUEUE_HR'] ?? 'cip-hr-tasks',
+    args: [{ tenantId, submissionId, employeeId, objectStoreKey }],
+  })
   // ...
   const response: McpModuleResponse = {
     data: { submissionId, workflowId },
@@ -208,6 +215,41 @@ async ({ objectStoreKey }, { authInfo }) => {
   return { content: [{ type: 'text', text: JSON.stringify(response) }] }
 }
 ```
+
+---
+
+## `sync_employee` Tool
+
+Called by the Teams Bot on every incoming message before `get_employee_capabilities`.
+Upserts the employee record from JWT claims — the bot's only write path into hr-service.
+
+```typescript
+// modules/employees/mcp-tools/sync-employee.ts
+// Input: none (all identity from JWT)
+// Output: McpModuleResponse<{ employeeId: string }>
+async (_args, { authInfo }) => {
+  const { tenantId, employeeId } = extractAuthContext(authInfo)
+  // Upsert employees row from JWT claims (email, fullName, aadOid, identityType)
+  // Uses ON CONFLICT (tenant_id, email) DO UPDATE
+  const db = getDb()
+  await withTenantRLS(db, tenantId, (tx) => upsertEmployee(tx, authInfo))
+  const response: McpModuleResponse<{ employeeId: string }> = {
+    data: { employeeId },
+  }
+  return { content: [{ type: 'text', text: JSON.stringify(response) }] }
+}
+```
+
+---
+
+## Required Environment Variables
+
+| Variable | Purpose |
+|---|---|
+| `DATABASE_URL_HR` | HR service Postgres connection string (via `getDb()`) |
+| `TEMPORAL_ADDRESS` | Temporal frontend address (via `createTemporalClient()`) |
+| `TEMPORAL_TASK_QUEUE_HR` | Task queue for cert processing workflows (fallback: `cip-hr-tasks`) |
+| `MCP_PORT` | Port the MCP server listens on (default: `3001`) |
 
 ---
 
