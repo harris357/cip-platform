@@ -1,0 +1,30 @@
+replicaCount: 1
+
+image:
+  repository: langfuse/langfuse
+  tag: "3"
+  pullPolicy: IfNotPresent
+
+service:
+  type: ClusterIP
+  port: 3000
+
+resources:
+  requests:
+    memory: 256Mi
+    cpu: 100m
+
+env:
+  NEXTAUTH_URL: http://langfuse.cip-app.svc.cluster.local:3000
+  LANGFUSE_DEFAULT_ORG_NAME: cip-dev
+  LANGFUSE_DEFAULT_PROJECT_NAME: cip
+
+# Credentials injected from langfuse-credentials K8s Secret (created by create-secrets.sh)
+envFrom:
+  - secretRef:
+      name: langfuse-credentials
+
+ingress:
+  enabled: true
+  host: langfuse.dev.cip.idlevice.ca
+  tls: true

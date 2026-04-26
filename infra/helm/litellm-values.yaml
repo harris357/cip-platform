@@ -1,0 +1,3 @@
+# Override values for the litellm chart in the dev environment.
+# Base values are in infra/helm/litellm/values.yaml.
+# No overrides needed for dev — secrets come from litellm-credentials K8s Secret.

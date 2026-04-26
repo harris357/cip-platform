@@ -1,16 +1,12 @@
-# TODO: Bootstrap Terraform remote state bucket on OVH Object Store
-# This file is applied manually before any other Terraform operations.
-# After creating the bucket, configure the backend in providers.tf:
+# Bootstrap: Terraform remote state bucket on OVH Object Store (S3-compatible).
 #
-# terraform {
-#   backend "s3" {
-#     bucket                      = "cip-tfstate"
-#     key                         = "bootstrap/terraform.tfstate"
-#     region                      = "BHS"
-#     endpoint                    = "https://s3.bhs.io.cloud.ovh.net"
-#     skip_credentials_validation = true
-#     skip_metadata_api_check     = true
-#     skip_region_validation      = true
-#     force_path_style            = true
-#   }
-# }
+# Apply order:
+#   1. terraform apply          — creates bucket with LOCAL state
+#   2. Uncomment the backend block in providers.tf
+#   3. terraform init -migrate-state  — moves state into the new bucket
+
+resource "ovh_cloud_project_container" "tfstate" {
+  service_name = var.ovh_cloud_project_service
+  region_name  = var.region
+  name         = "cip-tfstate"
+}

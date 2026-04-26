@@ -8,18 +8,41 @@
 # ── Daily cycle ──────────────────────────────────────────────────────────────
 
 start:        ## Morning startup — scale node to 1, deploy all Helm charts
-	@pnpm --filter @cip/infra tsx src/start.ts
+	@pnpm --filter @cip/infra run start
 
 stop:         ## Evening shutdown — destroy Helm releases, scale node to 0
-	@pnpm --filter @cip/infra tsx src/stop.ts
+	@pnpm --filter @cip/infra run stop
 
 # ── First time only ──────────────────────────────────────────────────────────
 
-bootstrap-infra: ## One-time: provision OVH cluster, PVCs, Object Store, DNS via Terraform
-	@bash scripts/bootstrap.sh
+bootstrap-infra: ## One-time: Terraform — OVH cluster, node pool, PVCs, infra Helm charts, K8s secrets
+	@bash scripts/bootstrap-infra.sh
 
 bootstrap:    ## One-time: NATS streams, Keycloak realm, DB migrations, LiteLLM virtual key
 	@bash scripts/bootstrap.sh
+
+get-lb-ip:    ## Print the OVH Floating IP assigned to ingress-nginx
+	@kubectl get svc -n ingress-nginx ingress-nginx-controller \
+		-o jsonpath='{.status.loadBalancer.ingress[0].ip}{"\n"}' 2>/dev/null \
+		|| echo "No IP yet — ingress-nginx LoadBalancer may still be provisioning"
+
+configure-dns: ## Create/update Cloudflare A records pointing to the OVH LB IP
+	@bash scripts/configure-dns.sh
+
+configure-tls: ## Apply cert-manager ClusterIssuer (Let's Encrypt + Cloudflare DNS-01)
+	@bash scripts/configure-tls.sh
+
+dry-run:      ## Validate full provisioning without applying changes
+	@bash scripts/dry-run.sh
+
+smoke-test:   ## Post-deployment health check — run after 'make start'
+	@bash scripts/smoke-test.sh
+
+cycle-test:   ## Full cycle: start → smoke-test → stop (daily ops verification)
+	@bash scripts/cycle-test.sh
+
+cycle-test-reprovision: ## Full cycle with Terraform reprovision (infra charts destroyed and recreated)
+	@bash scripts/cycle-test.sh --reprovision
 
 create-secrets: ## Recreate all K8s secrets from .envrc (after cluster recreation)
 	@bash scripts/create-secrets.sh

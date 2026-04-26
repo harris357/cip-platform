@@ -14,7 +14,20 @@ terraform {
       version = "~> 2.12"
     }
   }
-  # TODO: configure remote state backend (see state-bucket.tf)
+  # Uncomment after running `terraform apply` once to create the cip-tfstate bucket,
+  # then run `terraform init -migrate-state` to move state into OVH Object Store.
+  # Credentials: set AWS_ACCESS_KEY_ID=$OVH_S3_ACCESS_KEY, AWS_SECRET_ACCESS_KEY=$OVH_S3_SECRET_KEY
+  #
+  # backend "s3" {
+  #   bucket                      = "cip-tfstate"
+  #   key                         = "bootstrap/terraform.tfstate"
+  #   region                      = "BHS"
+  #   endpoint                    = var.ovh_s3_endpoint   # set via TF_VAR_ovh_s3_endpoint or -backend-config
+  #   skip_credentials_validation = true
+  #   skip_metadata_api_check     = true
+  #   skip_region_validation      = true
+  #   force_path_style            = true
+  # }
 }
 
 provider "ovh" {

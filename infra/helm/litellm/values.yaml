@@ -1,0 +1,59 @@
+replicaCount: 1
+
+image:
+  repository: ghcr.io/berriai/litellm
+  tag: main-stable
+  pullPolicy: IfNotPresent
+
+service:
+  type: ClusterIP
+  port: 4000
+
+resources:
+  requests:
+    memory: 256Mi
+    cpu: 100m
+
+# Credentials injected from litellm-credentials K8s Secret (created by create-secrets.sh)
+envFrom:
+  - secretRef:
+      name: litellm-credentials
+
+configMapName: litellm-config
+
+# LiteLLM proxy config — secrets injected at runtime via litellm-credentials Secret (os.environ/ prefix)
+config: |
+  model_list:
+    - model_name: cip-vision
+      litellm_params:
+        model: anthropic/claude-sonnet-4-20250514
+        api_key: os.environ/ANTHROPIC_API_KEY
+
+    - model_name: cip-chat
+      litellm_params:
+        model: anthropic/claude-sonnet-4-20250514
+        api_key: os.environ/ANTHROPIC_API_KEY
+
+    - model_name: cip-lightweight
+      litellm_params:
+        model: anthropic/claude-haiku-4-5-20251001
+        api_key: os.environ/ANTHROPIC_API_KEY
+
+    - model_name: cip-reasoning
+      litellm_params:
+        model: anthropic/claude-opus-4-6
+        api_key: os.environ/ANTHROPIC_API_KEY
+
+  general_settings:
+    master_key: os.environ/LITELLM_MASTER_KEY
+    database_url: os.environ/LITELLM_DATABASE_URL
+
+  litellm_settings:
+    success_callback: ["langfuse"]
+    failure_callback: ["langfuse"]
+    langfuse_public_key: os.environ/LANGFUSE_PUBLIC_KEY
+    langfuse_secret_key: os.environ/LANGFUSE_SECRET_KEY
+    langfuse_host: os.environ/LANGFUSE_HOST
+    drop_params: true
+    max_budget: 50
+    budget_duration: "30d"

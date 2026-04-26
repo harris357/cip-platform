@@ -1,0 +1,16 @@
+# ingress-nginx — OVH Managed Kubernetes
+# controller.service.type=LoadBalancer causes OVH to provision a Floating IP.
+# After 'terraform apply', run 'make get-lb-ip' to retrieve it.
+controller:
+  service:
+    type: LoadBalancer
+    externalTrafficPolicy: Local     # preserves real client IP
+  config:
+    use-forwarded-headers: "true"    # trust X-Forwarded-For from Cloudflare
+    proxy-real-ip-cidr: "0.0.0.0/0"
+    ssl-redirect: "true"
+    hsts: "true"
+  resources:
+    requests:
+      memory: 128Mi
+      cpu: 50m

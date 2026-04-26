@@ -1,0 +1,63 @@
+# Langfuse self-hosted values — used when LANGFUSE_SELF_HOSTED=true
+# Chart: langfuse/langfuse (official, from https://langfuse.com/helm)
+# Bundles ClickHouse + Redis. Uses external PostgreSQL from cip-infra.
+
+langfuse:
+  nextauth:
+    # Must match the public URL of Langfuse (set in DNS / ingress)
+    url: "https://langfuse.dev.cip.idlevice.ca"
+    # NEXTAUTH_SECRET — injected from langfuse-credentials secret
+    existingSecret: langfuse-self-hosted-credentials
+    existingSecretKey: NEXTAUTH_SECRET
+  # SALT for password hashing — injected from same secret
+  encryptionKey:
+    existingSecret: langfuse-self-hosted-credentials
+    existingSecretKey: SALT
+
+  ingress:
+    enabled: true
+    className: nginx
+    annotations:
+      cert-manager.io/cluster-issuer: letsencrypt-prod
+    hosts:
+      - host: langfuse.dev.cip.idlevice.ca
+        paths:
+          - path: /
+            pathType: Prefix
+    tls:
+      - secretName: langfuse-tls
+        hosts:
+          - langfuse.dev.cip.idlevice.ca
+
+# External PostgreSQL — reuse cip-infra postgres
+postgresql:
+  deploy: false
+
+externalPostgresql:
+  host: postgres-postgresql.cip-infra.svc.cluster.local
+  port: 5432
+  database: langfuse
+  username: cipuser
+  # Password from existing secret
+  existingSecret: langfuse-self-hosted-credentials
+  existingSecretPasswordKey: POSTGRES_PASSWORD
+
+# Bundled ClickHouse (required for Langfuse v3)
+clickhouse:
+  enabled: true
+  auth:
+    username: langfuse
+    existingSecret: langfuse-self-hosted-credentials
+    existingSecretPasswordKey: CLICKHOUSE_PASSWORD
+
+# Bundled Redis (for background job queue)
+redis:
+  enabled: true
+  auth:
+    existingSecret: langfuse-self-hosted-credentials
+    existingSecretPasswordKey: REDIS_PASSWORD
+
+resources:
+  requests:
+    memory: 512Mi
+    cpu: 200m

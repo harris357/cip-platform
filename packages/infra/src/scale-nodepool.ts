@@ -1,6 +1,6 @@
 import type { OvhClient } from './ovh-client.js';
 
-const PROJECT_ID = process.env['OVH_CLOUD_PROJECT_SERVICE'] ?? '';
+const PROJECT_ID = process.env['OVH_PROJECT_ID'] ?? '';
 const CLUSTER_ID  = process.env['OVH_CLUSTER_ID'] ?? '';
 const POOL_ID     = process.env['OVH_NODEPOOL_ID'] ?? '';
 
@@ -14,7 +14,7 @@ function sleep(ms: number): Promise<void> {
 export async function scaleNodepool(client: OvhClient, targetSize: number): Promise<void> {
   if (!PROJECT_ID || !CLUSTER_ID || !POOL_ID) {
     throw new Error(
-      'Missing OVH env vars: OVH_CLOUD_PROJECT_SERVICE, OVH_CLUSTER_ID, OVH_NODEPOOL_ID',
+      'Missing OVH env vars: OVH_PROJECT_ID, OVH_CLUSTER_ID, OVH_NODEPOOL_ID',
     );
   }
 

@@ -1,22 +1,5 @@
 # Module: ovh-cluster
-# Provisions a managed Kubernetes cluster on OVH Public Cloud (Managed Kubernetes Service).
-#
-# Resources this module will implement (stubs — not yet created):
-#
-#   ovh_cloud_project_kube — the managed K8s cluster
-#     - region: var.region
-#     - version: var.kubernetes_version
-#     - name: var.cluster_name
-#
-#   ovh_cloud_project_kube_nodepool — the default worker node pool
-#     - cluster_id: ovh_cloud_project_kube.cluster.id
-#     - flavor_name: var.node_flavor (e.g. "b3-8")
-#     - desired_nodes: var.desired_nodes
-#     - min_nodes: var.min_nodes
-#     - max_nodes: var.max_nodes
-#     - autoscale: true
-#
-# Outputs: cluster_id, kubeconfig (sensitive)
+# Provisions a managed Kubernetes cluster + default node pool on OVH Public Cloud.
 
 terraform {
   required_providers {
@@ -27,5 +10,31 @@ terraform {
   }
 }
 
-# TODO: implement ovh_cloud_project_kube resource
-# TODO: implement ovh_cloud_project_kube_nodepool resource
+resource "ovh_cloud_project_kube" "cluster" {
+  service_name = var.cloud_project_service
+  name         = var.cluster_name
+  region       = var.region
+  version      = var.kubernetes_version
+}
+
+resource "ovh_cloud_project_kube_nodepool" "default" {
+  service_name  = var.cloud_project_service
+  kube_id       = ovh_cloud_project_kube.cluster.id
+  name          = "${var.cluster_name}-default"
+  flavor_name   = var.node_flavor
+  desired_nodes = var.desired_nodes
+  min_nodes     = var.min_nodes
+  max_nodes     = var.max_nodes
+  autoscale     = true
+}
+
+output "cluster_id" {
+  description = "OVH cluster ID"
+  value       = ovh_cloud_project_kube.cluster.id
+}
+
+output "kubeconfig" {
+  description = "Kubeconfig for the provisioned cluster"
+  value       = ovh_cloud_project_kube.cluster.kubeconfig
+  sensitive   = true
+}
