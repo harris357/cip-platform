@@ -1,5 +1,3 @@
-resource "ovh_cloud_project_container" "cip_certs" {
-  service_name = var.ovh_cloud_project_service
-  region_name  = var.region
-  name         = "cip-certs"
-}
+# OVH Object Store bucket for certs/assets.
+# Requires the OpenStack provider — deferred until object storage is needed.
+# To enable: add openstack provider, use openstack_objectstorage_container_v1.

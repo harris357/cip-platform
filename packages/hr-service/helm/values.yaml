@@ -1,9 +1,9 @@
 replicaCount: 1
 
 image:
-  repository: ghcr.io/YOUR_ORG/hr-service
+  repository: ghcr.io/idlevice/hr-service
   tag: dev
-  pullPolicy: IfNotPresent
+  pullPolicy: Always
 
 service:
   type: ClusterIP

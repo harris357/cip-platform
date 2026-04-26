@@ -68,8 +68,8 @@ logs:         ## Tail logs from a service. Usage: make logs svc=hr-service
 	@kubectl logs -f -n cip-app -l app=$(svc) --tail=100
 
 deploy:       ## Build + push + rollout restart. Usage: make deploy svc=hr-service
-	@docker build -t ghcr.io/YOUR_ORG/$(svc):dev ./packages/$(svc)
-	@docker push ghcr.io/YOUR_ORG/$(svc):dev
+	@docker build -t ghcr.io/idlevice/$(svc):dev ./packages/$(svc)
+	@docker push ghcr.io/idlevice/$(svc):dev
 	@kubectl rollout restart deployment/$(svc) -n cip-app
 
 verify:       ## End-to-end health check (kubectl, secrets, S3, Temporal, Langfuse, Cloudflare)

@@ -1,9 +1,9 @@
 replicaCount: 1
 
 image:
-  repository: ghcr.io/YOUR_ORG/teams-bot
+  repository: ghcr.io/idlevice/teams-bot
   tag: dev
-  pullPolicy: IfNotPresent
+  pullPolicy: Always
 
 service:
   type: ClusterIP
@@ -18,3 +18,8 @@ env:
 envFrom:
   - secretRef:
       name: teams-bot-credentials
+
+ingress:
+  enabled: true
+  host: bot.dev.cip.idlevice.ca   # set as BOT_MESSAGING_ENDPOINT in Azure bot registration
+  tls: true

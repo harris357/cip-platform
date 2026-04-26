@@ -14,6 +14,15 @@ export TF_VAR_ovh_application_secret="$OVH_APP_SECRET"
 export TF_VAR_ovh_consumer_key="$OVH_CONSUMER_KEY"
 export TF_VAR_ovh_cloud_project_service="$OVH_PROJECT_ID"
 
+# Private network UUID — OVH Console → Public Cloud → Network → Private Networks → Network ID column
+if [[ -z "${OVH_PRIVATE_NETWORK_ID:-}" ]]; then
+  echo "ERROR: OVH_PRIVATE_NETWORK_ID is not set."
+  echo "  Find it: OVH Console → Public Cloud → Network → Private Networks → Network ID column"
+  echo "  Then add to .envrc: export OVH_PRIVATE_NETWORK_ID=<uuid>"
+  exit 1
+fi
+export TF_VAR_private_network_id="$OVH_PRIVATE_NETWORK_ID"
+
 # ── Step 1: bootstrap/ — provision OVH cluster + Object Store buckets ────────
 echo ""
 echo "[1/4] Terraform bootstrap/ — cluster + object store buckets..."

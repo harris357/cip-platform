@@ -653,6 +653,42 @@ Commit with: git commit -m "slice(cross): resolve cross-slice notes CS-NNN, CS-N
 
 ---
 
+## PROMPT — App Service Images & CI Pipeline
+
+```
+You are working on the CIP Platform TypeScript monorepo.
+
+Your task for this session is SLICE APP-IMAGES: wire the three application
+services (hr-service, platform-core, teams-bot) so they build, push, and
+deploy to the cluster.
+
+Read before writing:
+- slices/SLICE_APP_IMAGES.md (full requirements, acceptance criteria, hard rules)
+
+Create or modify ONLY these files:
+- .github/workflows/build-images.yml     ← NEW
+- packages/hr-service/helm/values.yaml   ← replace YOUR_ORG
+- packages/platform-core/helm/values.yaml ← replace YOUR_ORG
+- packages/teams-bot/helm/values.yaml    ← replace YOUR_ORG
+- packages/infra/src/start.ts            ← restore three services to APP_CHARTS
+- packages/infra/src/stop.ts             ← restore three services to APP_RELEASES
+- Makefile                               ← replace YOUR_ORG in deploy target
+
+Hard rules:
+1. Do not modify any Dockerfile
+2. Use GITHUB_TOKEN for registry auth — no PAT or CR_PAT secret
+3. pullPolicy: Always for the dev tag
+4. After restoring services to start.ts, typecheck must pass
+
+After making all changes:
+1. pnpm --filter @cip/infra typecheck
+2. bash -n .github/workflows/build-images.yml || echo "YAML — no bash check needed"
+
+Report the typecheck output. Fix any errors before finishing.
+```
+
+---
+
 ## PROMPT — Full Typecheck (run after all slices)
 
 ```

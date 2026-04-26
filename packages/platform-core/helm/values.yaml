@@ -1,9 +1,9 @@
 replicaCount: 1
 
 image:
-  repository: ghcr.io/YOUR_ORG/platform-core
+  repository: ghcr.io/idlevice/platform-core
   tag: dev
-  pullPolicy: IfNotPresent
+  pullPolicy: Always
 
 service:
   type: ClusterIP
@@ -19,3 +19,8 @@ env:
 envFrom:
   - secretRef:
       name: platform-core-credentials
+
+ingress:
+  enabled: true
+  host: api.dev.cip.idlevice.ca
+  tls: true
