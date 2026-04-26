@@ -1,82 +1,26 @@
 import { z } from 'zod';
 
-export interface AgentState {
-  tenantId: string;       // REQUIRED on every agent state
-  runId: string;
-  startedAt: string;      // ISO 8601
-  completedAt?: string;   // ISO 8601
-  error?: string;
-}
-
-export interface VisionAgentState extends AgentState {
-  certId: string;
-  userId: string;
-  documentUrl: string;
-  documentBase64?: string;
-  extraction?: ExtractionResult;
-  requiresHitl: boolean;
-  hitlResolution?: HitlResolution;
-}
-
-export interface HitlResolution {
-  reviewedBy: string;
-  resolvedAt: string;     // ISO 8601
-  approved: boolean;
-  corrections?: Record<string, string>;
-}
-
-export interface IntentResult {
-  intent: 'UPLOAD_CERT' | 'QUERY_COMPLIANCE' | 'RESPOND_HITL' | 'UNKNOWN';
-  confidence: number;
-  entities: Record<string, string>;
-  tenantId: string;       // REQUIRED
-}
-
-// Zod schemas — re-exported by utils/zod-schemas.ts
+// ExtractionResult is a cross-service contract: hr-service produces it, teams-bot consumes it for HITL cards.
 export const ExtractionResultSchema = z.object({
-  tenantId: z.string().uuid(),
-  certType: z.string(),
-  extractedFields: z.record(z.object({
-    value: z.string().nullable(),
-    confidence: z.number().min(0).max(1),
-    requiresReview: z.boolean(),
-  })),
+  tenantId:          z.string().uuid(),
+  certType:          z.string(),
+  extractedFields:   z.record(z.unknown()),
   overallConfidence: z.number().min(0).max(1),
-  requiresHITL: z.boolean(),
-  hitlReason: z.string().optional(),
-  promptVersion: z.string(),
-  modelUsed: z.string(),
-  tokensUsed: z.number(),
-  costUsd: z.number(),
+  requiresHITL:      z.boolean(),
+  promptVersion:     z.string(),
+  modelUsed:         z.string(),
+  tokensUsed:        z.number().int().nonnegative(),
+  costUsd:           z.number().nonnegative(),
 });
 
 export type ExtractionResult = z.infer<typeof ExtractionResultSchema>;
 
+// IntentResult is produced by the bot's intent-router and consumed by bot handlers.
 export const IntentResultSchema = z.object({
-  intent: z.enum([
-    'cert_upload',
-    'compliance_query',
-    'worker_lookup',
-    'status_check',
-    'escalation',
-    'unknown',
-  ]),
+  intent:     z.enum(['UPLOAD_CERT', 'QUERY_COMPLIANCE', 'RESPOND_HITL', 'UNKNOWN']),
   confidence: z.number().min(0).max(1),
-  entities: z.record(z.string()).optional(),
-  rawMessage: z.string(),
+  entities:   z.record(z.string()),
+  tenantId:   z.string(),
 });
 
-export const ComplianceResultSchema = z.object({
-  workerId: z.string(),
-  siteId: z.string(),
-  isCompliant: z.boolean(),
-  blockingGaps: z.array(z.object({
-    certType: z.string(),
-    reason: z.string(),
-    severity: z.enum(['blocking', 'warning']),
-    remediation: z.string(),
-  })),
-  requiresHITL: z.boolean(),
-  assessedAt: z.string().datetime(),
-  modelUsed: z.string(),
-});
+export type IntentResult = z.infer<typeof IntentResultSchema>;

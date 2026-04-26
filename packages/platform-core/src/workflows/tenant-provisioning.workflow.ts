@@ -38,15 +38,15 @@ export async function TenantProvisioningWorkflow(
   // Step 4: Create OVH Object Store buckets for tenant
   await createObjectStoreBuckets({ tenantId: input.tenantId });
 
-  // Step 5: Initialise tenant schema in PostgreSQL (run migrations)
-  await initTenantDatabase({ tenantId: input.tenantId });
-
-  // Step 6: Issue LiteLLM virtual key with tier-appropriate budget
+  // Step 5: Issue LiteLLM virtual key with tier-appropriate budget
   const litellmVirtualKey = await issueLiteLLMVirtualKey({
     tenantId: input.tenantId,
     tier: input.tier,
     budgetLimitUsd: input.budgetLimitUsd,
   });
+
+  // Step 6: Initialise tenant schema in PostgreSQL (run migrations) and store virtual key
+  await initTenantDatabase({ tenantId: input.tenantId, litellmVirtualKey });
 
   // Step 7: Publish tenantProvisioned NATS event + notify admin
   await provisionCompleteNotify({

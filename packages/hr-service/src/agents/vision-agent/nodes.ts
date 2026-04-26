@@ -1,3 +1,4 @@
+import { createPool, withTenantRLS } from '@cip/shared/src/clients/postgres.js';
 import { createLiteLLMClient } from '@cip/shared/src/clients/litellm.js';
 import { ExtractionResultSchema } from '@cip/shared/src/types/agent.js';
 import type { ExtractionResult } from '@cip/shared/src/types/agent.js';
@@ -5,6 +6,24 @@ import { VisionAgentAnnotation } from './state.js';
 import { EXTRACTION_PROMPT, PROMPT_VERSION } from './prompts.js';
 
 type AgentState = typeof VisionAgentAnnotation.State;
+
+const pool = createPool(process.env['DATABASE_URL'] ?? '');
+
+async function getTenantVirtualKey(tenantId: string): Promise<string> {
+  const client = await pool.connect();
+  try {
+    return await withTenantRLS(client, tenantId, async (c) => {
+      const res = await c.query<{ litellm_virtual_key: string }>(
+        'SELECT litellm_virtual_key FROM tenant_settings WHERE tenant_id = $1',
+        [tenantId],
+      );
+      if (!res.rows[0]) throw new Error(`No tenant_settings for tenant ${tenantId}`);
+      return res.rows[0].litellm_virtual_key;
+    });
+  } finally {
+    client.release();
+  }
+}
 
 function parseExtractionResponse(
   content: string,
@@ -29,9 +48,10 @@ function parseExtractionResponse(
 export async function extractFields(
   state: AgentState,
 ): Promise<Partial<AgentState>> {
+  const virtualKey = await getTenantVirtualKey(state.tenantId);
   const client = createLiteLLMClient({
     tenantId: state.tenantId,
-    virtualKey: process.env['LITELLM_VIRTUAL_KEY'] ?? '',
+    virtualKey,
   });
 
   const response = await client.chat.completions.create({

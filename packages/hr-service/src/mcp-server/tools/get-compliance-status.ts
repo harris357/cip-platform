@@ -26,7 +26,7 @@ export async function getComplianceStatusHandler(
 
     const now = new Date().toISOString().slice(0, 10);
     const expired = certs
-      .filter((c) => c.status === 'expired' || c.expiryDate < now)
+      .filter((c) => c.status === 'expired' || (c.expiryDate !== null && c.expiryDate < now))
       .map((c) => c.certType);
 
     return {

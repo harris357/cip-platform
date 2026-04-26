@@ -1,62 +1,33 @@
-// Subject pattern: cip.{tenantId}.{domain}.{event}.v{N}
-// Always built via buildSubject() — never as raw strings
-
-import type { CertStatus } from './certification.js';
-
-export interface CertUploadedEvent {
-  tenantId: string;
-  certId: string;
-  workerId: string;
-  documentUrl: string;
-  uploadedBy: string;
-  uploadedAt: string;     // ISO 8601
-}
-
-export interface CertProcessedEvent {
-  tenantId: string;
-  certId: string;
-  status: CertStatus;
-  processedAt: string;    // ISO 8601
-}
-
-export interface CertExpiredEvent {
-  tenantId: string;
-  certId: string;
-  workerId: string;
-  expiredAt: string;      // ISO 8601
-}
-
-export interface ComplianceDriftedEvent {
-  tenantId: string;
-  workerId: string;
-  driftType: 'missing_cert' | 'expired_cert' | 'allocation_mismatch';
-  detectedAt: string;     // ISO 8601
-}
-
+// TenantProvisionedEvent is platform-level — no single service owns tenant lifecycle.
 export interface TenantProvisionedEvent {
   tenantId: string;
   tenantName: string;
-  provisionedAt: string;  // ISO 8601
+  provisionedAt: string;
 }
 
-export interface CertificationUploadedEvent {
-  tenantId: string;
-  workerId: string;
-  certificationId: string;
-  objectStoreKey: string;
-  uploadedBy: string;
-  uploadedAt: string;     // ISO 8601
+// CertUploadedEvent is published by teams-bot and consumed by hr-service.
+export interface CertUploadedEvent {
+  tenantId:    string;
+  certId:      string;
+  workerId:    string;
+  documentUrl: string;
+  uploadedBy:  string;
+  uploadedAt:  string;
 }
 
-export interface WorkerAllocatedToSiteEvent {
-  tenantId: string;
-  workerId: string;
-  siteId: string;
-  allocatedAt: string;    // ISO 8601
+// CertProcessedEvent is published by hr-service after vision-agent completes.
+export interface CertProcessedEvent {
+  tenantId:    string;
+  certId:      string;
+  workerId:    string;
+  status:      string;
+  processedAt: string;
 }
 
-export interface WorkerOnboardedEvent {
-  tenantId: string;
-  workerId: string;
-  onboardedAt: string;    // ISO 8601
+// CertExpiredEvent is published by hr-service nats watcher on expiry detection.
+export interface CertExpiredEvent {
+  tenantId:   string;
+  certId:     string;
+  workerId:   string;
+  expiredAt:  string;
 }

@@ -1,13 +1,11 @@
-// Types
+// Types — platform primitives only
 export * from './types/tenant.js';
-export * from './types/certification.js';
-export * from './types/worker.js';
-// Explicit exports from agent.ts — ExtractionResultSchema and IntentResultSchema
-// are intentionally omitted here; the canonical versions (with tenantId) live in utils/zod-schemas.ts
-export type { AgentState, VisionAgentState, HitlResolution, IntentResult, ExtractionResult } from './types/agent.js';
-export { ComplianceResultSchema } from './types/agent.js';
+export * from './types/mcp.js';
 export * from './types/workflow.js';
 export * from './types/events.js';
+// Cross-service contracts (hr-service ↔ teams-bot)
+export type { ExtractionResult, IntentResult } from './types/agent.js';
+export { ExtractionResultSchema, IntentResultSchema } from './types/agent.js';
 
 // Clients
 export * from './clients/litellm.js';
@@ -19,4 +17,3 @@ export * from './clients/postgres.js';
 // Utils
 export * from './utils/subject-builder.js';
 export * from './utils/tenant-context.js';
-export * from './utils/zod-schemas.js';

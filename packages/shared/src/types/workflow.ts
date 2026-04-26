@@ -1,30 +1,3 @@
-import type { CertStatus, PersistedExtractionResult } from './certification.js';
-
-export interface HITLDecisionSignal {
-  approved: boolean;
-  correctedFields?: Record<string, string>;
-  reviewedBy: string;
-  reviewedAt: string;   // ISO 8601
-}
-
-export interface CertProcessingInput {
-  tenantId: string;
-  certId: string;
-  certificationId: string;
-  objectStoreKey: string;
-  workerId: string;
-  documentUrl: string;
-  uploadedBy: string;
-}
-
-export interface CertProcessingOutput {
-  tenantId: string;
-  certId: string;
-  status: CertStatus;
-  extractionResult?: PersistedExtractionResult;
-  hitlRequired: boolean;
-}
-
 export interface TenantProvisioningInput {
   tenantId: string;
   tenantName: string;
@@ -33,9 +6,17 @@ export interface TenantProvisioningInput {
   budgetLimitUsd: number;
 }
 
-export interface TenantProvisioningOutput {
-  tenantId: string;
-  success: boolean;
-  provisionedAt: string;      // ISO 8601
-  litellmVirtualKey: string;
+export interface CertProcessingInput {
+  tenantId:        string;
+  certificationId: string;
+  workerId:        string;
+  objectStoreKey:  string;
+}
+
+// HITLDecisionSignal is a cross-service contract: teams-bot sends it, hr-service Temporal workflow receives it.
+export interface HITLDecisionSignal {
+  approved: boolean;
+  correctedFields?: Record<string, string>;
+  reviewedBy: string;
+  reviewedAt: string;
 }
