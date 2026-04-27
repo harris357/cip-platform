@@ -28,6 +28,15 @@ _(no open notes)_
 
 ## Resolved Notes
 
+### CS-007
+- **Logged in:** Slice 14 (Matching Activities)
+- **Affects:** Slice 06 stub — `persist-cert.activity.ts`
+- **File:** `packages/hr-service/src/modules/certifications/activities/persist-cert.activity.ts`
+- **Status:** RESOLVED 2026-04-27
+- **Issue:** `PersistCertInput.matchedEmployeeId` and `certDefId` were typed as non-optional `string` in the Slice 06 stub, but the Slice 14 match result types correctly expose `employeeId?: string` and `certDefId?: string` (a `no_match` result produces no ID). Passing `string | undefined` to `string` caused a typecheck failure in the workflow under `exactOptionalPropertyTypes: true`.
+- **Why it matters:** Typecheck blocked; and the non-optional types would have forced the persist activity implementer to assume a match always exists, which is wrong — HITL resolution may still leave a null match.
+- **Fix applied:** Changed `matchedEmployeeId` and `certDefId` to `string | undefined` in `PersistCertInput`. The `persistCertActivity` implementer must guard against undefined values (e.g., require HITL resolution before persisting, or throw if either ID is absent).
+
 ### CS-006
 - **Logged in:** Slice 08 (NATS Watcher)
 - **Affects:** Slice 02 (Shared Types)

@@ -4,8 +4,8 @@ export interface PersistCertInput {
   tenantId:          string;
   submissionId:      string;
   extraction:        ExtractionResult;
-  matchedEmployeeId: string;
-  certDefId:         string;
+  matchedEmployeeId: string | undefined;
+  certDefId:         string | undefined;
 }
 
 export interface PersistCertOutput {
