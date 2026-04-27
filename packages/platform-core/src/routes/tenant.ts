@@ -20,7 +20,7 @@ tenantRouter.post('/tenants', async (req, res) => {
   try {
     const client = await createTemporalClient();
     const handle = await client.workflow.start('TenantProvisioningWorkflow', {
-      taskQueue: process.env['TEMPORAL_TASK_QUEUE'] ?? 'cip-platform-tasks',
+      taskQueue: process.env['TEMPORAL_TASK_QUEUE_PLATFORM'] ?? 'cip-platform-tasks',
       // Workflow ID pattern: {workflowType}-{tenantId}-{entityId}
       workflowId: `TenantProvision-${tenantId}-${tenantId}`,
       args: [args],

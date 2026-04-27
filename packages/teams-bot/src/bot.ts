@@ -1,67 +1,68 @@
 import { TeamsActivityHandler, TurnContext } from 'botbuilder';
-import { routeIntent } from './agents/intent-router/index.js';
-import { certUploadHandler } from './handlers/cert-upload.handler.js';
-import { complianceQueryHandler } from './handlers/compliance-query.handler.js';
-import { hitlResponseHandler } from './handlers/hitl-response.handler.js';
-import type { TenantContext } from '@cip/shared/src/types/tenant.js';
-import { createPool, withTenantRLS } from '@cip/shared/src/clients/postgres.js';
+import type { Tool as McpTool } from '@modelcontextprotocol/sdk/types.js';
+import { resolveAuthContext } from './auth/resolve-context.js';
+import { updateChannelRegistry } from './teams-protocol/channel-registry.js';
+import { detectFileAttachments, downloadToObjectStore } from './teams-protocol/file-handler.js';
+import { renderResponse } from './teams-protocol/card-renderer.js';
+import { discoverTools } from './mcp/tool-discovery.js';
+import { routeIntent } from './intent/router.js';
+import { executeTool } from './mcp/tool-executor.js';
 
-const pool = createPool(process.env['DATABASE_URL'] ?? '');
+export function buildWelcomeMessage(): string {
+  return (
+    'Hello! I can help you manage certifications and HR tasks. ' +
+    'Send me a message or upload a certificate document to get started.'
+  );
+}
 
-async function getTenantVirtualKey(tenantId: string): Promise<string> {
-  const client = await pool.connect();
-  try {
-    return await withTenantRLS(client, tenantId, async (c) => {
-      const res = await c.query<{ litellm_virtual_key: string }>(
-        'SELECT litellm_virtual_key FROM tenant_settings WHERE tenant_id = $1',
-        [tenantId],
-      );
-      if (!res.rows[0]) throw new Error(`No tenant_settings for tenant ${tenantId}`);
-      return res.rows[0].litellm_virtual_key;
-    });
-  } finally {
-    client.release();
-  }
+function buildNoToolMessage(tools: McpTool[]): string {
+  return tools.length > 0
+    ? "I'm not sure how to help with that. Try asking about your certifications or HR tasks."
+    : "I don't have any tools available for your account. Please contact your administrator.";
 }
 
 export class CIPTeamsBot extends TeamsActivityHandler {
   constructor() {
     super();
 
-    this.onMessage(async (context: TurnContext, next) => {
-      // TODO: extract TenantContext from Teams SSO token (Keycloak)
-      const tenantId = process.env['DEV_TENANT_ID'] ?? '';
-      const litellmVirtualKey = await getTenantVirtualKey(tenantId);
-      const tenantCtx: TenantContext = {
-        tenantId,
-        userId: context.activity.from.id,
-        tenantConfig: {
-          tenantId,
-          name: process.env['DEV_TENANT_NAME'] ?? tenantId,
-          litellmVirtualKey,
-          keycloakRealm: process.env['KEYCLOAK_REALM'] ?? tenantId,
-          natsPrefix: `cip.${tenantId}`,
-          langfuseTags: {},
-        },
-      };
-
-      const text = context.activity.text?.trim() ?? '';
-      const intent = await routeIntent(text, tenantCtx);
-
-      switch (intent.intent) {
-        case 'UPLOAD_CERT':
-          await certUploadHandler(context, tenantCtx, intent);
-          break;
-        case 'QUERY_COMPLIANCE':
-          await complianceQueryHandler(context, tenantCtx, intent);
-          break;
-        case 'RESPOND_HITL':
-          await hitlResponseHandler(context, tenantCtx, intent);
-          break;
-        default:
-          await context.sendActivity("I didn't understand that. Try uploading a certification document.");
+    this.onMembersAdded(async (context, next) => {
+      for (const member of context.activity.membersAdded ?? []) {
+        if (member.id !== context.activity.recipient.id) {
+          await context.sendActivity(buildWelcomeMessage());
+        }
       }
+      await next();
+    });
 
+    this.onMessage(async (context: TurnContext, next) => {
+      const ctx = await resolveAuthContext(context);
+      await updateChannelRegistry(context, ctx.tenantId, ctx.bearerToken);
+
+      const fileAttachments = detectFileAttachments(context);
+
+      if (fileAttachments.length > 0) {
+        for (const file of fileAttachments) {
+          const key = await downloadToObjectStore(file, ctx);
+          const result = await executeTool('process_document', { objectStoreKey: key }, ctx);
+          await renderResponse(context, result);
+        }
+      } else {
+        const text = context.activity.text?.trim() ?? '';
+        if (!text) {
+          await next();
+          return;
+        }
+
+        const tools = await discoverTools(ctx);
+        const selected = await routeIntent(text, tools, ctx);
+
+        if (selected) {
+          const result = await executeTool(selected.name, selected.args, ctx);
+          await renderResponse(context, result);
+        } else {
+          await context.sendActivity(buildNoToolMessage(tools));
+        }
+      }
       await next();
     });
   }

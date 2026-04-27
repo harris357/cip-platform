@@ -22,11 +22,32 @@
 
 ## Open Notes
 
-_(no open notes)_
-
 ---
 
 ## Resolved Notes
+
+### CS-009
+- **Logged in:** Slice 17 (Teams Bot)
+- **Affects:** Slice 17 (Teams Bot) + Slice 09 (MCP Server)
+- **File:** `packages/teams-bot/src/mcp/client.ts`, `packages/teams-bot/src/auth/resolve-context.ts`
+- **Status:** RESOLVED 2026-04-27
+- **Fix applied:**
+  1. `packages/hr-service/src/mcp-server/index.ts` — replaced `StdioServerTransport` with `StreamableHTTPServerTransport` (Express, stateless, per-request `McpServer` + transport instances). Added `startMcpServer()` call to `packages/hr-service/src/index.ts`.
+  2. `packages/teams-bot/src/mcp/client.ts` — removed global singleton; `getMcpClient(bearerToken)` now creates a per-call `StreamableHTTPClientTransport` with `Authorization: Bearer <token>` header. Both connect calls use `as any` cast to work around an SDK `exactOptionalPropertyTypes` incompatibility in optional transport properties (`onclose`, `sessionId`).
+  3. `packages/teams-bot/src/auth/resolve-context.ts` — implemented `exchangeAadForKeycloak()` (RFC 8693 token exchange against Keycloak OIDC endpoint) and `resolveAadToken()` (extracts Teams SSO token from `context.activity.value.token`). `resolveAuthContext` now exchanges the AAD token for a Keycloak JWT and passes it to `getMcpClient`. Added `bearerToken: string` to `BotAuthContext`.
+  4. Updated all `getMcpClient()` call sites to pass `ctx.bearerToken`: `tool-executor.ts`, `tool-discovery.ts`, `channel-registry.ts` (+ `bot.ts` updated to forward `bearerToken` to `updateChannelRegistry`).
+- **Note:** `resolveAadToken` extracts the Teams SSO token from `activity.value.token`, which is available during `signin/tokenExchange` activities. Regular message turns require the Teams SSO silent-auth flow to populate this field; full dialog-based token caching is a future slice concern.
+
+### CS-008
+- **Logged in:** Slice 15 (Employee Onboarding Workflow)
+- **Affects:** Slice 02 (Shared Types)
+- **File:** `packages/shared/src/types/events.ts`
+- **Status:** RESOLVED 2026-04-27
+- **Issue:** `EmployeeOnboardedEvent` was missing the field `identityType: string`.
+- **Fix applied:**
+  1. Added `identityType: string` to `EmployeeOnboardedEvent` in `packages/shared/src/types/events.ts`
+  2. Updated `publishEmployeeOnboardedActivity` to include `identityType: input.identityType` in the event payload
+  3. Rebuilt `@cip/shared` to update `dist/`; full repo typecheck passes
 
 ### CS-007
 - **Logged in:** Slice 14 (Matching Activities)

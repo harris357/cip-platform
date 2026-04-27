@@ -189,15 +189,18 @@ importers:
       '@cip/shared':
         specifier: workspace:*
         version: link:../shared
-      '@langchain/core':
-        specifier: ^0.3.0
-        version: 0.3.80(@opentelemetry/api@1.9.1)(openai@4.104.0(zod@3.25.76))
+      '@modelcontextprotocol/sdk':
+        specifier: ^1.0.0
+        version: 1.29.0(@cfworker/json-schema@4.1.1)(zod@3.25.76)
       botbuilder:
         specifier: ^4.23.0
         version: 4.23.3
       express:
         specifier: ^4.19.0
         version: 4.22.1
+      openai:
+        specifier: ^4.0.0
+        version: 4.104.0(zod@3.25.76)
     devDependencies:
       '@types/express':
         specifier: ^4.17.0

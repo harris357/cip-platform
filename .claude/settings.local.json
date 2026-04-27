@@ -29,7 +29,18 @@
       "Bash(kubectl logs *)",
       "Bash(kubectl delete *)",
       "Bash(helm uninstall *)",
-      "Bash(python3 -m json.tool)"
+      "Bash(python3 -m json.tool)",
+      "Bash(git -C /home/harris/ernAI status)",
+      "Bash(git -C /home/harris/ernAI diff HEAD)",
+      "Bash(git -C /home/harris/ernAI log --oneline -3)",
+      "Bash(git -C /home/harris/ernAI add packages/hr-service/src/agents/vision-agent/nodes.ts packages/hr-service/src/db/migrations/002_domain_model.sql packages/hr-service/src/mcp-server/tools/get-compliance-status.ts packages/platform-core/src/activities/init-tenant-database.activity.ts packages/platform-core/src/workflows/tenant-provisioning.workflow.ts packages/shared/src/index.ts packages/shared/src/types/agent.ts packages/shared/src/types/certification.ts packages/shared/src/types/events.ts packages/shared/src/types/tenant.ts packages/shared/src/types/worker.ts packages/shared/src/types/workflow.ts packages/teams-bot/src/bot.ts slices/CROSS_SLICE_NOTES.md)",
+      "Bash(git -C /home/harris/ernAI commit -m ' *)",
+      "Bash(xargs cat *)",
+      "Bash(grep -v \"extractAuthContext\\\\|const { tenantId\\\\|tenantId,\\\\|from authInfo\\\\|withTenantRLS\\\\|import\\\\|db/\\\\|schema\\\\|workflow\\\\|submittedBy\\\\|values\\({\")",
+      "Bash(pnpm --filter @cip/platform-core typecheck)",
+      "Bash(grep -c \"':$\\\\|'\\\\[$\" /home/harris/ernAI/packages/hr-service/src/modules/certifications/activities/nickname-map.ts)",
+      "Bash(pnpm --filter @cip/shared build)",
+      "Bash(pnpm install *)"
     ],
     "deny": [
       "Read(node_modules/**)",
@@ -41,6 +52,10 @@
       "Write(**/*.env)",
       "Write(**/.envrc)",
       "Write(infra/terraform/**/.terraform/**)"
+    ],
+    "additionalDirectories": [
+      "/home/harris/ernAI/packages/hr-service/src/modules/certifications/agents",
+      "/home/harris/ernAI/packages/hr-service/src/workflows"
     ]
   }
 }

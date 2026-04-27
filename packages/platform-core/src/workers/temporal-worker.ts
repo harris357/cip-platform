@@ -5,7 +5,7 @@ import * as activities from '../activities/index.js';
 export async function startTemporalWorker(): Promise<void> {
   const connection = await createTemporalWorkerConnection();
   const namespace  = process.env['TEMPORAL_NAMESPACE']!;
-  const taskQueue  = process.env['TEMPORAL_TASK_QUEUE'] ?? 'cip-platform-tasks';
+  const taskQueue  = process.env['TEMPORAL_TASK_QUEUE_PLATFORM'] ?? 'cip-platform-tasks';
 
   const worker = await Worker.create({
     connection,
