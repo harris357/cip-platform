@@ -1,0 +1,61 @@
+{
+  "$schema": "https://developer.microsoft.com/en-us/json-schemas/teams/v1.17/MicrosoftTeams.schema.json",
+  "manifestVersion": "1.17",
+  "version": "1.0.0",
+  "id": "${{BOT_APP_ID}}",
+  "developer": {
+    "name": "IdleVice",
+    "websiteUrl": "https://${{BOT_DOMAIN}}",
+    "privacyUrl": "https://${{BOT_DOMAIN}}/privacy",
+    "termsOfUseUrl": "https://${{BOT_DOMAIN}}/terms"
+  },
+  "icons": {
+    "color": "icons/color.png",
+    "outline": "icons/outline.png"
+  },
+  "name": {
+    "short": "CIP Bot",
+    "full": "CIP — Construction Intelligence Platform"
+  },
+  "description": {
+    "short": "Manage worker certifications and compliance",
+    "full": "Upload and track health and safety certifications, check compliance status, and manage worker onboarding — all from Microsoft Teams."
+  },
+  "accentColor": "#1b4f72",
+  "bots": [
+    {
+      "botId": "${{BOT_APP_ID}}",
+      "scopes": ["personal", "groupchat", "team"],
+      "supportsFiles": true,
+      "isNotificationOnly": false,
+      "commandLists": [
+        {
+          "scopes": ["personal", "groupchat", "team"],
+          "commands": [
+            {
+              "title": "help",
+              "description": "Show what I can do"
+            },
+            {
+              "title": "my certifications",
+              "description": "List your current certifications and expiry dates"
+            },
+            {
+              "title": "compliance status",
+              "description": "Check compliance status for a worker or site"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "staticTabs": [],
+  "permissions": ["identity", "messageTeamMembers"],
+  "validDomains": [
+    "${{BOT_DOMAIN}}"
+  ],
+  "webApplicationInfo": {
+    "id": "${{BOT_APP_ID}}",
+    "resource": "api://${{BOT_DOMAIN}}/${{BOT_APP_ID}}"
+  }
+}

@@ -1,0 +1,22 @@
+# Teams Toolkit packaging config.
+# Run: teamsapp package --env local
+# Output: appPackage/build/appPackage.local.zip
+
+version: 1.0.0
+
+environmentFolderPath: ./env
+
+provision:
+  - uses: teamsApp/validateManifest
+    with:
+      manifestPath: ./appPackage/manifest.json
+
+  - uses: teamsApp/zipAppPackage
+    with:
+      manifestPath: ./appPackage/manifest.json
+      outputZipPath: ./appPackage/build/appPackage.${{TEAMSFX_ENV}}.zip
+      outputFolder: ./appPackage/build
+
+  - uses: teamsApp/validateAppPackage
+    with:
+      appPackagePath: ./appPackage/build/appPackage.${{TEAMSFX_ENV}}.zip
