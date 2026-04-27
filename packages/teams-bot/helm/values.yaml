@@ -1,6 +1,5 @@
 # Required K8s Secret: teams-bot-credentials
-# Keys: BOT_APP_ID, BOT_APP_PASSWORD, KEYCLOAK_CLIENT_SECRET
-# Object store keys added in Slice 19: OBJECT_STORE_BUCKET, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY
+# Keys: BOT_APP_ID, BOT_APP_PASSWORD, KEYCLOAK_CLIENT_SECRET, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY
 
 replicaCount: 1
 
@@ -21,6 +20,9 @@ env:
   # new keys — stubs; override at deploy time or via secret
   MCP_SERVER_URL: http://hr-service.cip-app.svc.cluster.local:4001/mcp
   KEYCLOAK_CLIENT_ID: teams-bot
+  OBJECT_STORE_BUCKET: cip-uploads     # override at deploy time per environment
+  AWS_ENDPOINT_URL: https://s3.bhs.io.cloud.ovh.net
+  AWS_REGION: BHS
 
 envFrom:
   - secretRef:
