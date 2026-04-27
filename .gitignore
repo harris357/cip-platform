@@ -13,3 +13,5 @@ terraform.tfstate.backup
 *.pem
 *.key
 docs/
+sample/
+.codex

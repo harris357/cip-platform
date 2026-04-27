@@ -31,3 +31,10 @@ export interface CertExpiredEvent {
   workerId:   string;
   expiredAt:  string;
 }
+
+// EmployeeOnboardedEvent is published by hr-service after employee provisioning completes.
+export interface EmployeeOnboardedEvent {
+  tenantId:    string;
+  employeeId:  string;
+  onboardedAt: string;
+}

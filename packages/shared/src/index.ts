@@ -17,3 +17,4 @@ export * from './clients/postgres.js';
 // Utils
 export * from './utils/subject-builder.js';
 export * from './utils/tenant-context.js';
+export * from './utils/lookup-registry.js';

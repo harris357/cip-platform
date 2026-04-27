@@ -1,6 +1,6 @@
 // ALL NATS subjects must be constructed here. Never construct raw subject strings elsewhere.
 
-export type NatsDomain = 'cert' | 'worker' | 'compliance' | 'tenant';
+export type NatsDomain = 'cert' | 'worker' | 'compliance' | 'tenant' | 'employee';
 export type NatsVersion = 'v1';
 
 export interface SubjectParts {
@@ -28,4 +28,6 @@ export const Subjects = {
     buildSubject({ tenantId, domain: 'tenant', event: 'provisioned' }),
   workerOnboarded: (tenantId: string) =>
     buildSubject({ tenantId, domain: 'worker', event: 'onboarded' }),
+  employeeOnboarded: (tenantId: string) =>
+    buildSubject({ tenantId, domain: 'employee', event: 'onboarded' }),
 } as const;

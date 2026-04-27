@@ -22,11 +22,49 @@
 
 ## Open Notes
 
-_(none)_
+_(no open notes)_
 
 ---
 
 ## Resolved Notes
+
+### CS-006
+- **Logged in:** Slice 08 (NATS Watcher)
+- **Affects:** Slice 02 (Shared Types)
+- **Status:** RESOLVED 2026-04-27
+- **Fix applied:**
+  1. Added `'employee'` to `NatsDomain` union in `subject-builder.ts`
+  2. Added `employeeOnboarded: (tenantId: string) => buildSubject(...)` to `Subjects`
+  3. Replaced raw `EMPLOYEE_ONBOARDED_SUBJECT` string in `watcher.ts` with `Subjects.employeeOnboarded('*')`
+
+### CS-005
+- **Logged in:** Slice 08 (NATS Watcher)
+- **Affects:** Slice 02 (Shared Types)
+- **Status:** RESOLVED 2026-04-27
+- **Fix applied:**
+  1. Added `EmployeeOnboardedEvent` interface to `packages/shared/src/types/events.ts`
+  2. Replaced local interface in `watcher.ts` with `import type { ..., EmployeeOnboardedEvent }` from shared
+  3. Removed stale cross-slice comment block from bottom of `watcher.ts`
+
+### CS-004
+- **Logged in:** Slice 06 (HR Temporal Workflows)
+- **Affects:** Slice 14 (Matching Activities)
+- **Status:** RESOLVED 2026-04-27
+- **Fix applied:**
+  1. Created `packages/hr-service/src/modules/certifications/activities/publish-cert-processed.activity.ts` — stub throwing `'not implemented'`
+  2. Exported `publishCertProcessedActivity` and `PublishCertProcessedInput` from `activities/index.ts`
+  3. Added `publishCertProcessedActivity` to `proxyActivities` destructure in workflow
+  4. Replaced `// TODO` + `void certificationId` with `await publishCertProcessedActivity(...)` call
+
+### CS-003
+- **Logged in:** Slice 05A (HR Domain Schema)
+- **Affects:** AI calibration/memory slice
+- **Status:** RESOLVED 2026-04-27
+- **Fix applied:**
+  1. Created `packages/hr-service/src/db/migrations/003_ai_memory.sql`
+  2. Ports `field_outcomes`, `memory_writes`, and `agent_memory_vectors` tables from `001_initial.sql`
+  3. Updated to 002 RLS pattern: `CREATE TABLE IF NOT EXISTS`, `gen_random_uuid()`, `CREATE POLICY tenant_isolation ON <table>`
+  4. Includes `CREATE EXTENSION IF NOT EXISTS "vector"` for pgvector support
 
 ### CS-001
 - **Logged in:** Consistency review (env var audit)
@@ -40,5 +78,12 @@ _(none)_
   5. `bot.ts` (Slice 14): replaced `process.env['LITELLM_VIRTUAL_KEY']` with `withTenantRLS` DB lookup
   6. Confirmed `litellmVirtualKey` source comment in `TenantConfig`
   7. Fixed pre-existing shared type gaps found during typecheck: `TenantProvisioningInput`, `CertProcessingInput`, `CertUploadedEvent`, `CertProcessedEvent`, `CertExpiredEvent`, `Certification`, `Worker`, aligned `ExtractionResult` schema with consuming code
+
+### CS-002
+- **Logged in:** Slice 05A (HR Domain Schema)
+- **Affects:** Slice 05A (HR Domain Schema)
+- **File:** `packages/hr-service/src/db/migrations/002_domain_model.sql`
+- **Status:** RESOLVED 2026-04-26
+- **Fix applied:** Added `litellm_virtual_key TEXT NOT NULL DEFAULT ''` back to `tenant_settings` in `002_domain_model.sql` alongside `channel_config`.
 
 _(prior resolved notes archived to slices/archive/CROSS_SLICE_NOTES.md)_
