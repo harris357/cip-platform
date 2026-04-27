@@ -46,8 +46,11 @@ kubectl create secret generic platform-core-credentials \
 kubectl create secret generic teams-bot-credentials \
   --namespace cip-app \
   --from-literal=LITELLM_VIRTUAL_KEY="${LITELLM_VIRTUAL_KEY}" \
-  --from-literal=MICROSOFT_APP_ID="${MICROSOFT_APP_ID:-}" \
-  --from-literal=MICROSOFT_APP_PASSWORD="${MICROSOFT_APP_PASSWORD:-}" \
+  --from-literal=BOT_APP_ID="${BOT_APP_ID:-}" \
+  --from-literal=BOT_APP_PASSWORD="${BOT_APP_PASSWORD:-}" \
+  --from-literal=KEYCLOAK_CLIENT_SECRET="${KEYCLOAK_CLIENT_SECRET:-}" \
+  --from-literal=AWS_ACCESS_KEY_ID="${AWS_ACCESS_KEY_ID:-}" \
+  --from-literal=AWS_SECRET_ACCESS_KEY="${AWS_SECRET_ACCESS_KEY:-}" \
   --dry-run=client -o yaml | kubectl apply -f -
 
 # Langfuse credentials (DATABASE_URL, NEXTAUTH_SECRET, SALT)

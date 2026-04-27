@@ -15,6 +15,7 @@ env:
   TEMPORAL_TASK_QUEUE: cip-hr-tasks
   KEYCLOAK_URL: https://keycloak.dev.cip.io
   KEYCLOAK_REALM: cip-dev
+  TEAMS_BOT_URL: http://teams-bot.cip-app.svc.cluster.local:3978
 
 # Secrets injected via K8s secret reference
 envFrom:
