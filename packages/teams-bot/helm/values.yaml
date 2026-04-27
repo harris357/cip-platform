@@ -1,3 +1,7 @@
+# Required K8s Secret: teams-bot-credentials
+# Keys: BOT_APP_ID, BOT_APP_PASSWORD, KEYCLOAK_CLIENT_SECRET
+# Object store keys added in Slice 19: OBJECT_STORE_BUCKET, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY
+
 replicaCount: 1
 
 image:
@@ -14,6 +18,9 @@ env:
   NATS_URL: nats://nats.cip-infra.svc.cluster.local:4222
   KEYCLOAK_URL: https://keycloak.dev.cip.io
   KEYCLOAK_REALM: cip-dev
+  # new keys — stubs; override at deploy time or via secret
+  MCP_SERVER_URL: http://hr-service.cip-app.svc.cluster.local:4001/mcp
+  KEYCLOAK_CLIENT_ID: teams-bot
 
 envFrom:
   - secretRef:

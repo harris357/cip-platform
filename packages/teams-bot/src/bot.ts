@@ -1,6 +1,7 @@
 import { TeamsActivityHandler, TurnContext } from 'botbuilder';
 import type { Tool as McpTool } from '@modelcontextprotocol/sdk/types.js';
 import { resolveAuthContext } from './auth/resolve-context.js';
+import { cacheToken, getCachedToken } from './auth/token-store.js';
 import { updateChannelRegistry } from './teams-protocol/channel-registry.js';
 import { detectFileAttachments, downloadToObjectStore } from './teams-protocol/file-handler.js';
 import { renderResponse } from './teams-protocol/card-renderer.js';
@@ -21,6 +22,34 @@ function buildNoToolMessage(tools: McpTool[]): string {
     : "I don't have any tools available for your account. Please contact your administrator.";
 }
 
+async function exchangeAadForKeycloak(aadToken: string, tenantId: string): Promise<string> {
+  const keycloakBase = process.env['KEYCLOAK_URL'] ?? 'http://keycloak:8080';
+  const clientId = process.env['KEYCLOAK_CLIENT_ID'] ?? 'teams-bot';
+  const clientSecret = process.env['KEYCLOAK_CLIENT_SECRET'] ?? '';
+  const url = `${keycloakBase}/realms/${tenantId}/protocol/openid-connect/token`;
+
+  const body = new URLSearchParams({
+    grant_type: 'urn:ietf:params:oauth:grant-type:token-exchange',
+    subject_token: aadToken,
+    subject_token_type: 'urn:ietf:params:oauth:token-type:access_token',
+    client_id: clientId,
+    client_secret: clientSecret,
+    requested_token_type: 'urn:ietf:params:oauth:token-type:access_token',
+  });
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: body.toString(),
+  });
+  if (!response.ok) {
+    throw new Error(`Keycloak token exchange failed: ${response.status} ${await response.text()}`);
+  }
+  const data = (await response.json()) as { access_token?: string };
+  if (!data.access_token) throw new Error('Keycloak token exchange returned no access_token');
+  return data.access_token;
+}
+
 export class CIPTeamsBot extends TeamsActivityHandler {
   constructor() {
     super();
@@ -35,7 +64,19 @@ export class CIPTeamsBot extends TeamsActivityHandler {
     });
 
     this.onMessage(async (context: TurnContext, next) => {
-      const ctx = await resolveAuthContext(context);
+      const userId = context.activity.from.id;
+      const keycloakJwt = getCachedToken(userId);
+
+      if (!keycloakJwt) {
+        // Token cache miss — prompt the user to trigger SSO
+        // Teams will automatically re-run the silent token exchange and call
+        // onTeamsSigninVerifyState, which populates the cache.
+        await context.sendActivity('Please wait a moment while I verify your identity...');
+        await next();
+        return;
+      }
+
+      const ctx = await resolveAuthContext(context, keycloakJwt);
       await updateChannelRegistry(context, ctx.tenantId, ctx.bearerToken);
 
       const fileAttachments = detectFileAttachments(context);
@@ -65,5 +106,21 @@ export class CIPTeamsBot extends TeamsActivityHandler {
       }
       await next();
     });
+  }
+
+  protected override async handleTeamsSigninVerifyState(context: TurnContext): Promise<void> {
+    // Teams SSO silent flow succeeded — exchange AAD token for Keycloak JWT
+    const aadToken = (context.activity.value as { token?: string } | undefined)?.token;
+    if (aadToken) {
+      try {
+        const tenantId: string =
+          (context.activity.channelData as { tenant?: { id?: string } } | undefined)?.tenant
+            ?.id ?? '';
+        const keycloakJwt = await exchangeAadForKeycloak(aadToken, tenantId);
+        cacheToken(context.activity.from.id, keycloakJwt);
+      } catch (err) {
+        console.error('[CIPTeamsBot] SSO token exchange failed:', err);
+      }
+    }
   }
 }
