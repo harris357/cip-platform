@@ -74,16 +74,19 @@ echo "      Cluster reachable: $(kubectl cluster-info --request-timeout=10s 2>&1
 CLUSTER_ID=$(terraform -chdir=infra/terraform/bootstrap output -raw cluster_id)
 export TF_VAR_cluster_id="$CLUSTER_ID"
 
+# Pre-create namespaces and secrets before Helm charts run so pods start cleanly
+echo ""
+echo "[3/4a] Pre-creating namespaces and K8s secrets..."
+for NS in cip-infra cip-auth cip-app cip-observe; do
+  kubectl create namespace "$NS" --dry-run=client -o yaml | kubectl apply -f -
+done
+bash scripts/create-secrets.sh
+
 echo ""
 echo "[3/4] Terraform cluster/ — node pool + infra Helm charts (postgres, nats, keycloak, monitoring)..."
 echo "      Cluster ID: $CLUSTER_ID"
 terraform -chdir=infra/terraform/cluster init -input=false -upgrade
 terraform -chdir=infra/terraform/cluster apply -input=false -auto-approve
-
-# ── Step 4: K8s secrets ───────────────────────────────────────────────────────
-echo ""
-echo "[4/5] Creating K8s secrets..."
-bash scripts/create-secrets.sh
 
 # ── Step 5: DNS + TLS ─────────────────────────────────────────────────────────
 echo ""

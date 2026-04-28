@@ -34,12 +34,12 @@ variable "nodepool_flavor" {
 
 variable "nodepool_min_size" {
   type    = number
-  default = 0
+  default = 1
 }
 
 variable "nodepool_max_size" {
   type    = number
-  default = 3
+  default = 1
 }
 
 variable "domain" {

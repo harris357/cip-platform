@@ -28,24 +28,14 @@ data "ovh_cloud_project_kube" "cluster" {
   kube_id      = var.cluster_id
 }
 
-locals {
-  kube_parsed  = yamldecode(data.ovh_cloud_project_kube.cluster.kubeconfig)
-  kube_cluster = local.kube_parsed.clusters[0].cluster
-  kube_user    = local.kube_parsed.users[0].user
-}
-
 provider "kubernetes" {
-  host                   = local.kube_cluster.server
-  cluster_ca_certificate = base64decode(local.kube_cluster["certificate-authority-data"])
-  client_certificate     = base64decode(local.kube_user["client-certificate-data"])
-  client_key             = base64decode(local.kube_user["client-key-data"])
+  config_path    = pathexpand("~/.kube/cip-dev.yaml")
+  config_context = "kubernetes-admin@cip-dev"
 }
 
 provider "helm" {
   kubernetes {
-    host                   = local.kube_cluster.server
-    cluster_ca_certificate = base64decode(local.kube_cluster["certificate-authority-data"])
-    client_certificate     = base64decode(local.kube_user["client-certificate-data"])
-    client_key             = base64decode(local.kube_user["client-key-data"])
+    config_path    = pathexpand("~/.kube/cip-dev.yaml")
+    config_context = "kubernetes-admin@cip-dev"
   }
 }

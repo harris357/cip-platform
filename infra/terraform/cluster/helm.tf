@@ -98,11 +98,11 @@ resource "helm_release" "cert_manager" {
 # ── Infrastructure Helm charts ────────────────────────────────────────────────
 
 resource "helm_release" "postgres" {
-  name       = "postgres"
-  repository = "https://charts.bitnami.com/bitnami"
-  chart      = "postgresql"
-  namespace  = kubernetes_namespace.cip_infra.metadata[0].name
-  values     = [file("${path.module}/../../helm/postgres-values.yaml")]
+  name      = "postgres"
+  chart     = "oci://registry-1.docker.io/bitnamicharts/postgresql"
+  version   = "18.6.2"
+  namespace = kubernetes_namespace.cip_infra.metadata[0].name
+  values    = [file("${path.module}/../../helm/postgres-values.yaml")]
   depends_on = [kubernetes_persistent_volume_claim.postgres_data]
 }
 
@@ -117,21 +117,14 @@ resource "helm_release" "nats" {
 
 resource "helm_release" "keycloak" {
   name       = "keycloak"
-  repository = "https://charts.bitnami.com/bitnami"
-  chart      = "keycloak"
+  repository = "https://codecentric.github.io/helm-charts"
+  chart      = "keycloakx"
+  version    = "7.1.11"
   namespace  = kubernetes_namespace.cip_auth.metadata[0].name
-  values     = [file("${path.module}/../../helm/keycloak-values.yaml")]
-  depends_on = [
-    kubernetes_persistent_volume_claim.keycloak_data,
-    helm_release.ingress_nginx,
-    helm_release.cert_manager,
-  ]
-
-  set { name = "ingress.enabled";              value = "true" }
-  set { name = "ingress.ingressClassName";     value = "nginx" }
-  set { name = "ingress.hostname";             value = "keycloak.${var.domain}" }
-  set { name = "ingress.tls";                  value = "true" }
-  set { name = "ingress.annotations.cert-manager\\.io/cluster-issuer"; value = "letsencrypt-prod" }
+  values     = [templatefile("${path.module}/../../helm/keycloak-values.yaml", { domain = var.domain })]
+  depends_on = [helm_release.ingress_nginx, helm_release.cert_manager, helm_release.postgres]
+  timeout    = 600
+  wait       = true
 }
 
 resource "helm_release" "monitoring" {
@@ -142,12 +135,30 @@ resource "helm_release" "monitoring" {
   values     = [file("${path.module}/../../helm/monitoring-values.yaml")]
   depends_on = [helm_release.ingress_nginx, helm_release.cert_manager]
 
-  set { name = "grafana.ingress.enabled";                                      value = "true" }
-  set { name = "grafana.ingress.ingressClassName";                             value = "nginx" }
-  set { name = "grafana.ingress.hosts[0]";                                     value = "grafana.${var.domain}" }
-  set { name = "grafana.ingress.tls[0].secretName";                            value = "grafana-tls" }
-  set { name = "grafana.ingress.tls[0].hosts[0]";                              value = "grafana.${var.domain}" }
-  set { name = "grafana.ingress.annotations.cert-manager\\.io/cluster-issuer"; value = "letsencrypt-prod" }
+  set {
+    name  = "grafana.ingress.enabled"
+    value = "true"
+  }
+  set {
+    name  = "grafana.ingress.ingressClassName"
+    value = "nginx"
+  }
+  set {
+    name  = "grafana.ingress.hosts[0]"
+    value = "grafana.${var.domain}"
+  }
+  set {
+    name  = "grafana.ingress.tls[0].secretName"
+    value = "grafana-tls"
+  }
+  set {
+    name  = "grafana.ingress.tls[0].hosts[0]"
+    value = "grafana.${var.domain}"
+  }
+  set {
+    name  = "grafana.ingress.annotations.cert-manager\\.io/cluster-issuer"
+    value = "letsencrypt-prod"
+  }
 }
 
 # App charts (litellm, langfuse, hr-service, platform-core, teams-bot) are deployed via start.ts.

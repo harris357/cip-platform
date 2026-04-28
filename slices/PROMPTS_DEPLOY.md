@@ -487,17 +487,15 @@ Execution sequence (stop and surface to operator on any failure):
 1. source .envrc
 2. bash scripts/verify-readiness.sh
    Expected: every check ✅; if any ❌, STOP and report.
-
-3. make bootstrap-infra
+3. make create-secrets
+   Verify: kubectl get secret -n cip-app shows hr-service-credentials,
+   platform-core-credentials, teams-bot-credentials. cip-infra has
+   litellm-credentials.
+4. make bootstrap-infra
    Provisions: OVH cluster, node pool, PVCs, DNS, Terraform state bucket,
    infra Helm charts (postgres, nats, keycloak, litellm, langfuse, monitoring,
    ingress-nginx).
    Verify: kubectl get pvc -A shows all 5 PVCs Bound.
-
-4. make create-secrets
-   Verify: kubectl get secret -n cip-app shows hr-service-credentials,
-   platform-core-credentials, teams-bot-credentials. cip-infra has
-   litellm-credentials.
 
 5. make configure-dns && make configure-tls
    Verify: cert-manager ClusterIssuer ready; DNS A records resolve to LB IP.
