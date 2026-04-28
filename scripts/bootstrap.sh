@@ -20,29 +20,21 @@ if [[ -z "$POSTGRES_POD" ]]; then
   exit 1
 fi
 
-# Reset cip_hr database — ensures schema is always current (dev: data is ephemeral)
+# Create databases if they don't exist (idempotent — data persists on the PVC)
 PG_ADMIN_PASS=$(kubectl get secret postgres-credentials -n cip-infra \
   -o jsonpath='{.data.postgres-password}' | base64 -d)
-echo "      Resetting cip_hr database..."
+echo "      Ensuring databases exist..."
 kubectl exec -n cip-infra "$POSTGRES_POD" -- \
   env PGPASSWORD="$PG_ADMIN_PASS" psql -U postgres \
-  -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname='cip_hr' AND pid <> pg_backend_pid();" \
-  -c "DROP DATABASE IF EXISTS cip_hr;" \
   -c "CREATE DATABASE cip_hr OWNER cipuser;" \
-  2>&1 | sed 's/^/      /' || true
+  -c "CREATE DATABASE cip_litellm OWNER cipuser;" \
+  2>&1 | grep -v "already exists" | sed 's/^/      /' || true
 
-# Create pgvector extension as superuser — cipuser cannot create extensions
+# pgvector must be created as superuser — cipuser cannot create extensions
 kubectl exec -n cip-infra "$POSTGRES_POD" -- \
   env PGPASSWORD="$PG_ADMIN_PASS" psql -U postgres -d cip_hr \
   -c "CREATE EXTENSION IF NOT EXISTS vector;" 2>&1 | sed 's/^/      /' \
   || true
-
-# Ensure cip_litellm database exists for LiteLLM virtual key storage
-echo "      Ensuring cip_litellm database..."
-kubectl exec -n cip-infra "$POSTGRES_POD" -- \
-  env PGPASSWORD="$PG_ADMIN_PASS" psql -U postgres \
-  -c "CREATE DATABASE cip_litellm OWNER cipuser;" \
-  2>&1 | sed 's/^/      /' || true
 
 # Open a temporary port-forward on 15432 (avoids collision with 'make forward')
 kubectl port-forward -n cip-infra svc/postgres-postgresql 15432:5432 &>/dev/null &
@@ -60,7 +52,7 @@ echo "[2/5] Creating NATS KV bucket for channel registry..."
 echo "[3/5] Creating NATS JetStream streams..."
 # The nats/nats image does not ship the nats CLI; use nats-box instead.
 kubectl delete pod nats-setup -n cip-infra 2>/dev/null || true
-kubectl run nats-setup --rm --restart=Never --image=natsio/nats-box:latest \
+kubectl run nats-setup --rm --restart=Never --attach --image=natsio/nats-box:latest \
   -n cip-infra -- sh -c '
     S=nats://nats:4222
     nats -s $S kv add teams-channel-registry --ttl=24h 2>/dev/null \

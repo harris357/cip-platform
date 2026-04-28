@@ -109,7 +109,7 @@ section "NATS JetStream"
 if [[ -n "$NATS_POD" ]]; then
   # nats/nats image has no CLI; use nats-box to check streams in one shot
   kubectl delete pod nats-smoke-check -n cip-infra 2>/dev/null || true
-  STREAM_STATUS=$(kubectl run nats-smoke-check --rm --restart=Never \
+  STREAM_STATUS=$(kubectl run nats-smoke-check --rm --restart=Never --attach \
     --image=natsio/nats-box:latest -n cip-infra \
     -- sh -c 'S=nats://nats:4222; for s in CERTS HR_EVENTS PLATFORM_EVENTS HITL_EVENTS; do
         nats -s $S stream info "$s" >/dev/null 2>&1 && echo "OK:$s" || echo "MISS:$s"
@@ -228,7 +228,7 @@ section "NATS pub/sub roundtrip"
 
 if [[ -n "$NATS_POD" ]]; then
   kubectl delete pod nats-smoke-pub -n cip-infra 2>/dev/null || true
-  PUB_RESULT=$(kubectl run nats-smoke-pub --rm --restart=Never \
+  PUB_RESULT=$(kubectl run nats-smoke-pub --rm --restart=Never --attach \
     --image=natsio/nats-box:latest -n cip-infra \
     -- nats -s nats://nats:4222 pub cip.smoke-test.ping "smoke" 2>/dev/null \
     && echo "ok" || echo "error")
