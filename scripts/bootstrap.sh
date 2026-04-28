@@ -95,10 +95,13 @@ if [[ -z "$KC_POD" ]]; then
 else
   # Use in-pod curl so bootstrap works regardless of external DNS/TLS setup
   KC_LOCAL="http://localhost:8080"
+  # Fall back to k8s secret when KEYCLOAK_ADMIN_PASSWORD is not sourced from .envrc
+  _KC_ADMIN_PASS="${KEYCLOAK_ADMIN_PASSWORD:-$(kubectl get secret keycloak-credentials -n cip-auth \
+    -o jsonpath='{.data.admin-password}' 2>/dev/null | base64 -d 2>/dev/null || echo "")}"
   KC_ADMIN_TOKEN=$(kubectl exec -n cip-auth "$KC_POD" -- \
     curl -sf -X POST \
     "${KC_LOCAL}/realms/master/protocol/openid-connect/token" \
-    -d "client_id=admin-cli&username=admin&password=${KEYCLOAK_ADMIN_PASSWORD}&grant_type=password" \
+    -d "client_id=admin-cli&username=admin&password=${_KC_ADMIN_PASS}&grant_type=password" \
     2>/dev/null | jq -r '.access_token' 2>/dev/null || echo "")
 
   if [[ -z "$KC_ADMIN_TOKEN" || "$KC_ADMIN_TOKEN" == "null" ]]; then

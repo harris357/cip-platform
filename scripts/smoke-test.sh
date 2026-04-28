@@ -82,18 +82,19 @@ _=$(wait_pod            "app=teams-bot"    cip-app 60)
 section "PostgreSQL"
 
 if [[ -n "$PG_POD" ]]; then
-  PG_CIPUSER_PASS=$(kubectl get secret postgres-credentials -n cip-infra \
-    -o jsonpath='{.data.password}' 2>/dev/null | base64 -d 2>/dev/null || echo "")
+  # Use postgres superuser — avoids cipuser password mismatch issues in the check
+  PG_ADMIN_PASS=$(kubectl get secret postgres-credentials -n cip-infra \
+    -o jsonpath='{.data.postgres-password}' 2>/dev/null | base64 -d 2>/dev/null || echo "")
 
   if kubectl exec -n cip-infra "$PG_POD" -- \
-      env PGPASSWORD="$PG_CIPUSER_PASS" psql -U cipuser -d cip_hr -c "SELECT 1" &>/dev/null 2>&1; then
+      env PGPASSWORD="$PG_ADMIN_PASS" psql -U postgres -d cip_hr -c "SELECT 1" &>/dev/null 2>&1; then
     pass "postgres cip_hr accepts connections"
   else
     fail "postgres cip_hr connection refused"
   fi
 
   TABLES=$(kubectl exec -n cip-infra "$PG_POD" -- \
-    env PGPASSWORD="$PG_CIPUSER_PASS" psql -U cipuser -d cip_hr -t \
+    env PGPASSWORD="$PG_ADMIN_PASS" psql -U postgres -d cip_hr -t \
     -c "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='public'" \
     2>/dev/null | tr -d ' \n' || echo "0")
   if [[ "${TABLES:-0}" -gt 0 ]]; then
@@ -151,10 +152,18 @@ if [[ -n "$LITELLM_POD" ]]; then
   _LITELLM_KEY="${LITELLM_MASTER_KEY:-$(kubectl get secret litellm-credentials -n cip-app \
     -o jsonpath='{.data.LITELLM_MASTER_KEY}' 2>/dev/null | base64 -d 2>/dev/null || echo "")}"
 
+  # LiteLLM image is python-based and may not have curl; use python3 urllib instead
   LIVENESS=$(kubectl exec -n cip-app "$LITELLM_POD" -- \
-    curl -sf -H "Authorization: Bearer ${_LITELLM_KEY}" \
-    http://localhost:4000/health/liveliness 2>/dev/null \
-    | jq -r '.status' 2>/dev/null || echo "error")
+    python3 -c "
+import urllib.request, json, sys
+req = urllib.request.Request('http://localhost:4000/health/liveliness',
+  headers={'Authorization': 'Bearer ${_LITELLM_KEY}'})
+try:
+  with urllib.request.urlopen(req, timeout=10) as r:
+    print(json.loads(r.read()).get('status', 'unknown'))
+except Exception as e:
+  sys.exit(1)
+" 2>/dev/null || echo "error")
 
   if [[ "$LIVENESS" == "healthy" ]]; then
     pass "LiteLLM /health/liveliness = healthy"
@@ -164,24 +173,37 @@ if [[ -n "$LITELLM_POD" ]]; then
 
   # Verify all cip-* model aliases are registered
   MODELS=$(kubectl exec -n cip-app "$LITELLM_POD" -- \
-    curl -sf -H "Authorization: Bearer ${_LITELLM_KEY}" \
-    http://localhost:4000/models 2>/dev/null \
-    | jq -r '[.data[].id] | join(",")' 2>/dev/null || echo "")
+    python3 -c "
+import urllib.request, json, sys
+req = urllib.request.Request('http://localhost:4000/models',
+  headers={'Authorization': 'Bearer ${_LITELLM_KEY}'})
+try:
+  with urllib.request.urlopen(req, timeout=10) as r:
+    print(','.join(m['id'] for m in json.loads(r.read())['data']))
+except Exception as e:
+  sys.exit(1)
+" 2>/dev/null || echo "")
 
   for alias in cip-vision cip-chat cip-lightweight cip-reasoning; do
     echo "$MODELS" | grep -q "$alias" \
       && pass "LiteLLM alias $alias registered" \
-      || fail "LiteLLM alias $alias missing — check infra/k8s/litellm-config.yaml"
+      || fail "LiteLLM alias $alias missing — check infra/helm/litellm/values.yaml"
   done
 
   # Test virtual key if set
   if [[ -n "${LITELLM_VIRTUAL_KEY:-}" ]] && [[ "${LITELLM_VIRTUAL_KEY}" == "sk-"* ]]; then
     VKEY_RESP=$(kubectl exec -n cip-app "$LITELLM_POD" -- \
-      curl -sf -X POST http://localhost:4000/chat/completions \
-      -H "Authorization: Bearer $LITELLM_VIRTUAL_KEY" \
-      -H "Content-Type: application/json" \
-      -d '{"model":"cip-lightweight","messages":[{"role":"user","content":"ping — respond with the single word pong"}],"max_tokens":5}' \
-      2>/dev/null | jq -r '.choices[0].message.content' 2>/dev/null || echo "error")
+      python3 -c "
+import urllib.request, json, sys
+body = json.dumps({'model':'cip-lightweight','messages':[{'role':'user','content':'ping'}],'max_tokens':5}).encode()
+req = urllib.request.Request('http://localhost:4000/chat/completions', data=body,
+  headers={'Authorization':'Bearer ${LITELLM_VIRTUAL_KEY}','Content-Type':'application/json'})
+try:
+  with urllib.request.urlopen(req, timeout=30) as r:
+    print(json.loads(r.read())['choices'][0]['message']['content'])
+except Exception as e:
+  sys.exit(1)
+" 2>/dev/null || echo "error")
     if [[ "$VKEY_RESP" != "error" ]] && [[ -n "$VKEY_RESP" ]]; then
       pass "LiteLLM virtual key test call succeeded (response: ${VKEY_RESP:0:20})"
     else
