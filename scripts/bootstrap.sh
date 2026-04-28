@@ -66,9 +66,9 @@ kubectl run nats-setup --rm --restart=Never --attach --image=natsio/nats-box:lat
       name=$(echo "$entry" | cut -d"|" -f1)
       subjects=$(echo "$entry" | cut -d"|" -f2)
       retention=$(echo "$entry" | cut -d"|" -f3)
-      nats -s $S stream info "$name" > /dev/null 2>&1 \
-        && echo "Stream $name already exists (skipped)" \
-        || nats -s $S stream add "$name" \
+      if nats -s $S stream info "$name" > /dev/null 2>&1; then
+        echo "Stream $name already exists (skipped)"
+      elif nats -s $S stream add "$name" \
              --subjects "$subjects" \
              --storage file \
              --max-age "$retention" \
@@ -78,15 +78,17 @@ kubectl run nats-setup --rm --restart=Never --attach --image=natsio/nats-box:lat
              --max-bytes -1 \
              --max-msg-size -1 \
              --discard old \
-             --no-confirm \
-             && echo "Created stream $name" \
-             || echo "ERROR: failed to create stream $name"
+             --no-confirm; then
+        echo "Created stream $name"
+      else
+        echo "ERROR: failed to create stream $name"
+      fi
     done
   ' 2>&1 | sed "s/^/      /"
 
 # ── 4. Keycloak cip-dev realm ─────────────────────────────────────────────────
 echo "[4/5] Creating Keycloak cip-dev realm..."
-KC_POD=$(kubectl get pod -n cip-auth -l app.kubernetes.io/name=keycloak \
+KC_POD=$(kubectl get pod -n cip-auth -l app.kubernetes.io/name=keycloakx \
   --field-selector=status.phase=Running \
   -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
 
@@ -100,7 +102,7 @@ else
     -o jsonpath='{.data.admin-password}' 2>/dev/null | base64 -d 2>/dev/null || echo "")}"
   KC_ADMIN_TOKEN=$(kubectl exec -n cip-auth "$KC_POD" -- \
     curl -sf -X POST \
-    "${KC_LOCAL}/realms/master/protocol/openid-connect/token" \
+    "${KC_LOCAL}/auth/realms/master/protocol/openid-connect/token" \
     -d "client_id=admin-cli&username=admin&password=${_KC_ADMIN_PASS}&grant_type=password" \
     2>/dev/null | jq -r '.access_token' 2>/dev/null || echo "")
 
@@ -109,7 +111,7 @@ else
   else
     HTTP_STATUS=$(kubectl exec -n cip-auth "$KC_POD" -- \
       curl -sf -o /dev/null -w "%{http_code}" \
-      -X POST "${KC_LOCAL}/admin/realms" \
+      -X POST "${KC_LOCAL}/auth/admin/realms" \
       -H "Authorization: Bearer $KC_ADMIN_TOKEN" \
       -H "Content-Type: application/json" \
       -d '{"realm": "cip-dev", "enabled": true, "displayName": "CIP Dev"}' \
