@@ -4,7 +4,7 @@ WORKDIR /app
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json ./
 COPY packages/shared/package.json ./packages/shared/
 COPY packages/teams-bot/package.json ./packages/teams-bot/
-RUN pnpm install --frozen-lockfile
+RUN pnpm install --frozen-lockfile --shamefully-hoist
 COPY packages/shared ./packages/shared
 COPY packages/teams-bot ./packages/teams-bot
 RUN pnpm --filter @cip/shared build && pnpm --filter @cip/teams-bot build

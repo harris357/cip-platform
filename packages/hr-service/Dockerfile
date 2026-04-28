@@ -4,7 +4,7 @@ WORKDIR /app
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json ./
 COPY packages/shared/package.json ./packages/shared/
 COPY packages/hr-service/package.json ./packages/hr-service/
-RUN pnpm install --frozen-lockfile
+RUN pnpm install --frozen-lockfile --shamefully-hoist
 COPY packages/shared ./packages/shared
 COPY packages/hr-service ./packages/hr-service
 RUN pnpm --filter @cip/shared build && pnpm --filter @cip/hr-service build
