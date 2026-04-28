@@ -82,22 +82,24 @@ _=$(wait_pod            "app=teams-bot"    cip-app 60)
 section "PostgreSQL"
 
 if [[ -n "$PG_POD" ]]; then
-  if kubectl exec -n cip-infra "$PG_POD" -- psql -U cipuser -d cip_hr -c "SELECT 1" &>/dev/null 2>&1; then
+  PG_CIPUSER_PASS=$(kubectl get secret postgres-credentials -n cip-infra \
+    -o jsonpath='{.data.password}' 2>/dev/null | base64 -d 2>/dev/null || echo "")
+
+  if kubectl exec -n cip-infra "$PG_POD" -- \
+      env PGPASSWORD="$PG_CIPUSER_PASS" psql -U cipuser -d cip_hr -c "SELECT 1" &>/dev/null 2>&1; then
     pass "postgres cip_hr accepts connections"
   else
     fail "postgres cip_hr connection refused"
   fi
 
-  if kubectl exec -n cip-infra "$PG_POD" -- psql -U cipuser -d cip_hr \
-      -c "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='public'" \
-      &>/dev/null 2>&1; then
-    TABLES=$(kubectl exec -n cip-infra "$PG_POD" -- psql -U cipuser -d cip_hr -t \
-      -c "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='public'" 2>/dev/null | tr -d ' ')
-    if [[ "${TABLES:-0}" -gt 0 ]]; then
-      pass "cip_hr has $TABLES table(s) — migrations applied"
-    else
-      fail "cip_hr has no tables — run 'make bootstrap' to apply migrations"
-    fi
+  TABLES=$(kubectl exec -n cip-infra "$PG_POD" -- \
+    env PGPASSWORD="$PG_CIPUSER_PASS" psql -U cipuser -d cip_hr -t \
+    -c "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='public'" \
+    2>/dev/null | tr -d ' \n' || echo "0")
+  if [[ "${TABLES:-0}" -gt 0 ]]; then
+    pass "cip_hr has $TABLES table(s) — migrations applied"
+  else
+    fail "cip_hr has no tables — run 'make bootstrap' to apply migrations"
   fi
 fi
 
@@ -105,9 +107,15 @@ fi
 section "NATS JetStream"
 
 if [[ -n "$NATS_POD" ]]; then
+  # nats/nats image has no CLI; use nats-box to check streams in one shot
+  kubectl delete pod nats-smoke-check -n cip-infra 2>/dev/null || true
+  STREAM_STATUS=$(kubectl run nats-smoke-check --rm --restart=Never \
+    --image=natsio/nats-box:latest -n cip-infra \
+    -- sh -c 'S=nats://nats:4222; for s in CERTS HR_EVENTS PLATFORM_EVENTS HITL_EVENTS; do
+        nats -s $S stream info "$s" >/dev/null 2>&1 && echo "OK:$s" || echo "MISS:$s"
+      done' 2>/dev/null || echo "")
   for stream in CERTS HR_EVENTS PLATFORM_EVENTS HITL_EVENTS; do
-    if kubectl exec -n cip-infra "$NATS_POD" -- \
-        nats stream info "$stream" &>/dev/null 2>&1; then
+    if echo "$STREAM_STATUS" | grep -q "OK:$stream"; then
       pass "NATS stream $stream exists"
     else
       fail "NATS stream $stream missing — run 'make bootstrap'"
@@ -139,8 +147,13 @@ fi
 section "LiteLLM"
 
 if [[ -n "$LITELLM_POD" ]]; then
+  # Prefer env var; fall back to reading from k8s secret (not always sourced in CI / make context)
+  _LITELLM_KEY="${LITELLM_MASTER_KEY:-$(kubectl get secret litellm-credentials -n cip-app \
+    -o jsonpath='{.data.LITELLM_MASTER_KEY}' 2>/dev/null | base64 -d 2>/dev/null || echo "")}"
+
   LIVENESS=$(kubectl exec -n cip-app "$LITELLM_POD" -- \
-    curl -sf http://localhost:4000/health/liveliness 2>/dev/null \
+    curl -sf -H "Authorization: Bearer ${_LITELLM_KEY}" \
+    http://localhost:4000/health/liveliness 2>/dev/null \
     | jq -r '.status' 2>/dev/null || echo "error")
 
   if [[ "$LIVENESS" == "healthy" ]]; then
@@ -151,7 +164,7 @@ if [[ -n "$LITELLM_POD" ]]; then
 
   # Verify all cip-* model aliases are registered
   MODELS=$(kubectl exec -n cip-app "$LITELLM_POD" -- \
-    curl -sf -H "Authorization: Bearer ${LITELLM_MASTER_KEY:-}" \
+    curl -sf -H "Authorization: Bearer ${_LITELLM_KEY}" \
     http://localhost:4000/models 2>/dev/null \
     | jq -r '[.data[].id] | join(",")' 2>/dev/null || echo "")
 
@@ -214,9 +227,12 @@ done
 section "NATS pub/sub roundtrip"
 
 if [[ -n "$NATS_POD" ]]; then
-  TEST_SUBJECT=$(kubectl exec -n cip-infra "$NATS_POD" -- \
-    bash -c 'nats pub cip.smoke-test.ping "smoke" && echo "ok"' 2>/dev/null || echo "error")
-  if [[ "$TEST_SUBJECT" == *"ok"* ]]; then
+  kubectl delete pod nats-smoke-pub -n cip-infra 2>/dev/null || true
+  PUB_RESULT=$(kubectl run nats-smoke-pub --rm --restart=Never \
+    --image=natsio/nats-box:latest -n cip-infra \
+    -- nats -s nats://nats:4222 pub cip.smoke-test.ping "smoke" 2>/dev/null \
+    && echo "ok" || echo "error")
+  if [[ "$PUB_RESULT" == *"ok"* ]]; then
     pass "NATS publish to cip.smoke-test.ping succeeded"
   else
     fail "NATS publish failed"
