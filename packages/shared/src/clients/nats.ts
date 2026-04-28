@@ -1,4 +1,6 @@
-import { connect, StringCodec, type NatsConnection, type JetStreamManager } from 'nats';
+import { connect, StringCodec, type NatsConnection, type JetStreamManager, type JetStreamClient } from 'nats';
+
+export type { JetStreamClient };
 
 export interface NatsClientOptions {
   url?: string;

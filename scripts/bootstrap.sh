@@ -55,25 +55,32 @@ kubectl delete pod nats-setup -n cip-infra 2>/dev/null || true
 kubectl run nats-setup --rm --restart=Never --attach --image=natsio/nats-box:latest \
   -n cip-infra -- sh -c '
     S=nats://nats:4222
-    nats -s $S kv add teams-channel-registry --ttl=24h 2>/dev/null \
+    nats -s $S kv add teams-channel-registry --ttl=24h \
       && echo "KV bucket teams-channel-registry created." \
       || echo "KV bucket teams-channel-registry already exists (skipped)."
     for entry in \
-      "CERTS|cip.*.certs.>|1y" \
+      "CERTS|cip.*.certs.>|365d" \
       "HR_EVENTS|cip.*.hr.>|90d" \
       "PLATFORM_EVENTS|cip.*.platform.>|30d" \
       "HITL_EVENTS|cip.*.hitl.>|7d"; do
       name=$(echo "$entry" | cut -d"|" -f1)
       subjects=$(echo "$entry" | cut -d"|" -f2)
       retention=$(echo "$entry" | cut -d"|" -f3)
-      nats -s $S stream add "$name" \
-        --subjects "$subjects" \
-        --storage file \
-        --max-age "$retention" \
-        --retention limits \
-        --defaults 2>/dev/null \
-        && echo "Created stream $name" \
-        || echo "Stream $name already exists (skipped)"
+      nats -s $S stream info "$name" > /dev/null 2>&1 \
+        && echo "Stream $name already exists (skipped)" \
+        || nats -s $S stream add "$name" \
+             --subjects "$subjects" \
+             --storage file \
+             --max-age "$retention" \
+             --retention limits \
+             --replicas 1 \
+             --max-msgs -1 \
+             --max-bytes -1 \
+             --max-msg-size -1 \
+             --discard old \
+             --no-confirm \
+             && echo "Created stream $name" \
+             || echo "ERROR: failed to create stream $name"
     done
   ' 2>&1 | sed "s/^/      /"
 

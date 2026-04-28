@@ -2,18 +2,41 @@ import { createNatsClient, sc } from '@cip/shared/src/clients/nats.js';
 import { createTemporalClient } from '@cip/shared/src/clients/temporal.js';
 import { Subjects } from '@cip/shared/src/utils/subject-builder.js';
 import type { CertProcessedEvent, CertExpiredEvent, EmployeeOnboardedEvent } from '@cip/shared/src/types/events.js';
+import type { JetStreamClient } from '@cip/shared/src/clients/nats.js';
 
 // Wildcard subjects — one watcher handles all tenants; tenantId is filtered per event payload.
 const CERT_PROCESSED_SUBJECT = Subjects.certProcessed('*');
 const CERT_EXPIRED_SUBJECT = Subjects.certExpired('*');
 const EMPLOYEE_ONBOARDED_SUBJECT = Subjects.employeeOnboarded('*');
 
+async function subscribeWithRetry(
+  js: JetStreamClient,
+  subject: string,
+  label: string,
+) {
+  const maxAttempts = 20;
+  const delayMs = 5_000;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      return await js.subscribe(subject, {});
+    } catch {
+      if (attempt < maxAttempts) {
+        console.warn(`[watcher] ${label}: JetStream stream not ready, retrying in ${delayMs / 1000}s (${attempt}/${maxAttempts})...`);
+        await new Promise((r) => setTimeout(r, delayMs));
+      } else {
+        throw new Error(`[watcher] ${label}: stream still not available after ${maxAttempts} attempts — run 'make bootstrap'`);
+      }
+    }
+  }
+  throw new Error('unreachable');
+}
+
 export async function startAmbientWatcher(): Promise<void> {
   const nc = await createNatsClient();
   const js = nc.jetstream();
 
   async function watchCertProcessed(): Promise<void> {
-    const sub = await js.subscribe(CERT_PROCESSED_SUBJECT, {});
+    const sub = await subscribeWithRetry(js, CERT_PROCESSED_SUBJECT, 'cert.processed');
     for await (const msg of sub) {
       const event = JSON.parse(sc.decode(msg.data)) as CertProcessedEvent;
       await handleCertProcessed(event);
@@ -22,7 +45,7 @@ export async function startAmbientWatcher(): Promise<void> {
   }
 
   async function watchCertExpired(): Promise<void> {
-    const sub = await js.subscribe(CERT_EXPIRED_SUBJECT, {});
+    const sub = await subscribeWithRetry(js, CERT_EXPIRED_SUBJECT, 'cert.expired');
     for await (const msg of sub) {
       const event = JSON.parse(sc.decode(msg.data)) as CertExpiredEvent;
       await handleCertExpired(event);
@@ -31,7 +54,7 @@ export async function startAmbientWatcher(): Promise<void> {
   }
 
   async function watchEmployeeOnboarded(): Promise<void> {
-    const sub = await js.subscribe(EMPLOYEE_ONBOARDED_SUBJECT, {});
+    const sub = await subscribeWithRetry(js, EMPLOYEE_ONBOARDED_SUBJECT, 'employee.onboarded');
     for await (const msg of sub) {
       const event = JSON.parse(sc.decode(msg.data)) as EmployeeOnboardedEvent;
       await handleEmployeeOnboarded(event);
