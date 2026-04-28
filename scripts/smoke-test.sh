@@ -6,8 +6,8 @@ set -euo pipefail
 # Exit 0 = all pass. Exit 1 = one or more failures.
 
 GREEN='\033[0;32m'; RED='\033[0;31m'; YELLOW='\033[1;33m'; BOLD='\033[1m'; RESET='\033[0m'
-pass() { echo -e "  ${GREEN}✅${RESET}  $1"; ((PASS++)); }
-fail() { echo -e "  ${RED}❌${RESET}  $1"; ((FAIL++)); FAILURES+=("$1"); }
+pass() { echo -e "  ${GREEN}✅${RESET}  $1"; PASS=$((PASS + 1)); }
+fail() { echo -e "  ${RED}❌${RESET}  $1"; FAIL=$((FAIL + 1)); FAILURES+=("$1"); }
 warn() { echo -e "  ${YELLOW}⚠️ ${RESET}  $1"; }
 section() { echo -e "\n${BOLD}── $1 ──────────────────────────────────────────${RESET}"; }
 
