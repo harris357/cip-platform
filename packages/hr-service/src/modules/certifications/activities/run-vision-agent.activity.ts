@@ -1,7 +1,7 @@
 import { activityInfo } from '@temporalio/activity';
 import { ExtractionResultSchema } from '@cip/shared';
 import type { ExtractionResult } from '@cip/shared';
-import { runVisionAgent } from '../../../agents/vision-agent/index.js';
+import { runVisionAgent } from '../agents/vision-agent/index.js';
 
 export interface RunVisionAgentInput {
   tenantId: string;
