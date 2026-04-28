@@ -16,6 +16,10 @@ env:
   KEYCLOAK_URL: https://keycloak.dev.cip.io
   KEYCLOAK_REALM: cip-dev
   TEAMS_BOT_URL: http://teams-bot.cip-app.svc.cluster.local:3978
+  MCP_PORT: 4001
+  OBJECT_STORE_BUCKET: cip-uploads
+  AWS_ENDPOINT_URL: https://s3.bhs.io.cloud.ovh.net
+  AWS_REGION: BHS
 
 # Secrets injected via K8s secret reference
 envFrom:

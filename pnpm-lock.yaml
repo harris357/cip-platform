@@ -186,6 +186,9 @@ importers:
 
   packages/teams-bot:
     dependencies:
+      '@aws-sdk/client-s3':
+        specifier: ^3.600.0
+        version: 3.1035.0
       '@cip/shared':
         specifier: workspace:*
         version: link:../shared

@@ -28,6 +28,8 @@ export async function resolveAuthContext(
 
   const client = await getMcpClient(keycloakJwt);
 
+  await client.callTool({ name: 'sync_employee', arguments: {} });
+
   const capsResult = await client.callTool({ name: 'get_employee_capabilities', arguments: {} });
   const capsResponse = JSON.parse(extractText(capsResult.content)) as {
     data?: { capabilities?: Record<string, boolean>; roles?: string[] };

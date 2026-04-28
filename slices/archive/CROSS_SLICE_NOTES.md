@@ -151,7 +151,14 @@
 - **Status:** RESOLVED 2026-04-25
 - **Fix applied:** Added `workerOnboarded: (tenantId: string) => buildSubject({ tenantId, domain: 'worker', event: 'onboarded' })` to the `Subjects` const. Both `@cip/shared` and `@cip/hr-service` typecheck clean.
 
-
+### CS-018 — DEFERRED (architectural decision required)
+- **Logged in:** Slice 21 (Teams Integration Audit)
+- **Affects:** Slice 17 (Teams Bot Core)
+- **File:** `packages/teams-bot/src/teams-protocol/channel-registry.ts`
+- **Status:** DEFERRED
+- **Issue:** The channel registry stores conversation references in a process-local in-memory Map with a 24-hour TTL; all registered channels are lost on pod restart.
+- **Why it matters:** After a restart, `POST /proactive` will return 404 for every previously registered channel until each user sends a new message to re-register — proactive HITL notifications will be silently dropped in the interim.
+- **Fix:** Architectural decision required — options are: Redis-backed registry (new infra dependency), NATS key-value store (already in-cluster), or PostgreSQL table in hr-service. Resolve before production launch.
 
 ---
 

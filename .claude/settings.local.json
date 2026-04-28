@@ -40,7 +40,17 @@
       "Bash(pnpm --filter @cip/platform-core typecheck)",
       "Bash(grep -c \"':$\\\\|'\\\\[$\" /home/harris/ernAI/packages/hr-service/src/modules/certifications/activities/nickname-map.ts)",
       "Bash(pnpm --filter @cip/shared build)",
-      "Bash(pnpm install *)"
+      "Bash(pnpm install *)",
+      "Bash(git rm *)",
+      "WebFetch(domain:support.us.ovhcloud.com)",
+      "Bash(openstack --version)",
+      "Bash(env)",
+      "Bash(python3 -m pip install python-openstackclient)",
+      "Bash(pip3 install *)",
+      "Bash(mv /home/harris/ernAI/slices/SLICE_18_TEAMS_BOT_AUTH_CLEANUP.md /home/harris/ernAI/slices/archive/)",
+      "Bash(mv /home/harris/ernAI/slices/SLICE_19_TEAMS_BOT_OBJECT_STORE.md /home/harris/ernAI/slices/archive/)",
+      "Bash(mv /home/harris/ernAI/slices/SLICE_20_TEAMS_APP_PACKAGE.md /home/harris/ernAI/slices/archive/)",
+      "Bash(mv /home/harris/ernAI/slices/SLICE_21_TEAMS_INTEGRATION_AUDIT.md /home/harris/ernAI/slices/archive/)"
     ],
     "deny": [
       "Read(node_modules/**)",
@@ -55,7 +65,8 @@
     ],
     "additionalDirectories": [
       "/home/harris/ernAI/packages/hr-service/src/modules/certifications/agents",
-      "/home/harris/ernAI/packages/hr-service/src/workflows"
+      "/home/harris/ernAI/packages/hr-service/src/workflows",
+      "/home/harris/ernAI/packages/teams-bot/src/agents"
     ]
   }
 }

@@ -8,6 +8,11 @@ spec:
   selector:
     app: hr-service
   ports:
-    - protocol: TCP
+    - name: http
+      protocol: TCP
       port: {{ .Values.service.port }}
       targetPort: {{ .Values.service.port }}
+    - name: mcp
+      protocol: TCP
+      port: 4001
+      targetPort: 4001

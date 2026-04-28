@@ -30,6 +30,8 @@ kubectl create secret generic hr-service-credentials \
   --from-literal=TEMPORAL_ADDRESS="${TEMPORAL_ADDRESS}" \
   --from-literal=TEMPORAL_NAMESPACE="${TEMPORAL_NAMESPACE}" \
   --from-literal=DATABASE_URL_HR="${DATABASE_URL_HR}" \
+  --from-literal=AWS_ACCESS_KEY_ID="${AWS_ACCESS_KEY_ID:-}" \
+  --from-literal=AWS_SECRET_ACCESS_KEY="${AWS_SECRET_ACCESS_KEY:-}" \
   --dry-run=client -o yaml | kubectl apply -f -
 
 # Platform Core credentials

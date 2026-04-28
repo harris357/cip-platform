@@ -8,41 +8,15 @@
 
 | # | Slice | Doc | Status |
 |---|-------|-----|--------|
-| 02 | Shared Types | [SLICE_02_SHARED_TYPES.md](./SLICE_02_SHARED_TYPES.md) | pending |
-| 05A | HR Domain Schema | [SLICE_05A_HR_DOMAIN.md](./SLICE_05A_HR_DOMAIN.md) | pending |
-| 05B | HR ORM + Registry | [SLICE_05B_HR_ORM.md](./SLICE_05B_HR_ORM.md) | pending |
-| 06 | HR Temporal Workflows | [SLICE_06_HR_TEMPORAL.md](./SLICE_06_HR_TEMPORAL.md) | pending |
-| 07 | Vision Agent | [SLICE_07_VISION_AGENT.md](./SLICE_07_VISION_AGENT.md) | pending |
-| 08 | NATS Watcher | [SLICE_08_NATS_WATCHER.md](./SLICE_08_NATS_WATCHER.md) | pending |
-| 09 | MCP Server | [SLICE_09_MCP_SERVER.md](./SLICE_09_MCP_SERVER.md) | pending |
-| 10 | Platform Core | [SLICE_10_PLATFORM_CORE.md](./SLICE_10_PLATFORM_CORE.md) | pending |
-| 14 | Matching Activities | [SLICE_14_MATCHING.md](./SLICE_14_MATCHING.md) | pending |
-| 15 | Employee Onboarding | [SLICE_15_EMPLOYEE_ONBOARDING.md](./SLICE_15_EMPLOYEE_ONBOARDING.md) | pending |
-| 16 | Complex Query Tools | [SLICE_16_COMPLEX_QUERY_TOOLS.md](./SLICE_16_COMPLEX_QUERY_TOOLS.md) | pending |
-| 17 | Teams Bot | [SLICE_17_TEAMS_BOT.md](./SLICE_17_TEAMS_BOT.md) | pending |
+| — | _(new slices will be added here)_ | — | — |
 
-Slices 01–13 and App Images are complete — see [archive/](./archive/).
+All slices 01–21 are complete — see [archive/](./archive/).
 
 ---
 
 ## Dependency Order
 
-```
-02 (shared types)
- └─ 05A (domain schema)
-     └─ 05B (Drizzle ORM + LookupRegistry)
-         ├─ 06 (Temporal workflows)
-         │   ├─ 07 (vision agent)
-         │   ├─ 08 (NATS watcher)
-         │   └─ 14 (matching activities)  ← fills stubs from 06
-         ├─ 09 (MCP server)
-         │   └─ 16 (complex query tools)
-         └─ 15 (employee onboarding)      ← needs 06 worker registration
-10 (platform core)                        ← parallel with 05B+
-17 (teams bot)                            ← parallel with 09+, no hr-service imports
-```
-
-Slices 06, 09, 10, 17 can all proceed in parallel once 05B is done.
+_(to be filled when new slices are defined)_
 
 ---
 

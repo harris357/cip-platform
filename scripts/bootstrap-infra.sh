@@ -7,6 +7,37 @@ set -euo pipefail
 
 echo "=== CIP Infrastructure Bootstrap ==="
 
+# ── Step 0: OpenStack security group — restrict ingress to Cloudflare IPs ────
+echo ""
+echo "[0] OpenStack — cloudflare-only security group..."
+export OS_AUTH_URL="https://auth.cloud.ovh.net/v3"
+export OS_IDENTITY_API_VERSION=3
+export OS_USER_DOMAIN_NAME="Default"
+export OS_PROJECT_DOMAIN_NAME="Default"
+export OS_PROJECT_ID="${OVH_PROJECT_ID}"
+export OS_USERNAME="${OPENSTACK_USER}"
+export OS_PASSWORD="${OPENSTACK_PASSWORD}"
+export OS_REGION_NAME="${OVH_REGION:-BHS5}"
+
+if ! openstack security group show cloudflare-only &>/dev/null; then
+  openstack security group create cloudflare-only --description "Allow Cloudflare IPs only"
+  # SSH
+  openstack security group rule create --protocol tcp --dst-port 22 --remote-ip 0.0.0.0/0 cloudflare-only
+  # Cloudflare IPv4 ranges — https://www.cloudflare.com/ips-v4
+  for CIDR in \
+    103.21.244.0/22 103.22.200.0/22 103.31.4.0/22 \
+    104.16.0.0/13  104.24.0.0/14  108.162.192.0/18 \
+    131.0.72.0/22  141.101.64.0/18 162.158.0.0/15 \
+    172.64.0.0/13  173.245.48.0/20 188.114.96.0/20 \
+    190.93.240.0/20 197.234.240.0/22 198.41.128.0/17; do
+    openstack security group rule create --protocol tcp --dst-port 443 --remote-ip "$CIDR" cloudflare-only
+    openstack security group rule create --protocol tcp --dst-port 80  --remote-ip "$CIDR" cloudflare-only
+  done
+  echo "      Created security group 'cloudflare-only'."
+else
+  echo "      Security group 'cloudflare-only' already exists — skipping."
+fi
+
 # Map .envrc OVH_* names to Terraform TF_VAR_* names
 export TF_VAR_ovh_endpoint="${OVH_ENDPOINT:-ovh-ca}"
 export TF_VAR_ovh_application_key="$OVH_APP_KEY"
