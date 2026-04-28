@@ -10,6 +10,7 @@ COPY packages/teams-bot ./packages/teams-bot
 RUN pnpm --filter @cip/shared build && pnpm --filter @cip/teams-bot build
 
 FROM node:22-slim
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY --from=builder /app/packages/teams-bot/dist ./dist
 COPY --from=builder /app/node_modules ./node_modules

@@ -10,6 +10,7 @@ COPY packages/hr-service ./packages/hr-service
 RUN pnpm --filter @cip/shared build && pnpm --filter @cip/hr-service build
 
 FROM node:22-slim
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY --from=builder /app/packages/hr-service/dist ./dist
 COPY --from=builder /app/node_modules ./node_modules
