@@ -1,5 +1,5 @@
+import { z } from 'zod';
 import { getNatsConnection, sc, Subjects } from '@cip/shared';
-import type { EmployeeOnboardedEvent } from '@cip/shared';
 
 export interface PublishEmployeeOnboardedInput {
   tenantId:     string;
@@ -7,19 +7,27 @@ export interface PublishEmployeeOnboardedInput {
   identityType: string;
 }
 
+const EmployeeOnboardedEventSchema = z.object({
+  tenantId:     z.string(),
+  employeeId:   z.string(),
+  identityType: z.string(),
+  onboardedAt:  z.string(),
+});
+
 export async function publishEmployeeOnboardedActivity(
   input: PublishEmployeeOnboardedInput,
 ): Promise<void> {
-  const nc = await getNatsConnection();
-  const js = nc.jetstream();
-  const event: EmployeeOnboardedEvent = {
+  const payload = EmployeeOnboardedEventSchema.parse({
     tenantId:     input.tenantId,
     employeeId:   input.employeeId,
     identityType: input.identityType,
     onboardedAt:  new Date().toISOString(),
-  };
+  });
+
+  const nc = await getNatsConnection();
+  const js = nc.jetstream();
   await js.publish(
     Subjects.employeeOnboarded(input.tenantId),
-    sc.encode(JSON.stringify(event)),
+    sc.encode(JSON.stringify(payload)),
   );
 }
