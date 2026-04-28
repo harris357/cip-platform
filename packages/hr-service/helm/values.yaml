@@ -12,8 +12,6 @@ service:
 env:
   LITELLM_BASE_URL: http://litellm.cip-app.svc.cluster.local:4000
   NATS_URL: nats://nats.cip-infra.svc.cluster.local:4222
-  # Dev: shared namespace. Prod: "${tenantId}.cip" — matches TenantProvisioningWorkflow output.
-  TEMPORAL_NAMESPACE: cip-dev
   TEMPORAL_TASK_QUEUE: cip-hr-tasks
   KEYCLOAK_URL: https://keycloak.dev.cip.io
   # Dev: single shared realm. Prod: realm per tenant = tenantId (set at deploy time).
