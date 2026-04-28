@@ -1,32 +1,55 @@
 import type { ConversationReference, TurnContext } from 'botbuilder';
 import { TurnContext as TC } from 'botbuilder';
+import { getNatsConnection } from '@cip/shared/src/clients/nats.js';
 import { getMcpClient } from '../mcp/client.js';
 
-interface ChannelEntry {
-  ref: Partial<ConversationReference>;
-  expiresAt: number; // Date.now() + 24h
-}
+const BUCKET = process.env['CHANNEL_REGISTRY_BUCKET'] ?? 'teams-channel-registry';
+const TTL_MS = 24 * 60 * 60 * 1000; // 24 h — matches previous in-memory TTL
 
 interface TenantChannelConfig {
   channels: Array<{ channelId: string; channelType: string }>;
 }
 
-const registry = new Map<string, ChannelEntry>();
 const configCache = new Map<string, { config: TenantChannelConfig; expiresAt: number }>();
 const CONFIG_TTL = 5 * 60 * 1000;
 
-export function registerChannel(
+// KV type inferred from nats — avoid direct nats import in this package
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let _kv: any;
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function getKv(): Promise<any> {
+  if (!_kv) {
+    const nc = await getNatsConnection();
+    const js = nc.jetstream();
+    // Lazy-create the bucket if it doesn't exist; idempotent across pods.
+    _kv = await js.views.kv(BUCKET, { history: 1, ttl: TTL_MS });
+  }
+  return _kv;
+}
+
+// Key: tenantId.channelType  — tenant isolation is baked into every key
+function buildKey(tenantId: string, channelType: string): string {
+  return `${tenantId}.${channelType}`;
+}
+
+export async function registerChannel(
   tenantId: string,
   channelType: string,
   ref: Partial<ConversationReference>,
-): void {
-  registry.set(`${tenantId}:${channelType}`, { ref, expiresAt: Date.now() + 86_400_000 });
+): Promise<void> {
+  const kv = await getKv();
+  await kv.put(buildKey(tenantId, channelType), JSON.stringify(ref));
 }
 
-export function getChannelRef(tenantId: string, channelType: string): Partial<ConversationReference> | null {
-  const entry = registry.get(`${tenantId}:${channelType}`);
-  if (!entry || Date.now() > entry.expiresAt) return null;
-  return entry.ref;
+export async function getChannelRef(
+  tenantId: string,
+  channelType: string,
+): Promise<Partial<ConversationReference> | null> {
+  const kv = await getKv();
+  const entry = await kv.get(buildKey(tenantId, channelType));
+  if (!entry) return null;
+  return JSON.parse(entry.string()) as Partial<ConversationReference>;
 }
 
 function extractText(content: unknown): string {
@@ -65,7 +88,7 @@ export async function updateChannelRegistry(
 
   for (const entry of config.channels) {
     if (entry.channelId === incomingChannelId) {
-      registerChannel(tenantId, entry.channelType, ref);
+      await registerChannel(tenantId, entry.channelType, ref);
     }
   }
 }

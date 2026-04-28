@@ -32,7 +32,7 @@ app.post('/proactive', async (req, res) => {
     channelType: string;
     card: object;
   };
-  const ref = getChannelRef(tenantId, channelType);
+  const ref = await getChannelRef(tenantId, channelType);
   if (!ref) {
     res.status(404).json({ error: 'channel not registered' });
     return;
