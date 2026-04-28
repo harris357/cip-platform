@@ -8,15 +8,12 @@ RUN pnpm install --frozen-lockfile
 COPY packages/shared ./packages/shared
 COPY packages/platform-core ./packages/platform-core
 RUN pnpm --filter @cip/shared build && pnpm --filter @cip/platform-core build
-RUN pnpm prune --prod
-# Replace the workspace symlink with a real directory so the final image is self-contained
-RUN cp -rL node_modules/@cip/shared /tmp/shared && \
-    rm -rf node_modules/@cip/shared && \
-    mv /tmp/shared node_modules/@cip/shared
 
 FROM node:22-alpine
 WORKDIR /app
 COPY --from=builder /app/packages/platform-core/dist ./dist
 COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/packages/shared/package.json ./node_modules/@cip/shared/package.json
+COPY --from=builder /app/packages/shared/dist ./node_modules/@cip/shared/dist
 EXPOSE 3001
 CMD ["node", "dist/index.js"]
