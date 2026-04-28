@@ -17,7 +17,7 @@ kubectl create secret generic litellm-credentials \
   --namespace cip-app \
   --from-literal=ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY}" \
   --from-literal=LITELLM_MASTER_KEY="${LITELLM_MASTER_KEY}" \
-  --from-literal=LITELLM_DATABASE_URL="postgresql://cipuser:${PG_USER_PASSWORD}@postgres-postgresql.cip-infra.svc.cluster.local:5432/cip_litellm" \
+  --from-literal=LITELLM_DATABASE_URL="${DATABASE_URL_LITELLM}" \
   --from-literal=LANGFUSE_PUBLIC_KEY="${LANGFUSE_PUBLIC_KEY}" \
   --from-literal=LANGFUSE_SECRET_KEY="${LANGFUSE_SECRET_KEY}" \
   --from-literal=LANGFUSE_HOST="${LANGFUSE_HOST}" \

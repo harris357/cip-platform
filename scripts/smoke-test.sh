@@ -130,14 +130,14 @@ section "Keycloak"
 if [[ -n "$KC_POD" ]]; then
   KC_SVC_URL="http://keycloak.cip-auth.svc.cluster.local"
   if kubectl exec -n cip-auth "$KC_POD" -- \
-      curl -sf "${KC_SVC_URL}/auth/realms/cip-dev" &>/dev/null 2>&1; then
+      curl -sf "${KC_SVC_URL}/realms/cip-dev" &>/dev/null 2>&1; then
     pass "Keycloak realm cip-dev exists"
   else
     fail "Keycloak realm cip-dev missing — run 'make bootstrap'"
   fi
 
   if kubectl exec -n cip-auth "$KC_POD" -- \
-      curl -sf "http://localhost:9000/auth/health/ready" &>/dev/null 2>&1; then
+      curl -sf "http://localhost:9000/health/ready" &>/dev/null 2>&1; then
     pass "Keycloak health/ready"
   else
     fail "Keycloak not healthy"

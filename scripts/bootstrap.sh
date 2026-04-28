@@ -102,7 +102,7 @@ else
     -o jsonpath='{.data.admin-password}' 2>/dev/null | base64 -d 2>/dev/null || echo "")}"
   KC_ADMIN_TOKEN=$(kubectl exec -n cip-auth "$KC_POD" -- \
     curl -sf -X POST \
-    "${KC_LOCAL}/auth/realms/master/protocol/openid-connect/token" \
+    "${KC_LOCAL}/realms/master/protocol/openid-connect/token" \
     -d "client_id=admin-cli&username=admin&password=${_KC_ADMIN_PASS}&grant_type=password" \
     2>/dev/null | jq -r '.access_token' 2>/dev/null || echo "")
 
@@ -111,7 +111,7 @@ else
   else
     HTTP_STATUS=$(kubectl exec -n cip-auth "$KC_POD" -- \
       curl -sf -o /dev/null -w "%{http_code}" \
-      -X POST "${KC_LOCAL}/auth/admin/realms" \
+      -X POST "${KC_LOCAL}/admin/realms" \
       -H "Authorization: Bearer $KC_ADMIN_TOKEN" \
       -H "Content-Type: application/json" \
       -d '{"realm": "cip-dev", "enabled": true, "displayName": "CIP Dev"}' \
