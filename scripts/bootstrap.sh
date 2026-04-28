@@ -13,22 +13,41 @@ echo "=== CIP App Bootstrap ==="
 
 # ── 1. Database migrations ────────────────────────────────────────────────────
 echo "[1/4] Running database migrations..."
-POSTGRES_POD=$(kubectl get pod -n cip-infra -l app.kubernetes.io/name=postgresql \
+if [[ -n "${DATABASE_URL_HR:-}" ]]; then
+  pnpm --filter @cip/hr-service run migrate
+else
+  echo "      DATABASE_URL_HR not set — attempting kubectl fallback..."
+  POSTGRES_POD=$(kubectl get pod -n cip-infra -l app.kubernetes.io/name=postgresql \
+    -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
+
+  if [[ -z "$POSTGRES_POD" ]]; then
+    echo "      WARNING: postgres pod not found — set DATABASE_URL_HR or run after 'make start'"
+  else
+    kubectl exec -n cip-infra "$POSTGRES_POD" -- \
+      psql -U cipuser -d cip_hr \
+      -c "$(cat packages/hr-service/src/db/migrations/001_initial.sql)" \
+      2>&1 | grep -v "^$" | sed 's/^/      /' \
+      || echo "      INFO: migration already applied or psql error (check above)"
+    echo "      Migrations done."
+  fi
+fi
+
+# ── 2. NATS KV bucket for channel registry (Slice 26 — resolves CS-018) ──────
+echo "[2/5] Creating NATS KV bucket for channel registry..."
+NATS_POD_KV=$(kubectl get pod -n cip-infra -l app.kubernetes.io/name=nats \
   -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
 
-if [[ -z "$POSTGRES_POD" ]]; then
-  echo "      WARNING: postgres pod not found — run again after 'make start'"
+if [[ -z "$NATS_POD_KV" ]]; then
+  echo "      WARNING: NATS pod not found — run again after 'make start'"
 else
-  kubectl exec -n cip-infra "$POSTGRES_POD" -- \
-    psql -U cipuser -d cip_hr \
-    -c "$(cat packages/hr-service/src/db/migrations/001_initial.sql)" \
-    2>&1 | grep -v "^$" | sed 's/^/      /' \
-    || echo "      INFO: migration already applied or psql error (check above)"
-  echo "      Migrations done."
+  kubectl exec -n cip-infra "$NATS_POD_KV" -- \
+    nats kv add teams-channel-registry --ttl=24h 2>/dev/null \
+    && echo "      KV bucket teams-channel-registry created." \
+    || echo "      KV bucket teams-channel-registry already exists (skipped)."
 fi
 
 # ── 3. NATS JetStream streams ─────────────────────────────────────────────────
-echo "[2/4] Creating NATS JetStream streams..."
+echo "[3/5] Creating NATS JetStream streams..."
 NATS_POD=$(kubectl get pod -n cip-infra -l app.kubernetes.io/name=nats \
   -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
 
@@ -55,7 +74,7 @@ STREAMS
 fi
 
 # ── 4. Keycloak cip-dev realm ─────────────────────────────────────────────────
-echo "[3/4] Creating Keycloak cip-dev realm..."
+echo "[4/5] Creating Keycloak cip-dev realm..."
 KC_POD=$(kubectl get pod -n cip-auth -l app.kubernetes.io/name=keycloak \
   --field-selector=status.phase=Running \
   -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
@@ -86,7 +105,7 @@ else
 fi
 
 # ── 5. LiteLLM dev-tenant virtual key ────────────────────────────────────────
-echo "[4/4] Issuing LiteLLM virtual key for dev tenant..."
+echo "[5/5] Issuing LiteLLM virtual key for dev tenant..."
 LITELLM_POD=$(kubectl get pod -n cip-app -l app=litellm \
   --field-selector=status.phase=Running \
   -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
