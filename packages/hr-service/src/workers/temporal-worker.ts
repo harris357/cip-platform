@@ -5,6 +5,10 @@ import * as employeeActivities from '../modules/employees/activities/index.js';
 
 export async function startTemporalWorker(): Promise<void> {
   const connection = await createTemporalWorkerConnection();
+  // Dev: TEMPORAL_NAMESPACE is a single shared namespace (e.g. "cip-dev").
+  // Prod: each tenant gets its own namespace "${tenantId}.cip", created by
+  //       platform-core TenantProvisioningWorkflow → createTemporalNamespace.
+  //       Deploy-time helm --set env.TEMPORAL_NAMESPACE="${tenantId}.cip" per worker replica.
   const namespace  = process.env['TEMPORAL_NAMESPACE']!;
 
   const worker = await Worker.create({
