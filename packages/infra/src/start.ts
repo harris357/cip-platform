@@ -54,14 +54,30 @@ async function main(): Promise<void> {
   console.log('Node up. Cinder volumes re-attached. Infra charts (postgres, nats, keycloak) already running via Terraform.');
   console.log(`Langfuse mode: ${LANGFUSE_SELF_HOSTED ? 'self-hosted (cip-observe)' : 'cloud (cloud.langfuse.com)'}`);
 
-  // Step 2: Add helm repos required by the current config
+  // Step 2: Wait for infra pods to be Ready before running bootstrap or deploying app charts
+  console.log('\nWaiting for infra pods to be Ready...');
+  execSync(
+    'kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=postgresql -n cip-infra --timeout=300s',
+    { stdio: 'inherit', cwd: REPO_ROOT },
+  );
+  execSync(
+    'kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=nats -n cip-infra --timeout=300s',
+    { stdio: 'inherit', cwd: REPO_ROOT },
+  );
+  console.log('Infra pods Ready.');
+
+  // Step 3: Bootstrap — migrations, NATS streams, Keycloak realm (idempotent)
+  console.log('\nRunning bootstrap...');
+  execSync('bash scripts/bootstrap.sh', { stdio: 'inherit', cwd: REPO_ROOT });
+
+  // Step 4: Add helm repos required by the current config
   if (LANGFUSE_SELF_HOSTED) {
     console.log('\nAdding langfuse helm repo...');
     execSync('helm repo add langfuse https://langfuse.com/helm --force-update', { stdio: 'inherit', cwd: REPO_ROOT });
     execSync('helm repo update langfuse', { stdio: 'inherit', cwd: REPO_ROOT });
   }
 
-  // Step 3: Application services
+  // Step 5: Application services
   console.log('\nDeploying application services...');
   for (const release of APP_CHARTS) {
     helmInstall(release);

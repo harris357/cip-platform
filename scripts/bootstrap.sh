@@ -1,77 +1,70 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# App-layer bootstrap — run once after 'make bootstrap-infra' completes.
-# Safe to re-run (idempotent).
+# App-layer bootstrap — idempotent, called automatically by 'make start'.
+# Can also be run standalone after 'make bootstrap-infra'.
 #
 # Assumes:
-#   - Terraform has provisioned the cluster, PVCs, and infra Helm charts (postgres, nats, keycloak)
-#   - KUBECONFIG points at the cluster (~/.kube/cip-dev.yaml)
-#   - K8s secrets already created by bootstrap-infra.sh
+#   - Infra pods (postgres, nats, keycloak) are Ready
+#   - .envrc has been sourced (PG_USER_PASSWORD, KEYCLOAK_ADMIN_PASSWORD, etc.)
 
 echo "=== CIP App Bootstrap ==="
 
 # ── 1. Database migrations ────────────────────────────────────────────────────
-echo "[1/4] Running database migrations..."
-if [[ -n "${DATABASE_URL_HR:-}" ]]; then
-  pnpm --filter @cip/hr-service run migrate
-else
-  echo "      DATABASE_URL_HR not set — attempting kubectl fallback..."
-  POSTGRES_POD=$(kubectl get pod -n cip-infra -l app.kubernetes.io/name=postgresql \
-    -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
-
-  if [[ -z "$POSTGRES_POD" ]]; then
-    echo "      WARNING: postgres pod not found — set DATABASE_URL_HR or run after 'make start'"
-  else
-    kubectl exec -n cip-infra "$POSTGRES_POD" -- \
-      psql -U cipuser -d cip_hr \
-      -c "$(cat packages/hr-service/src/db/migrations/001_initial.sql)" \
-      2>&1 | grep -v "^$" | sed 's/^/      /' \
-      || echo "      INFO: migration already applied or psql error (check above)"
-    echo "      Migrations done."
-  fi
-fi
-
-# ── 2. NATS KV bucket for channel registry (Slice 26 — resolves CS-018) ──────
-echo "[2/5] Creating NATS KV bucket for channel registry..."
-NATS_POD_KV=$(kubectl get pod -n cip-infra -l app.kubernetes.io/name=nats \
+echo "[1/5] Running database migrations..."
+POSTGRES_POD=$(kubectl get pod -n cip-infra -l app.kubernetes.io/name=postgresql \
   -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
 
-if [[ -z "$NATS_POD_KV" ]]; then
-  echo "      WARNING: NATS pod not found — run again after 'make start'"
-else
-  kubectl exec -n cip-infra "$NATS_POD_KV" -- \
-    nats kv add teams-channel-registry --ttl=24h 2>/dev/null \
-    && echo "      KV bucket teams-channel-registry created." \
-    || echo "      KV bucket teams-channel-registry already exists (skipped)."
+if [[ -z "$POSTGRES_POD" ]]; then
+  echo "      ERROR: postgres pod not found — ensure infra is running"
+  exit 1
 fi
 
-# ── 3. NATS JetStream streams ─────────────────────────────────────────────────
-echo "[3/5] Creating NATS JetStream streams..."
+# Open a temporary port-forward on 15432 (avoids collision with 'make forward')
+kubectl port-forward -n cip-infra svc/postgres-postgresql 15432:5432 &>/dev/null &
+PF_PID=$!
+sleep 3  # wait for the tunnel to be established
+
+DATABASE_URL_HR="postgres://cipuser:${PG_USER_PASSWORD}@localhost:15432/cip_hr" \
+  pnpm --filter @cip/hr-service run migrate
+
+kill "$PF_PID" 2>/dev/null || true
+echo "      Migrations done."
+
+# ── 2. NATS KV bucket for channel registry ───────────────────────────────────
+echo "[2/5] Creating NATS KV bucket for channel registry..."
 NATS_POD=$(kubectl get pod -n cip-infra -l app.kubernetes.io/name=nats \
   -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
 
 if [[ -z "$NATS_POD" ]]; then
-  echo "      WARNING: NATS pod not found — run again after 'make start'"
-else
-  while IFS='|' read -r stream_name subjects retention; do
-    kubectl exec -n cip-infra "$NATS_POD" -- \
-      nats stream add "$stream_name" \
-        --subjects "$subjects" \
-        --storage file \
-        --max-age "$retention" \
-        --retention limits \
-        --defaults \
-        2>/dev/null \
-      && echo "      Created stream $stream_name" \
-      || echo "      Stream $stream_name already exists (skipped)"
-  done <<'STREAMS'
+  echo "      ERROR: NATS pod not found"
+  exit 1
+fi
+
+kubectl exec -n cip-infra "$NATS_POD" -- \
+  nats kv add teams-channel-registry --ttl=24h 2>/dev/null \
+  && echo "      KV bucket teams-channel-registry created." \
+  || echo "      KV bucket teams-channel-registry already exists (skipped)."
+
+# ── 3. NATS JetStream streams ─────────────────────────────────────────────────
+echo "[3/5] Creating NATS JetStream streams..."
+while IFS='|' read -r stream_name subjects retention; do
+  kubectl exec -n cip-infra "$NATS_POD" -- \
+    nats stream add "$stream_name" \
+      --subjects "$subjects" \
+      --storage file \
+      --max-age "$retention" \
+      --retention limits \
+      --defaults \
+      2>/dev/null \
+    && echo "      Created stream $stream_name" \
+    || echo "      Stream $stream_name already exists (skipped)"
+done <<'STREAMS'
 CERTS|cip.*.certs.>|1y
 HR_EVENTS|cip.*.hr.>|90d
 PLATFORM_EVENTS|cip.*.platform.>|30d
 HITL_EVENTS|cip.*.hitl.>|7d
 STREAMS
-fi
 
 # ── 4. Keycloak cip-dev realm ─────────────────────────────────────────────────
 echo "[4/5] Creating Keycloak cip-dev realm..."
@@ -80,7 +73,7 @@ KC_POD=$(kubectl get pod -n cip-auth -l app.kubernetes.io/name=keycloak \
   -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
 
 if [[ -z "$KC_POD" ]]; then
-  echo "      WARNING: Keycloak pod not running — run again after 'make start'"
+  echo "      WARNING: Keycloak pod not running — skipping realm creation"
 else
   KC_ADMIN_TOKEN=$(curl -sf -X POST \
     "${KEYCLOAK_URL}/realms/master/protocol/openid-connect/token" \
@@ -111,7 +104,7 @@ LITELLM_POD=$(kubectl get pod -n cip-app -l app=litellm \
   -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
 
 if [[ -z "$LITELLM_POD" ]]; then
-  echo "      WARNING: LiteLLM pod not running — run again after 'make start'"
+  echo "      WARNING: LiteLLM pod not running yet — skipping virtual key (re-run bootstrap after start completes)"
 else
   EXISTING_KEY=$(curl -sf "${LITELLM_BASE_URL}/key/list" \
     -H "Authorization: Bearer $LITELLM_MASTER_KEY" \
@@ -137,5 +130,4 @@ else
 fi
 
 echo ""
-echo "=== App bootstrap complete ==="
-echo "Next: make start"
+echo "=== Bootstrap complete ==="

@@ -7,7 +7,7 @@
 
 # ── Daily cycle ──────────────────────────────────────────────────────────────
 
-start:        ## Morning startup — scale node to 1, deploy all Helm charts
+start:        ## Morning startup — scale node, wait for infra, bootstrap, deploy all charts
 	@pnpm --filter @cip/infra run start
 
 stop:         ## Evening shutdown — destroy Helm releases, scale node to 0
@@ -18,7 +18,7 @@ stop:         ## Evening shutdown — destroy Helm releases, scale node to 0
 bootstrap-infra: ## One-time: Terraform — OVH cluster, node pool, PVCs, infra Helm charts, K8s secrets
 	@bash scripts/bootstrap-infra.sh
 
-bootstrap:    ## One-time: NATS streams, Keycloak realm, DB migrations, LiteLLM virtual key
+bootstrap:    ## Run bootstrap manually (called automatically by 'make start')
 	@bash scripts/bootstrap.sh
 
 get-lb-ip:    ## Print the OVH Floating IP assigned to ingress-nginx
