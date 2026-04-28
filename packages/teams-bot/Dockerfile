@@ -1,4 +1,4 @@
-FROM node:22-alpine AS builder
+FROM node:22-slim AS builder
 RUN corepack enable && corepack prepare pnpm@9 --activate
 WORKDIR /app
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml tsconfig.base.json ./
@@ -9,7 +9,7 @@ COPY packages/shared ./packages/shared
 COPY packages/teams-bot ./packages/teams-bot
 RUN pnpm --filter @cip/shared build && pnpm --filter @cip/teams-bot build
 
-FROM node:22-alpine
+FROM node:22-slim
 WORKDIR /app
 COPY --from=builder /app/packages/teams-bot/dist ./dist
 COPY --from=builder /app/node_modules ./node_modules
