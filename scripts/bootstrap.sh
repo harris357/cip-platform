@@ -20,9 +20,18 @@ if [[ -z "$POSTGRES_POD" ]]; then
   exit 1
 fi
 
-# Create pgvector extension as superuser — cipuser cannot create extensions
+# Reset cip_hr database — ensures schema is always current (dev: data is ephemeral)
 PG_ADMIN_PASS=$(kubectl get secret postgres-credentials -n cip-infra \
   -o jsonpath='{.data.postgres-password}' | base64 -d)
+echo "      Resetting cip_hr database..."
+kubectl exec -n cip-infra "$POSTGRES_POD" -- \
+  env PGPASSWORD="$PG_ADMIN_PASS" psql -U postgres \
+  -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname='cip_hr' AND pid <> pg_backend_pid();" \
+  -c "DROP DATABASE IF EXISTS cip_hr;" \
+  -c "CREATE DATABASE cip_hr OWNER cipuser;" \
+  2>&1 | sed 's/^/      /' || true
+
+# Create pgvector extension as superuser — cipuser cannot create extensions
 kubectl exec -n cip-infra "$POSTGRES_POD" -- \
   env PGPASSWORD="$PG_ADMIN_PASS" psql -U postgres -d cip_hr \
   -c "CREATE EXTENSION IF NOT EXISTS vector;" 2>&1 | sed 's/^/      /' \
