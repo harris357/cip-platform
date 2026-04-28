@@ -20,6 +20,14 @@ if [[ -z "$POSTGRES_POD" ]]; then
   exit 1
 fi
 
+# Create pgvector extension as superuser — cipuser cannot create extensions
+PG_ADMIN_PASS=$(kubectl get secret postgres-credentials -n cip-infra \
+  -o jsonpath='{.data.postgres-password}' | base64 -d)
+kubectl exec -n cip-infra "$POSTGRES_POD" -- \
+  env PGPASSWORD="$PG_ADMIN_PASS" psql -U postgres -d cip_hr \
+  -c "CREATE EXTENSION IF NOT EXISTS vector;" 2>&1 | sed 's/^/      /' \
+  || true
+
 # Open a temporary port-forward on 15432 (avoids collision with 'make forward')
 kubectl port-forward -n cip-infra svc/postgres-postgresql 15432:5432 &>/dev/null &
 PF_PID=$!
