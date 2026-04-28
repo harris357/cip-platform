@@ -39,7 +39,7 @@ jobs:
           context: .
           file: ./packages/${{ matrix.service }}/Dockerfile
           push: false
-          tags: ghcr.io/idlevice/${{ matrix.service }}:${{ github.sha }}
+          tags: ghcr.io/harris357/${{ matrix.service }}:${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -51,7 +51,7 @@ jobs:
           file: ./packages/${{ matrix.service }}/Dockerfile
           push: true
           tags: |
-            ghcr.io/idlevice/${{ matrix.service }}:${{ github.sha }}
-            ghcr.io/idlevice/${{ matrix.service }}:latest
+            ghcr.io/harris357/${{ matrix.service }}:${{ github.sha }}
+            ghcr.io/harris357/${{ matrix.service }}:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max

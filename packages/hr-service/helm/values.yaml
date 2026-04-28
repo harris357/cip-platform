@@ -1,7 +1,7 @@
 replicaCount: 1
 
 image:
-  repository: ghcr.io/idlevice/hr-service
+  repository: ghcr.io/harris357/hr-service
   tag: "latest"  # override per-deploy via helm --set image.tag=<sha>
   pullPolicy: Always
 

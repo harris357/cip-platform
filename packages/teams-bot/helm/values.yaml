@@ -4,7 +4,7 @@
 replicaCount: 1
 
 image:
-  repository: ghcr.io/idlevice/teams-bot
+  repository: ghcr.io/harris357/teams-bot
   tag: "latest"  # override per-deploy via helm --set image.tag=<sha>
   pullPolicy: Always
 
