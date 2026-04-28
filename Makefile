@@ -67,10 +67,14 @@ forward:      ## Port-forward NATS (4222) and PostgreSQL (5432) for local dev
 logs:         ## Tail logs from a service. Usage: make logs svc=hr-service
 	@kubectl logs -f -n cip-app -l app=$(svc) --tail=100
 
-deploy:       ## Build + push + rollout restart. Usage: make deploy svc=hr-service
-	@docker build -t ghcr.io/idlevice/$(svc):dev ./packages/$(svc)
-	@docker push ghcr.io/idlevice/$(svc):dev
-	@kubectl rollout restart deployment/$(svc) -n cip-app
+TAG ?= $(shell git rev-parse --short HEAD)
+deploy:       ## Deploy a service. Usage: make deploy svc=hr-service [TAG=<sha>]
+	@[ -n "$(svc)" ] || (echo "Error: svc= is required"; exit 1)
+	@helm upgrade --install $(svc) ./packages/$(svc)/helm \
+		--namespace cip-app --create-namespace \
+		--set image.tag=$(TAG) \
+		--atomic --timeout 5m
+	@echo "Deployed $(svc):$(TAG)"
 
 verify:       ## End-to-end health check (kubectl, secrets, S3, Temporal, Langfuse, Cloudflare)
 	@bash scripts/verify-readiness.sh

@@ -106,12 +106,18 @@ importers:
 
   packages/platform-core:
     dependencies:
+      '@aws-sdk/client-s3':
+        specifier: ^3.600.0
+        version: 3.1035.0
       '@cip/shared':
         specifier: workspace:*
         version: link:../shared
       '@ovhcloud/node-ovh':
         specifier: ^3.0.0
         version: 3.0.0
+      '@temporalio/client':
+        specifier: ^1.10.0
+        version: 1.16.1
       '@temporalio/worker':
         specifier: ^1.10.0
         version: 1.16.1(tslib@2.8.1)
@@ -121,6 +127,12 @@ importers:
       express:
         specifier: ^4.19.0
         version: 4.22.1
+      nats:
+        specifier: ^2.28.0
+        version: 2.29.3
+      zod:
+        specifier: ^3.23.0
+        version: 3.25.76
     devDependencies:
       '@types/express':
         specifier: ^4.17.0

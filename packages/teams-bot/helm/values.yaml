@@ -5,7 +5,7 @@ replicaCount: 1
 
 image:
   repository: ghcr.io/idlevice/teams-bot
-  tag: dev
+  tag: ""  # set per-deploy via helm --set image.tag=<sha>
   pullPolicy: Always
 
 service:
@@ -16,6 +16,7 @@ env:
   LITELLM_BASE_URL: http://litellm.cip-app.svc.cluster.local:4000
   NATS_URL: nats://nats.cip-infra.svc.cluster.local:4222
   KEYCLOAK_URL: https://keycloak.dev.cip.io
+  # Dev: single shared realm. Prod: realm per tenant = tenantId (set at deploy time).
   KEYCLOAK_REALM: cip-dev
   # new keys — stubs; override at deploy time or via secret
   MCP_SERVER_URL: http://hr-service.cip-app.svc.cluster.local:4001/mcp
@@ -23,6 +24,7 @@ env:
   OBJECT_STORE_BUCKET: cip-uploads     # override at deploy time per environment
   AWS_ENDPOINT_URL: https://s3.bhs.io.cloud.ovh.net
   AWS_REGION: BHS
+  CHANNEL_REGISTRY_BUCKET: teams-channel-registry
 
 envFrom:
   - secretRef:

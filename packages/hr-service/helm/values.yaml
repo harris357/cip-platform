@@ -2,7 +2,7 @@ replicaCount: 1
 
 image:
   repository: ghcr.io/idlevice/hr-service
-  tag: dev
+  tag: ""  # set per-deploy via helm --set image.tag=<sha>
   pullPolicy: Always
 
 service:
@@ -12,10 +12,14 @@ service:
 env:
   LITELLM_BASE_URL: http://litellm.cip-app.svc.cluster.local:4000
   NATS_URL: nats://nats.cip-infra.svc.cluster.local:4222
+  # Dev: shared namespace. Prod: "${tenantId}.cip" — matches TenantProvisioningWorkflow output.
+  TEMPORAL_NAMESPACE: cip-dev
   TEMPORAL_TASK_QUEUE: cip-hr-tasks
   KEYCLOAK_URL: https://keycloak.dev.cip.io
+  # Dev: single shared realm. Prod: realm per tenant = tenantId (set at deploy time).
   KEYCLOAK_REALM: cip-dev
   TEAMS_BOT_URL: http://teams-bot.cip-app.svc.cluster.local:3978
+  KEYCLOAK_CLIENT_ID: hr-service
   MCP_PORT: 4001
   OBJECT_STORE_BUCKET: cip-uploads
   AWS_ENDPOINT_URL: https://s3.bhs.io.cloud.ovh.net

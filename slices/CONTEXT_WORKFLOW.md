@@ -8,7 +8,15 @@
 
 | # | Slice | Doc | Status |
 |---|-------|-----|--------|
-| — | _(new slices will be added here)_ | — | — |
+| 22 | Cleanup & Doc Reset | [PROMPTS_DEPLOY.md](./PROMPTS_DEPLOY.md) | COMPLETE |
+| 23 | HR Persistence Layer + Migration Runner | [PROMPTS_DEPLOY.md](./PROMPTS_DEPLOY.md) | COMPLETE |
+| 24 | Cert Vertical Activities | [PROMPTS_DEPLOY.md](./PROMPTS_DEPLOY.md) | COMPLETE |
+| 25 | Employee Onboarding Activities | [PROMPTS_DEPLOY.md](./PROMPTS_DEPLOY.md) | COMPLETE |
+| 26 | Channel Registry on NATS KV (resolves CS-018) | [PROMPTS_DEPLOY.md](./PROMPTS_DEPLOY.md) | COMPLETE |
+| 27 | Platform-Core Tenant Provisioning + Wiring Reconciliation | [PROMPTS_DEPLOY.md](./PROMPTS_DEPLOY.md) | COMPLETE |
+| 28 | CI/CD & Image Pipeline | [PROMPTS_DEPLOY.md](./PROMPTS_DEPLOY.md) | COMPLETE |
+| 29 | First Deploy Runbook (operational) | [PROMPTS_DEPLOY.md](./PROMPTS_DEPLOY.md) | PENDING |
+| 30 | Teams App Registration & Sideload (operational) | [PROMPTS_DEPLOY.md](./PROMPTS_DEPLOY.md) | PENDING |
 
 All slices 01–21 are complete — see [archive/](./archive/).
 
@@ -16,7 +24,18 @@ All slices 01–21 are complete — see [archive/](./archive/).
 
 ## Dependency Order
 
-_(to be filled when new slices are defined)_
+```
+22 ──► 23 ──► 24
+              └─► 25
+22 ──► 26                      (independent; can run after 22)
+23 ──► 27
+{24, 25, 26, 27} ──► 28 ──► 29 ──► 30
+```
+
+- Slices 22, 23, 26 may run in parallel sessions.
+- Slices 24, 25, 27 each depend on 23.
+- Slice 28 (CI) depends on the code being deployable.
+- Slices 29 and 30 are operational — require live cluster + Azure access. Run sequentially with a human operator.
 
 ---
 
