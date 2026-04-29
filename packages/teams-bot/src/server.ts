@@ -23,6 +23,8 @@ app.use(express.json());
 app.use(authorizeJWT(authConfig));
 
 app.post('/api/messages', async (req, res) => {
+  const body = req.body as { type?: string; name?: string };
+  console.log(`[activity] type=${body.type ?? '?'} name=${body.name ?? '-'}`);
   await adapter.process(req, res, context => bot.run(context));
 });
 

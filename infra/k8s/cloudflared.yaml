@@ -22,6 +22,8 @@ data:
         service: http://monitoring-grafana.cip-observe:80
       - hostname: langfuse-cip.idlevice.ca
         service: http://langfuse-langfuse-web.cip-app:3000
+      - hostname: litellm-cip.idlevice.ca
+        service: http://litellm.cip-app:4000
       - service: http_status:404
 ---
 apiVersion: apps/v1

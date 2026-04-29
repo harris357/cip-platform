@@ -75,6 +75,7 @@ export class CIPTeamsBot extends TeamsActivityHandler {
         // Token cache miss — prompt the user to trigger SSO
         // Teams will automatically re-run the silent token exchange and call
         // onSigninInvokeActivity, which populates the cache.
+        console.log(`[auth] no cached token for user ${userId} — sending SSO prompt`);
         await context.sendActivity('Please wait a moment while I verify your identity...');
         await next();
         return;
@@ -114,7 +115,9 @@ export class CIPTeamsBot extends TeamsActivityHandler {
 
   // Teams SSO silent flow: both signin/verifyState and signin/tokenExchange route here
   protected override async onSigninInvokeActivity(context: TurnContext): Promise<void> {
-    const aadToken = (context.activity.value as { token?: string } | undefined)?.token;
+    const value = context.activity.value as { token?: string } | undefined;
+    const aadToken = value?.token;
+    console.log(`[sso] invoke name=${context.activity.name} hasToken=${!!aadToken}`);
     if (aadToken) {
       try {
         const tenantId: string =
@@ -122,9 +125,12 @@ export class CIPTeamsBot extends TeamsActivityHandler {
             ?.id ?? '';
         const keycloakJwt = await exchangeAadForKeycloak(aadToken, tenantId);
         cacheToken(context.activity.from?.id ?? '', keycloakJwt);
+        console.log('[sso] token cached for user', context.activity.from?.id);
       } catch (err) {
         console.error('[CIPTeamsBot] SSO token exchange failed:', err);
       }
+    } else {
+      console.warn('[sso] invoke received but no token in value:', JSON.stringify(value));
     }
   }
 }
