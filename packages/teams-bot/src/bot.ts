@@ -1,4 +1,3 @@
-import { randomUUID } from 'node:crypto';
 import { TurnContext } from '@microsoft/agents-hosting';
 import { Activity } from '@microsoft/agents-activity';
 import { TeamsActivityHandler } from '@microsoft/agents-hosting-extensions-teams';
@@ -74,23 +73,18 @@ export class CIPTeamsBot extends TeamsActivityHandler {
       const keycloakJwt = getCachedToken(userId);
 
       if (!keycloakJwt) {
-        const resourceUri = `api://${process.env['BOT_DOMAIN'] ?? 'bot-cip.idlevice.ca'}/${process.env['BOT_APP_ID'] ?? ''}`;
-        const exchangeId = randomUUID();
+        // Interactive OAuth — no tokenExchangeResource means no silent SSO attempt.
+        // Teams shows a "Sign in" button; user clicks once per session.
+        // signin/verifyState or signin/tokenExchange arrives in onSigninInvokeActivity.
         const oauthCard = {
           contentType: 'application/vnd.microsoft.card.oauth',
           content: {
             connectionName: 'teams-sso',
             title: 'Sign in to CIP',
-            text: 'Verifying your identity — this happens once per session.',
-            tokenExchangeResource: {
-              id: exchangeId,
-              uri: resourceUri,
-            },
+            text: 'Please sign in to get started. This happens once per session.',
           },
         };
-        // Log exactly what we send so we can compare against what Teams reports.
-        console.log(`[auth] sending OAuthCard — connectionName="${oauthCard.content.connectionName}" tokenExchangeResource.uri="${resourceUri}" id="${exchangeId}"`);
-        console.log(`[auth] OAuthCard full: ${JSON.stringify(oauthCard)}`);
+        console.log(`[auth] no cached token for user ${userId} — sending interactive OAuthCard (no SSO)`);
         await context.sendActivity(Activity.fromObject({
           type: 'message',
           attachments: [oauthCard],
