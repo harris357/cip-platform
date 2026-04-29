@@ -53,6 +53,6 @@ variable "cloudflare_tunnel_token" {
 
 variable "cloudflare_zone" {
   type        = string
-  default     = "cip.idlevice.ca"
-  description = "Cloudflare zone name for DNS records"
+  default     = "idlevice.ca"
+  description = "Cloudflare zone name for DNS records (apex domain, not subdomain)"
 }
