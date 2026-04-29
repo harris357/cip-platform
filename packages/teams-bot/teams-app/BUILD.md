@@ -5,13 +5,26 @@ Complete the parts in order on first deployment; subsequent redeployments only n
 
 ---
 
+## Infrastructure Prerequisites
+
+Before starting, ensure:
+
+- **Cloudflare DNS**: All `*.cip.idlevice.ca` subdomains must be set to **DNS Only (gray cloud)**.
+  Cloudflare's Universal SSL does not cover sub-subdomains (`*.cip.idlevice.ca`), causing
+  `SSL_ERROR_NO_CYPHER_OVERLAP` if proxied. The NGINX ingress holds valid Let's Encrypt certs.
+- **bootstrap.sh** has been run successfully: Keycloak `cip-dev` realm, `teams-bot` client,
+  AAD identity provider, and token exchange permissions are all created automatically.
+- **teams-bot-credentials** K8s secret has all five keys (see Part 5).
+
+---
+
 ## Part 1 — Azure Bot Registration (one-time)
 
 1. Go to **Azure Portal → Bot Services → Create → Azure Bot**
 2. Bot handle: `cip-bot-dev` (or match your naming convention)
 3. Microsoft App ID: create new — select **Single Tenant** and your Azure AD tenant ID
-4. Note the **App ID** and **Client Secret** — these become `BOT_APP_ID` and `BOT_APP_PASSWORD`
-   in the `teams-bot-credentials` K8s secret
+4. Note the **App ID** and **Client Secret** — add to `.envrc` as `BOT_APP_ID` and `BOT_APP_PASSWORD`
+   and to the `teams-bot-credentials` K8s secret
 5. Under **Configuration → Messaging endpoint**, set:
    ```
    https://bot.cip.idlevice.ca/api/messages
@@ -39,53 +52,74 @@ The `webApplicationInfo.resource` in `manifest.json` matches this URI:
 
 ---
 
-## Part 3 — Keycloak Identity Federation (token exchange)
+## Part 3 — Keycloak Identity Federation (automated)
 
-The bot exchanges the Azure AD SSO token for a Keycloak JWT, which is used for all downstream
-CIP API calls. Configure the token exchange in Keycloak before the bot handles any requests.
+The bot exchanges the Azure AD SSO token for a Keycloak JWT used for all downstream CIP API calls.
+This is fully automated by `scripts/bootstrap.sh` — no manual Keycloak portal steps required.
 
-1. In **Keycloak Admin → your realm → Clients → `teams-bot`**
-2. Enable the **Token Exchange** grant type
-3. Configure the Azure AD identity provider as a trusted token exchange source for this client
-4. Set `KEYCLOAK_CLIENT_SECRET` in the `teams-bot-credentials` K8s secret
+`bootstrap.sh` handles:
+- Creates `cip-dev` realm
+- Creates `teams-bot` client (service accounts enabled)
+- Creates AAD OIDC identity provider (`alias: aad`) using `TENANT_ID` and `BOT_APP_ID` from `.envrc`
+  and `BOT_APP_PASSWORD` from the `teams-bot-credentials` K8s secret
+- Enables fine-grained token exchange permissions on the `teams-bot` client
+- Patches `KEYCLOAK_CLIENT_SECRET` into the `teams-bot-credentials` K8s secret
+
+Run: `bash scripts/bootstrap.sh`
 
 The bot's auth flow (implemented in `src/auth/sso-handler.ts`):
 - Teams delivers the SSO token via the `signin/tokenExchange` invoke
-- The bot POSTs the Azure AD token to Keycloak's token exchange endpoint
+- The bot POSTs the Azure AD token to Keycloak's token exchange endpoint (`subject_issuer=aad`)
 - Keycloak returns a CIP JWT, which the bot stores in session and passes to MCP tool calls
 
 ---
 
-## Part 4 — Package and Sideload
+## Part 4 — Package and Deploy
 
-Install the Teams Toolkit CLI if not already installed:
+### Tooling note
+
+The `@microsoft/teamsapp-cli` and `@microsoft/m365agentstoolkit-cli` packages both fail to package
+manifest v1.17 with the `bots` array due to a schema regression in newer toolkit versions. Use the
+`scripts/package.ts` and `scripts/deploy.ts` scripts instead — they build a compliant zip without
+any toolkit dependency.
+
+### Sideload (local dev — no catalog)
+
+Fill in `BOT_APP_ID` in `env/.env.local` (already done if bootstrap ran), then:
 
 ```bash
-npm install -g @microsoft/teamsapp-cli
-```
-
-Fill in `BOT_APP_ID` in `env/.env.local`, then package:
-
-```bash
-cd packages/teams-bot/teams-app
-teamsapp package --env local
-# Output: appPackage/build/appPackage.local.zip
+# From repo root
+npx tsx packages/teams-bot/teams-app/scripts/deploy.ts --env local --zip-only
+# Output: packages/teams-bot/teams-app/appPackage/build/appPackage.local.zip
 ```
 
 Sideload in Teams:
 1. Open **Microsoft Teams**
 2. Go to **Apps → Manage your apps → Upload an app → Upload a custom app**
-3. Select `appPackage/build/appPackage.local.zip`
-4. Install to yourself (personal scope) or to a team/channel as needed
+3. Select `appPackage/build/appPackage.local.zip` (Windows path: `\\wsl$\Ubuntu\home\harris\ernAI\...`)
+4. Install to yourself (personal scope) first
 
-To deploy to the dev cluster, use the `dev` env:
+### Deploy to org catalog (dev/prod)
 
 ```bash
-teamsapp package --env dev
-# Output: appPackage/build/appPackage.dev.zip
+# App-only auth (most tenants block catalog writes — use --delegated if 403)
+npx tsx packages/teams-bot/teams-app/scripts/deploy.ts --env dev
+
+# Delegated auth via device code (recommended — token cached at ~/.cip/teams-deploy-token.json)
+npx tsx packages/teams-bot/teams-app/scripts/deploy.ts --env dev --delegated
+
+# Submit for admin review instead of direct publish
+npx tsx packages/teams-bot/teams-app/scripts/deploy.ts --env dev --delegated --submit
 ```
 
-Then upload `appPackage.dev.zip` to the Teams Admin Center or distribute via your tenant app catalog.
+Required env vars (from `.envrc` or environment):
+
+| Var | Source |
+|-----|--------|
+| `BOT_APP_ID` | Part 1 / `env/.env.{env}` |
+| `BOT_DOMAIN` | `env/.env.{env}` |
+| `BOT_APP_PASSWORD` | `.envrc` / K8s secret |
+| `TENANT_ID` | `.envrc` |
 
 ---
 
@@ -196,6 +230,8 @@ Once sideloaded and the K8s secrets are set:
 |---------|--------------|
 | Bot does not respond | Messaging endpoint not set or K8s ingress not routing to port 3978 |
 | SSO fails with 401 | Azure AD scope `access_as_user` not consented or Teams client IDs not added |
-| Token exchange fails | Keycloak token exchange not configured for `teams-bot` client |
+| Token exchange fails | Keycloak token exchange not configured — re-run `bootstrap.sh` |
 | File upload not acknowledged | `supportsFiles: true` missing from manifest (rebuild and resideload) |
 | Proactive message not delivered | Channel not registered — check bot logs; verify DB row exists and a user has sent at least one message from the channel |
+| `SSL_ERROR_NO_CYPHER_OVERLAP` on Keycloak | Cloudflare proxy is ON for the subdomain — set to DNS Only (gray cloud) |
+| Keycloak admin console timeout | Browser third-party cookie check fails — use curl API or `bash scripts/bootstrap.sh` instead |

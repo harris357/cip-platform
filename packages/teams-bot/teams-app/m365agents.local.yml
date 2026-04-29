@@ -1,0 +1,12 @@
+# Local environment overrides for M365 Agents Toolkit.
+# Used by: atk package --env local
+
+version: 1.0.0
+
+provision:
+  - uses: teamsApp/zipAppPackage
+    with:
+      manifestPath: ./appPackage/manifest.json
+      outputZipPath: ./appPackage/build/appPackage.local.zip
+      outputFolder: ./appPackage/build
+
