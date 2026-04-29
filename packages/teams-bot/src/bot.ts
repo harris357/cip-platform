@@ -1,4 +1,5 @@
-import { TeamsActivityHandler, TurnContext } from 'botbuilder';
+import { TurnContext } from '@microsoft/agents-hosting';
+import { TeamsActivityHandler } from '@microsoft/agents-hosting-extensions-teams';
 import type { Tool as McpTool } from '@modelcontextprotocol/sdk/types.js';
 import { resolveAuthContext } from './auth/resolve-context.js';
 import { cacheToken, getCachedToken } from './auth/token-store.js';
@@ -59,7 +60,7 @@ export class CIPTeamsBot extends TeamsActivityHandler {
 
     this.onMembersAdded(async (context, next) => {
       for (const member of context.activity.membersAdded ?? []) {
-        if (member.id !== context.activity.recipient.id) {
+        if (member.id !== context.activity.recipient?.id) {
           await context.sendActivity(buildWelcomeMessage());
         }
       }
@@ -67,13 +68,13 @@ export class CIPTeamsBot extends TeamsActivityHandler {
     });
 
     this.onMessage(async (context: TurnContext, next) => {
-      const userId = context.activity.from.id;
+      const userId = context.activity.from?.id ?? '';
       const keycloakJwt = getCachedToken(userId);
 
       if (!keycloakJwt) {
         // Token cache miss — prompt the user to trigger SSO
         // Teams will automatically re-run the silent token exchange and call
-        // onTeamsSigninVerifyState, which populates the cache.
+        // onSigninInvokeActivity, which populates the cache.
         await context.sendActivity('Please wait a moment while I verify your identity...');
         await next();
         return;
@@ -111,8 +112,8 @@ export class CIPTeamsBot extends TeamsActivityHandler {
     });
   }
 
-  protected override async handleTeamsSigninTokenExchange(context: TurnContext): Promise<void> {
-    // Teams SSO silent flow succeeded — exchange AAD token for Keycloak JWT
+  // Teams SSO silent flow: both signin/verifyState and signin/tokenExchange route here
+  protected override async onSigninInvokeActivity(context: TurnContext): Promise<void> {
     const aadToken = (context.activity.value as { token?: string } | undefined)?.token;
     if (aadToken) {
       try {
@@ -120,7 +121,7 @@ export class CIPTeamsBot extends TeamsActivityHandler {
           (context.activity.channelData as { tenant?: { id?: string } } | undefined)?.tenant
             ?.id ?? '';
         const keycloakJwt = await exchangeAadForKeycloak(aadToken, tenantId);
-        cacheToken(context.activity.from.id, keycloakJwt);
+        cacheToken(context.activity.from?.id ?? '', keycloakJwt);
       } catch (err) {
         console.error('[CIPTeamsBot] SSO token exchange failed:', err);
       }

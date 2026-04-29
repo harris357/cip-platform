@@ -1,5 +1,5 @@
-import type { ConversationReference, TurnContext } from 'botbuilder';
-import { TurnContext as TC } from 'botbuilder';
+import type { TurnContext } from '@microsoft/agents-hosting';
+import type { ConversationReference } from '@microsoft/agents-activity';
 import { getNatsConnection } from '@cip/shared/src/clients/nats.js';
 import { getMcpClient } from '../mcp/client.js';
 
@@ -84,7 +84,7 @@ export async function updateChannelRegistry(
     (context.activity.channelData as { channel?: { id?: string } } | undefined)?.channel?.id ??
     context.activity.channelId ??
     '';
-  const ref = TC.getConversationReference(context.activity);
+  const ref = context.activity.getConversationReference();
 
   for (const entry of config.channels) {
     if (entry.channelId === incomingChannelId) {

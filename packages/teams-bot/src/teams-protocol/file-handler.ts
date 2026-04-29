@@ -1,6 +1,7 @@
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import { randomUUID } from 'node:crypto';
-import type { Attachment, TurnContext } from 'botbuilder';
+import type { TurnContext } from '@microsoft/agents-hosting';
+import type { Attachment } from '@microsoft/agents-activity';
 import type { BotAuthContext } from '../auth/resolve-context.js';
 
 function getS3Client(): S3Client {

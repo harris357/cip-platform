@@ -1,4 +1,4 @@
-import type { TurnContext } from 'botbuilder';
+import type { TurnContext } from '@microsoft/agents-hosting';
 import type { AuthContext } from '@cip/shared';
 import { getMcpClient } from '../mcp/client.js';
 
@@ -39,7 +39,7 @@ export async function resolveAuthContext(
 
   return {
     tenantId,
-    userId: context.activity.from.id,
+    userId: context.activity.from?.id ?? '',
     employeeId: aadOid,
     capabilities,
     roles,

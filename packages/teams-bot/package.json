@@ -12,7 +12,9 @@
     "@aws-sdk/client-s3": "^3.600.0",
     "@cip/shared": "workspace:*",
     "@modelcontextprotocol/sdk": "^1.0.0",
-    "botbuilder": "^4.23.0",
+    "@microsoft/agents-activity": "^1.4.2",
+    "@microsoft/agents-hosting": "^1.4.2",
+    "@microsoft/agents-hosting-extensions-teams": "^1.4.2",
     "express": "^4.19.0",
     "openai": "^4.0.0"
   },

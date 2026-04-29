@@ -1,16 +1,16 @@
-import { CloudAdapter, ConfigurationBotFrameworkAuthentication, ConversationReference } from 'botbuilder';
+import { CloudAdapter, getAuthConfigWithDefaults, authorizeJWT } from '@microsoft/agents-hosting';
+import { Activity, ConversationReference } from '@microsoft/agents-activity';
 import express, { type Express } from 'express';
 import { CIPTeamsBot } from './bot.js';
 import { getChannelRef } from './teams-protocol/channel-registry.js';
 
-const auth = new ConfigurationBotFrameworkAuthentication({
-  ...(process.env['BOT_APP_ID'] ? { MicrosoftAppId: process.env['BOT_APP_ID'] } : {}),
-  ...(process.env['BOT_APP_PASSWORD'] ? { MicrosoftAppPassword: process.env['BOT_APP_PASSWORD'] } : {}),
-  MicrosoftAppType: (process.env['MICROSOFT_APP_TYPE'] ?? 'MultiTenant') as 'MultiTenant' | 'SingleTenant' | 'UserAssignedMsi',
-  ...(process.env['MICROSOFT_APP_TENANT_ID'] ? { MicrosoftAppTenantId: process.env['MICROSOFT_APP_TENANT_ID'] } : {}),
+const authConfig = getAuthConfigWithDefaults({
+  ...(process.env['BOT_APP_ID'] ? { clientId: process.env['BOT_APP_ID'] } : {}),
+  ...(process.env['BOT_APP_PASSWORD'] ? { clientSecret: process.env['BOT_APP_PASSWORD'] } : {}),
+  ...(process.env['MICROSOFT_APP_TENANT_ID'] ? { tenantId: process.env['MICROSOFT_APP_TENANT_ID'] } : {}),
 });
 
-export const adapter = new CloudAdapter(auth);
+export const adapter = new CloudAdapter(authConfig);
 
 adapter.onTurnError = async (context, error) => {
   console.error('Bot turn error:', error);
@@ -20,6 +20,7 @@ adapter.onTurnError = async (context, error) => {
 export const bot = new CIPTeamsBot();
 export const app: Express = express();
 app.use(express.json());
+app.use(authorizeJWT(authConfig));
 
 app.post('/api/messages', async (req, res) => {
   await adapter.process(req, res, context => bot.run(context));
@@ -39,11 +40,15 @@ app.post('/proactive', async (req, res) => {
     return;
   }
 
-  await adapter.continueConversationAsync(process.env['BOT_APP_ID']!, ref as ConversationReference, async ctx => {
-    await ctx.sendActivity({
-      type: 'message',
-      attachments: [{ contentType: 'application/vnd.microsoft.card.adaptive', content: card }],
-    });
-  });
+  await adapter.continueConversation(
+    process.env['BOT_APP_ID'] ?? '',
+    ref as ConversationReference,
+    async ctx => {
+      await ctx.sendActivity(Activity.fromObject({
+        type: 'message',
+        attachments: [{ contentType: 'application/vnd.microsoft.card.adaptive', content: card }],
+      }));
+    },
+  );
   res.status(204).end();
 });

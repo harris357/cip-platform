@@ -1,4 +1,5 @@
-import type { TurnContext } from 'botbuilder';
+import type { TurnContext } from '@microsoft/agents-hosting';
+import { Activity } from '@microsoft/agents-activity';
 import type { McpModuleResponse } from '@cip/shared';
 
 export async function renderResponse(
@@ -6,12 +7,12 @@ export async function renderResponse(
   result: McpModuleResponse,
 ): Promise<void> {
   if (result.card) {
-    await context.sendActivity({
+    await context.sendActivity(Activity.fromObject({
       type: 'message',
       attachments: [
         { contentType: 'application/vnd.microsoft.card.adaptive', content: result.card },
       ],
-    });
+    }));
   } else {
     await context.sendActivity(result.message ?? String(result.data ?? ''));
   }
