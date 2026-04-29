@@ -74,25 +74,26 @@ export class CIPTeamsBot extends TeamsActivityHandler {
       const keycloakJwt = getCachedToken(userId);
 
       if (!keycloakJwt) {
-        // No token — send an OAuthCard with tokenExchangeResource.
-        // Teams intercepts this, silently acquires an AAD token for the app,
-        // and sends signin/tokenExchange back to onSigninInvokeActivity.
         const resourceUri = `api://${process.env['BOT_DOMAIN'] ?? 'bot-cip.idlevice.ca'}/${process.env['BOT_APP_ID'] ?? ''}`;
-        console.log(`[auth] no cached token for user ${userId} — initiating Teams SSO, resource=${resourceUri}`);
+        const exchangeId = randomUUID();
+        const oauthCard = {
+          contentType: 'application/vnd.microsoft.card.oauth',
+          content: {
+            connectionName: 'teams-sso',
+            title: 'Sign in to CIP',
+            text: 'Verifying your identity — this happens once per session.',
+            tokenExchangeResource: {
+              id: exchangeId,
+              uri: resourceUri,
+            },
+          },
+        };
+        // Log exactly what we send so we can compare against what Teams reports.
+        console.log(`[auth] sending OAuthCard — connectionName="${oauthCard.content.connectionName}" tokenExchangeResource.uri="${resourceUri}" id="${exchangeId}"`);
+        console.log(`[auth] OAuthCard full: ${JSON.stringify(oauthCard)}`);
         await context.sendActivity(Activity.fromObject({
           type: 'message',
-          attachments: [{
-            contentType: 'application/vnd.microsoft.card.oauth',
-            content: {
-              connectionName: 'teams-sso',
-              title: 'Sign in to CIP',
-              text: 'Verifying your identity — this happens once per session.',
-              tokenExchangeResource: {
-                id: randomUUID(),
-                uri: resourceUri,
-              },
-            },
-          }],
+          attachments: [oauthCard],
         }));
         await next();
         return;
@@ -134,7 +135,11 @@ export class CIPTeamsBot extends TeamsActivityHandler {
   protected override async onInvokeActivity(context: TurnContext): Promise<{ status: number; body?: unknown }> {
     if (context.activity.name === 'signin/failure') {
       const err = context.activity.value as { code?: string; message?: string } | undefined;
-      console.error(`[sso] signin/failure: ${JSON.stringify(err)}`);
+      // Log everything — value, channelData, entities — to understand what Teams compared.
+      console.error(`[sso] signin/failure value: ${JSON.stringify(err)}`);
+      console.error(`[sso] signin/failure channelData: ${JSON.stringify(context.activity.channelData)}`);
+      console.error(`[sso] signin/failure entities: ${JSON.stringify(context.activity.entities)}`);
+      console.error(`[sso] signin/failure from: ${JSON.stringify(context.activity.from)}`);
       await context.sendActivity(
         `Sign-in failed (${err?.code ?? 'unknown'}): ${err?.message ?? JSON.stringify(err)}. ` +
         'Check Azure AD app registration or contact your administrator.',
