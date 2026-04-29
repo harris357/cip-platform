@@ -18,9 +18,11 @@ controller:
     #   - "<AzureBotService CIDRs>"   # MS Bot Framework — populate from ServiceTags_Public.json
 
   config:
-    # No reverse proxy (Cloudflare/etc) in front — nginx reads the real client IP directly
-    # from the TCP connection via externalTrafficPolicy: Local. No X-Forwarded-For trust needed.
-    use-forwarded-headers: "false"
+    # OVH Octavia LB (vRack mode) SNATs traffic to its private IP before forwarding to nodes,
+    # so $remote_addr at nginx is the LB's vRack IP (10.1.x.x), not the real client IP.
+    # Trust X-Forwarded-For only from the vRack subnet — not from the open internet.
+    use-forwarded-headers: "true"
+    proxy-real-ip-cidr: "10.1.0.0/16"
     ssl-redirect: "true"
     hsts: "true"
 
