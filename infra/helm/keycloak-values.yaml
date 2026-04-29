@@ -5,7 +5,7 @@
 
 args:
   - start
-  - --features=token-exchange
+  - --features=jwt-authorization-grant:v1
 
 extraEnv: |
   - name: KC_DB

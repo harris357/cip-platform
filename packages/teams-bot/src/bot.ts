@@ -34,13 +34,11 @@ async function exchangeAadForKeycloak(aadToken: string, tenantId: string): Promi
   const url = `${keycloakBase}/auth/realms/${realm}/protocol/openid-connect/token`;
 
   const body = new URLSearchParams({
-    grant_type: 'urn:ietf:params:oauth:grant-type:token-exchange',
-    subject_token: aadToken,
-    subject_token_type: 'urn:ietf:params:oauth:token-type:access_token',
-    subject_issuer: 'aad',
+    grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
+    assertion: aadToken,
     client_id: clientId,
     client_secret: clientSecret,
-    requested_token_type: 'urn:ietf:params:oauth:token-type:access_token',
+    scope: 'openid',
   });
 
   const response = await fetch(url, {

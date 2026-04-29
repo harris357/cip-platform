@@ -240,66 +240,38 @@ else
         esac
       fi
 
-      # Enable fine-grained token exchange permissions on teams-bot
+      # Configure JWT Authorization Grant on aad IDP (idempotent — applies whether IDP was just created or already existed).
+      # jwtAuthorizationGrantEnabled: allows incoming JWT assertions to be exchanged for Keycloak tokens.
+      # allowClientIdAsAudience: AAD tokens have aud=<app-id> (not KC issuer URL) — this accepts that.
+      _IDP_JSON=$(curl -s \
+        "${KC_LOCAL}/admin/realms/cip-dev/identity-provider/instances/aad" \
+        -H "Authorization: Bearer $KC_ADMIN_TOKEN" 2>/dev/null || echo "{}")
+      _IDP_UPDATED=$(echo "$_IDP_JSON" | jq '
+        .config.jwtAuthorizationGrantEnabled = "true" |
+        .config.allowClientIdAsAudience = "true"
+      ' 2>/dev/null || echo "{}")
+      curl -s -o /dev/null -w "      AAD IDP JWT grant settings: HTTP %{http_code}\n" \
+        -X PUT "${KC_LOCAL}/admin/realms/cip-dev/identity-provider/instances/aad" \
+        -H "Authorization: Bearer $KC_ADMIN_TOKEN" \
+        -H "Content-Type: application/json" \
+        -d "$_IDP_UPDATED" 2>/dev/null
+
+      # Enable JWT Authorization Grant on teams-bot client (idempotent).
+      # oauth2.jwt.authorization.grant.enabled: client may use the jwt-bearer grant type.
+      # oauth2.jwt.authorization.grant.idp: restrict to assertions from the aad IDP only.
       if [[ -n "$KC_CLIENT_ID" ]]; then
-        _PERM_RESP=$(curl -s -X PUT \
-          "${KC_LOCAL}/admin/realms/cip-dev/clients/${KC_CLIENT_ID}/management/permissions" \
+        _CLIENT_JSON=$(curl -s \
+          "${KC_LOCAL}/admin/realms/cip-dev/clients/${KC_CLIENT_ID}" \
+          -H "Authorization: Bearer $KC_ADMIN_TOKEN" 2>/dev/null || echo "{}")
+        _CLIENT_UPDATED=$(echo "$_CLIENT_JSON" | jq '
+          .attributes["oauth2.jwt.authorization.grant.enabled"] = "true" |
+          .attributes["oauth2.jwt.authorization.grant.idp"] = "aad"
+        ' 2>/dev/null || echo "{}")
+        curl -s -o /dev/null -w "      teams-bot JWT grant config: HTTP %{http_code}\n" \
+          -X PUT "${KC_LOCAL}/admin/realms/cip-dev/clients/${KC_CLIENT_ID}" \
           -H "Authorization: Bearer $KC_ADMIN_TOKEN" \
           -H "Content-Type: application/json" \
-          -d '{"enabled": true}' 2>/dev/null || echo "{}")
-        _TEX_PERM_ID=$(echo "$_PERM_RESP" | jq -r '.scopePermissions["token-exchange"] // empty' 2>/dev/null || echo "")
-
-        if [[ -n "$_TEX_PERM_ID" ]]; then
-          # Get realm-management client (owns the authz resources)
-          _RM_ID=$(curl -s \
-            "${KC_LOCAL}/admin/realms/cip-dev/clients?clientId=realm-management" \
-            -H "Authorization: Bearer $KC_ADMIN_TOKEN" \
-            2>/dev/null | jq -r '.[0].id // empty' 2>/dev/null || echo "")
-
-          if [[ -n "$_RM_ID" ]]; then
-            # Create a client policy allowing teams-bot to perform token exchange (idempotent)
-            _POLICY_ID=$(curl -s \
-              "${KC_LOCAL}/admin/realms/cip-dev/clients/${_RM_ID}/authz/resource-server/policy?name=teams-bot-token-exchange" \
-              -H "Authorization: Bearer $KC_ADMIN_TOKEN" \
-              2>/dev/null | jq -r '.[0].id // empty' 2>/dev/null || echo "")
-
-            if [[ -z "$_POLICY_ID" ]]; then
-              _POLICY_RESP=$(curl -s -w "\n%{http_code}" \
-                -X POST "${KC_LOCAL}/admin/realms/cip-dev/clients/${_RM_ID}/authz/resource-server/policy/client" \
-                -H "Authorization: Bearer $KC_ADMIN_TOKEN" \
-                -H "Content-Type: application/json" \
-                -d "{\"name\":\"teams-bot-token-exchange\",\"type\":\"client\",\"logic\":\"POSITIVE\",\"decisionStrategy\":\"UNANIMOUS\",\"clients\":[\"${KC_CLIENT_ID}\"]}" \
-                2>/dev/null || echo "")
-              _POLICY_ID=$(echo "$_POLICY_RESP" | head -n -1 | jq -r '.id // empty' 2>/dev/null || echo "")
-              echo "      Token exchange client policy: HTTP $(echo "$_POLICY_RESP" | tail -1)"
-            else
-              echo "      Token exchange policy already exists (skipped)."
-            fi
-
-            # Attach policy to the token-exchange scope permission
-            if [[ -n "$_POLICY_ID" ]]; then
-              _TEX_PERM=$(curl -s \
-                "${KC_LOCAL}/admin/realms/cip-dev/clients/${_RM_ID}/authz/resource-server/permission/scope/${_TEX_PERM_ID}" \
-                -H "Authorization: Bearer $KC_ADMIN_TOKEN" 2>/dev/null || echo "{}")
-              _RES_ID=$(echo "$_TEX_PERM" | jq -r '.resources[0] // empty' 2>/dev/null || echo "")
-              _SCOPE_ID=$(echo "$_TEX_PERM" | jq -r '.scopes[0] // empty' 2>/dev/null || echo "")
-              _EXISTING=$(echo "$_TEX_PERM" | jq -r '[.policies[]?.id] | join(",")' 2>/dev/null || echo "")
-
-              if echo "$_EXISTING" | grep -q "$_POLICY_ID"; then
-                echo "      Token exchange permission already configured (skipped)."
-              else
-                curl -s -o /dev/null -w "      Token exchange permission update: HTTP %{http_code}\n" \
-                  -X PUT "${KC_LOCAL}/admin/realms/cip-dev/clients/${_RM_ID}/authz/resource-server/permission/scope/${_TEX_PERM_ID}" \
-                  -H "Authorization: Bearer $KC_ADMIN_TOKEN" \
-                  -H "Content-Type: application/json" \
-                  -d "{\"id\":\"${_TEX_PERM_ID}\",\"type\":\"scope\",\"logic\":\"POSITIVE\",\"decisionStrategy\":\"UNANIMOUS\",\"resources\":[\"${_RES_ID}\"],\"scopes\":[\"${_SCOPE_ID}\"],\"policies\":[\"${_POLICY_ID}\"]}" \
-                  2>/dev/null
-              fi
-            fi
-          fi
-        else
-          echo "      WARNING: could not enable token exchange permissions — is --features=token-exchange set?"
-        fi
+          -d "$_CLIENT_UPDATED" 2>/dev/null
       fi
     fi
   fi
