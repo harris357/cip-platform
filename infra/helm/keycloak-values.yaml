@@ -44,14 +44,12 @@ extraEnv: |
         key: admin-password
 
 ingress:
-  enabled: false
+  enabled: true
   ingressClassName: nginx
   annotations:
     cert-manager.io/cluster-issuer: letsencrypt-prod
     nginx.ingress.kubernetes.io/proxy-buffer-size: "128k"
     nginx.ingress.kubernetes.io/proxy-set-headers: "cip-auth/keycloak-proxy-headers"
-    # Admin-only: browser access for Keycloak admin console. Pods use the internal ClusterIP service.
-    nginx.ingress.kubernetes.io/whitelist-source-range: "198.48.243.13/32"
   rules:
     - host: keycloak.${domain}
       paths:
