@@ -28,3 +28,5 @@ ingress:
   enabled: true
   host: langfuse.cip.idlevice.ca
   tls: true
+  # Set to a CIDR to restrict ingress to specific IPs (e.g. admin IP). Empty = unrestricted.
+  adminSourceRange: ""

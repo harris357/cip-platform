@@ -159,6 +159,10 @@ resource "helm_release" "monitoring" {
     name  = "grafana.ingress.annotations.cert-manager\\.io/cluster-issuer"
     value = "letsencrypt-prod"
   }
+  set {
+    name  = "grafana.ingress.annotations.nginx\\.ingress\\.kubernetes\\.io/whitelist-source-range"
+    value = "198.48.243.13/32"
+  }
 }
 
 # App charts (litellm, langfuse, hr-service, platform-core, teams-bot) are deployed via start.ts.

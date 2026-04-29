@@ -2,14 +2,28 @@
 # controller.service.type=LoadBalancer causes OVH to provision a Floating IP.
 # After 'terraform apply', run 'make get-lb-ip' to retrieve it.
 controller:
+  # DaemonSet ensures every node has a local nginx pod so OVH LB can route to all nodes
+  # with externalTrafficPolicy: Local. Required before adding a second node.
+  kind: DaemonSet
+
   service:
     type: LoadBalancer
-    externalTrafficPolicy: Local     # preserves real client IP
+    externalTrafficPolicy: Local     # preserves real client IP at TCP level
+    # loadBalancerSourceRanges restricts inbound at the OVH LB level (before nginx).
+    # Uncomment and populate with your admin IP + AzureBotService CIDRs before locking down.
+    # Get MS Bot Framework IPs:
+    #   jq '[.values[] | select(.name | startswith("AzureBotService")) | .properties.addressPrefixes[]] | .[]' ServiceTags_Public.json
+    # loadBalancerSourceRanges:
+    #   - "198.48.243.13/32"          # admin IP
+    #   - "<AzureBotService CIDRs>"   # MS Bot Framework — populate from ServiceTags_Public.json
+
   config:
-    use-forwarded-headers: "true"    # trust X-Forwarded-For from Cloudflare
-    proxy-real-ip-cidr: "0.0.0.0/0"
+    # No reverse proxy (Cloudflare/etc) in front — nginx reads the real client IP directly
+    # from the TCP connection via externalTrafficPolicy: Local. No X-Forwarded-For trust needed.
+    use-forwarded-headers: "false"
     ssl-redirect: "true"
     hsts: "true"
+
   resources:
     requests:
       memory: 128Mi

@@ -9,6 +9,9 @@ metadata:
     {{- if .Values.ingress.tls }}
     cert-manager.io/cluster-issuer: letsencrypt-prod
     {{- end }}
+    {{- if .Values.ingress.adminSourceRange }}
+    nginx.ingress.kubernetes.io/whitelist-source-range: {{ .Values.ingress.adminSourceRange | quote }}
+    {{- end }}
 spec:
   ingressClassName: nginx
   rules:

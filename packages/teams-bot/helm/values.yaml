@@ -13,9 +13,11 @@ service:
   port: 3978
 
 env:
+  MICROSOFT_APP_TYPE: SingleTenant
+  MICROSOFT_APP_TENANT_ID: "8ce0ee69-ceac-4dc1-9691-ff463edcebb9"
   LITELLM_BASE_URL: http://litellm.cip-app.svc.cluster.local:4000
   NATS_URL: nats://nats.cip-infra.svc.cluster.local:4222
-  KEYCLOAK_URL: https://keycloak.cip.idlevice.ca
+  KEYCLOAK_URL: http://keycloak-keycloakx.cip-auth.svc.cluster.local
   # Dev: single shared realm. Prod: realm per tenant = tenantId (set at deploy time).
   KEYCLOAK_REALM: cip-dev
   # new keys — stubs; override at deploy time or via secret
@@ -34,3 +36,7 @@ ingress:
   enabled: true
   host: bot.cip.idlevice.ca   # set as BOT_MESSAGING_ENDPOINT in Azure bot registration
   tls: true
+  # MS Bot Framework / AzureBotService source CIDRs. Empty = unrestricted (safe default while
+  # populating IPs). Get current list:
+  #   jq '[.values[] | select(.name | startswith("AzureBotService")) | .properties.addressPrefixes[]] | .[]' ServiceTags_Public.json
+  botWhitelistSourceRange: ""
