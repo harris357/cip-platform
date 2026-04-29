@@ -130,19 +130,22 @@ export class CIPTeamsBot extends TeamsActivityHandler {
     });
   }
 
-  // Teams SSO silent flow: signin/verifyState and signin/tokenExchange route here.
-  // signin/failure arrives when Teams could not acquire the AAD token (misconfigured app reg).
-  protected override async onSigninInvokeActivity(context: TurnContext): Promise<void> {
+  // signin/failure is NOT routed through onSigninInvokeActivity — catch it here first.
+  protected override async onInvokeActivity(context: TurnContext): Promise<{ status: number; body?: unknown }> {
     if (context.activity.name === 'signin/failure') {
-      const err = context.activity.value as { reason?: string; message?: string } | undefined;
+      const err = context.activity.value as { code?: string; message?: string } | undefined;
       console.error(`[sso] signin/failure: ${JSON.stringify(err)}`);
       await context.sendActivity(
-        'Sign-in failed — the app is not authorized to acquire a token. ' +
-        'Contact your administrator to verify the Azure AD app registration.',
+        `Sign-in failed (${err?.code ?? 'unknown'}): ${err?.message ?? JSON.stringify(err)}. ` +
+        'Check Azure AD app registration or contact your administrator.',
       );
-      return;
+      return { status: 200 };
     }
+    return super.onInvokeActivity(context);
+  }
 
+  // Teams SSO silent flow: signin/verifyState and signin/tokenExchange route here.
+  protected override async onSigninInvokeActivity(context: TurnContext): Promise<void> {
     const value = context.activity.value as { token?: string } | undefined;
     const aadToken = value?.token;
     console.log(`[sso] invoke name=${context.activity.name} hasToken=${!!aadToken}`);
