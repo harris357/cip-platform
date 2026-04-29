@@ -59,22 +59,29 @@ kubectl run nats-setup --rm --restart=Never --attach --image=natsio/nats-box:lat
       && echo "KV bucket teams-channel-registry created." \
       || echo "KV bucket teams-channel-registry already exists (skipped)."
     # Subject filters must match buildSubject() output: cip.{tenantId}.{domain}.{event}.{version}
-    # Each entry: NAME|SUBJECTS(comma-separated)|RETENTION
+    # Delete + recreate is safe in dev — streams hold no durable business data yet.
+    # Each entry: NAME|SUBJECTS(space-separated for --subjects flags)|RETENTION
     for entry in \
       "CERTS|cip.*.cert.>|365d" \
-      "HR_EVENTS|cip.*.employee.>,cip.*.worker.>|90d" \
-      "PLATFORM_EVENTS|cip.*.compliance.>,cip.*.tenant.>|30d" \
+      "HR_EVENTS|cip.*.employee.> cip.*.worker.>|90d" \
+      "PLATFORM_EVENTS|cip.*.compliance.> cip.*.tenant.>|30d" \
       "HITL_EVENTS|cip.*.hitl.>|7d"; do
       name=$(echo "$entry" | cut -d"|" -f1)
-      subjects=$(echo "$entry" | cut -d"|" -f2)
+      subjects_raw=$(echo "$entry" | cut -d"|" -f2)
       retention=$(echo "$entry" | cut -d"|" -f3)
+      # Build --subjects flags (one per subject)
+      subj_flags=""
+      for s in $subjects_raw; do
+        subj_flags="$subj_flags --subjects $s"
+      done
       if nats -s $S stream info "$name" > /dev/null 2>&1; then
-        # Update subjects in case they changed (edit is non-destructive)
-        nats -s $S stream edit "$name" --subjects "$subjects" --no-confirm > /dev/null 2>&1 \
-          && echo "Stream $name updated (subjects refreshed)" \
-          || echo "Stream $name already exists (edit skipped)"
-      elif nats -s $S stream add "$name" \
-             --subjects "$subjects" \
+        nats -s $S stream rm "$name" --force > /dev/null 2>&1 \
+          && echo "Deleted existing stream $name (subject filter refresh)" \
+          || echo "WARNING: could not delete stream $name"
+      fi
+      # shellcheck disable=SC2086
+      if nats -s $S stream add "$name" \
+             $subj_flags \
              --storage file \
              --max-age "$retention" \
              --retention limits \
@@ -84,7 +91,7 @@ kubectl run nats-setup --rm --restart=Never --attach --image=natsio/nats-box:lat
              --max-msg-size -1 \
              --discard old \
              --no-confirm; then
-        echo "Created stream $name"
+        echo "Created stream $name ($subjects_raw)"
       else
         echo "ERROR: failed to create stream $name"
       fi
@@ -105,14 +112,17 @@ else
   # Fall back to k8s secret when KEYCLOAK_ADMIN_PASSWORD is not sourced from .envrc
   _KC_ADMIN_PASS="${KEYCLOAK_ADMIN_PASSWORD:-$(kubectl get secret keycloak-credentials -n cip-auth \
     -o jsonpath='{.data.admin-password}' 2>/dev/null | base64 -d 2>/dev/null || echo "")}"
-  KC_ADMIN_TOKEN=$(kubectl exec -n cip-auth "$KC_POD" -- \
-    curl -sf -X POST \
+  KC_TOKEN_RESP=$(kubectl exec -n cip-auth "$KC_POD" -- \
+    curl -s -X POST \
     "${KC_LOCAL}/realms/master/protocol/openid-connect/token" \
     -d "client_id=admin-cli&username=admin&password=${_KC_ADMIN_PASS}&grant_type=password" \
-    2>/dev/null | jq -r '.access_token' 2>/dev/null || echo "")
+    2>/dev/null || echo "")
+  KC_ADMIN_TOKEN=$(echo "$KC_TOKEN_RESP" | jq -r '.access_token' 2>/dev/null || echo "")
 
   if [[ -z "$KC_ADMIN_TOKEN" || "$KC_ADMIN_TOKEN" == "null" ]]; then
-    echo "      WARNING: could not obtain Keycloak admin token — check KEYCLOAK_ADMIN_PASSWORD"
+    KC_ERROR=$(echo "$KC_TOKEN_RESP" | jq -r '.error_description // .error // "no response"' 2>/dev/null || echo "no response")
+    echo "      WARNING: could not obtain Keycloak admin token: $KC_ERROR"
+    echo "      Pass length: ${#_KC_ADMIN_PASS}, URL: ${KC_LOCAL}/realms/master/protocol/openid-connect/token"
   else
     HTTP_STATUS=$(kubectl exec -n cip-auth "$KC_POD" -- \
       curl -sf -o /dev/null -w "%{http_code}" \
