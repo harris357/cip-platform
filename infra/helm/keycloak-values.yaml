@@ -28,7 +28,7 @@ extraEnv: |
   - name: KC_HTTP_ENABLED
     value: "true"
   - name: KC_HOSTNAME
-    value: keycloak.${domain}
+    value: ${keycloak_host}
   - name: KC_HOSTNAME_STRICT
     value: "false"
   - name: KC_HTTP_RELATIVE_PATH
@@ -51,13 +51,13 @@ ingress:
     nginx.ingress.kubernetes.io/proxy-buffer-size: "128k"
     nginx.ingress.kubernetes.io/proxy-set-headers: "cip-auth/keycloak-proxy-headers"
   rules:
-    - host: keycloak.${domain}
+    - host: ${keycloak_host}
       paths:
         - path: /
           pathType: Prefix
   tls:
     - hosts:
-        - keycloak.${domain}
+        - ${keycloak_host}
       secretName: keycloak-tls
 
 resources:

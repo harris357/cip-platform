@@ -3,8 +3,8 @@
 # a public ingress. All admin hostnames CNAME to the tunnel; nginx ingresses for
 # those services are disabled. The Teams bot bypasses this entirely (A record → OVH LB).
 #
-# Tunnel ID: a86334bd-4365-43d8-aa04-6436205099c1
-# DNS CNAMEs: <hostname> → a86334bd-4365-43d8-aa04-6436205099c1.cfargotunnel.com
+# Tunnel ID: derived from CLOUDFLARE_TUNNEL_TOKEN in .envrc
+# Hostnames follow pattern: {service}-${ENV_PREFIX}.${DOMAIN}
 #
 # Requires secret: cloudflare-tunnel-credentials (key: token) in cip-infra.
 # Created by: bash scripts/create-secrets.sh
@@ -16,11 +16,11 @@ metadata:
 data:
   config.yml: |
     ingress:
-      - hostname: keycloak.cip.idlevice.ca
+      - hostname: keycloak-cip.idlevice.ca
         service: http://keycloak-keycloakx-http.cip-auth:80
-      - hostname: grafana.cip.idlevice.ca
+      - hostname: grafana-cip.idlevice.ca
         service: http://monitoring-grafana.cip-observe:80
-      - hostname: langfuse.cip.idlevice.ca
+      - hostname: langfuse-cip.idlevice.ca
         service: http://langfuse-langfuse-web.cip-app:3000
       - service: http_status:404
 ---

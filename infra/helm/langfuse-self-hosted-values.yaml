@@ -5,7 +5,7 @@
 langfuse:
   nextauth:
     # Must match the public URL of Langfuse (set in DNS / ingress)
-    url: "https://langfuse.cip.idlevice.ca"
+    url: "https://langfuse-cip.idlevice.ca"
     # NEXTAUTH_SECRET — injected from langfuse-credentials secret
     existingSecret: langfuse-self-hosted-credentials
     existingSecretKey: NEXTAUTH_SECRET
@@ -20,14 +20,14 @@ langfuse:
     annotations:
       cert-manager.io/cluster-issuer: letsencrypt-prod
     hosts:
-      - host: langfuse.cip.idlevice.ca
+      - host: langfuse-cip.idlevice.ca
         paths:
           - path: /
             pathType: Prefix
     tls:
       - secretName: langfuse-tls
         hosts:
-          - langfuse.cip.idlevice.ca
+          - langfuse-cip.idlevice.ca
 
 # External PostgreSQL — reuse cip-infra postgres
 postgresql:

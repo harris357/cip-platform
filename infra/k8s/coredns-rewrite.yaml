@@ -1,7 +1,7 @@
-# CoreDNS Rewrite — keycloak.cip.idlevice.ca → internal ClusterIP
+# CoreDNS Rewrite — keycloak-cip.idlevice.ca → internal ClusterIP
 #
 # This rewrite rule prevents pods from hairpin-NATting through the public ingress
-# to reach Keycloak. With it applied, any pod that resolves keycloak.cip.idlevice.ca
+# to reach Keycloak. With it applied, any pod that resolves keycloak-cip.idlevice.ca
 # (e.g. for OIDC discovery or JWKS validation) gets the internal ClusterIP back
 # instead of the OVH floating IP.
 #
@@ -10,9 +10,9 @@
 #
 # Verify after applying:
 #   kubectl run dns-test --image=busybox:1.35 --rm -it --restart=Never \
-#     -- nslookup keycloak.cip.idlevice.ca
+#     -- nslookup keycloak-cip.idlevice.ca
 #   Expected: returns a 10.x.x.x ClusterIP (not a public IP)
 #
 # The rewrite line to be inserted in the .:53 { } block of the CoreDNS Corefile:
 #
-#     rewrite name exact keycloak.cip.idlevice.ca keycloak-keycloakx.cip-auth.svc.cluster.local
+#     rewrite name exact keycloak-cip.idlevice.ca keycloak-keycloakx.cip-auth.svc.cluster.local

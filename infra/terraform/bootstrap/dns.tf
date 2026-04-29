@@ -8,6 +8,7 @@
 
 locals {
   tunnel_id = jsondecode(base64decode(var.cloudflare_tunnel_token))["t"]
+  bot_host  = "bot-${var.env_prefix}"
 }
 
 data "cloudflare_zone" "main" {
@@ -24,7 +25,7 @@ variable "ingress_ip" {
 resource "cloudflare_record" "bot" {
   count   = var.ingress_ip != "" ? 1 : 0
   zone_id = data.cloudflare_zone.main.id
-  name    = "bot.cip"
+  name    = local.bot_host
   content = var.ingress_ip
   type    = "A"
   proxied = false

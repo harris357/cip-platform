@@ -22,5 +22,6 @@ envFrom:
 
 ingress:
   enabled: false
-  host: api.cip.idlevice.ca
+  # Hostname pattern: api-${ENV_PREFIX}.${DOMAIN} — update .envrc to change
+  host: api-cip.idlevice.ca
   tls: true

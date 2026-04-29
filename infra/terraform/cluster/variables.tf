@@ -44,6 +44,12 @@ variable "nodepool_max_size" {
 
 variable "domain" {
   type        = string
-  description = "Base domain for all ingress hostnames (e.g. cip.idlevice.ca)"
-  default     = "cip.idlevice.ca"
+  description = "Apex domain (e.g. idlevice.ca). Set via TF_VAR_domain=$DOMAIN in .envrc"
+  default     = "idlevice.ca"
+}
+
+variable "env_prefix" {
+  type        = string
+  description = "Environment identifier appended to service subdomains (e.g. 'cip' → keycloak-cip.idlevice.ca). Set via TF_VAR_env_prefix=$ENV_PREFIX in .envrc"
+  default     = "cip"
 }

@@ -195,8 +195,10 @@ fi
 # Check DNS records exist for primary subdomains
 header "Cloudflare DNS records"
 
-for subdomain in api app keycloak grafana; do
-  FQDN="${subdomain}.cip.idlevice.ca"
+DOMAIN="${DOMAIN:-idlevice.ca}"
+ENV_PREFIX="${ENV_PREFIX:-cip}"
+for subdomain in api keycloak grafana bot; do
+  FQDN="${subdomain}-${ENV_PREFIX}.${DOMAIN}"
   CF_RECORD=$(curl -sf \
     "https://api.cloudflare.com/client/v4/zones/${CF_ZONE_ID}/dns_records?name=${FQDN}" \
     -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" \

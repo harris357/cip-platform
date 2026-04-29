@@ -56,3 +56,15 @@ variable "cloudflare_zone" {
   default     = "idlevice.ca"
   description = "Cloudflare zone name for DNS records (apex domain, not subdomain)"
 }
+
+variable "domain" {
+  type        = string
+  default     = "idlevice.ca"
+  description = "Apex domain for all service hostnames. Set via TF_VAR_domain=$DOMAIN in .envrc"
+}
+
+variable "env_prefix" {
+  type        = string
+  default     = "cip"
+  description = "Environment identifier for service subdomains (e.g. 'cip' → bot-cip.idlevice.ca). Set via TF_VAR_env_prefix=$ENV_PREFIX in .envrc"
+}

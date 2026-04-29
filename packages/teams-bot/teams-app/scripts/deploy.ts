@@ -10,7 +10,7 @@
  *
  * Required env vars (from .envrc or environment):
  *   BOT_APP_ID         — Azure Bot app ID (GUID)
- *   BOT_DOMAIN         — bot ingress hostname (e.g. bot.cip.idlevice.ca)
+ *   BOT_DOMAIN         — bot ingress hostname (e.g. bot-cip.idlevice.ca)
  *   BOT_APP_PASSWORD   — bot client secret (for app-only catalog auth)
  *   TENANT_ID          — Azure AD tenant ID
  *

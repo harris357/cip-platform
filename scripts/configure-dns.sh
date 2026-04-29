@@ -5,7 +5,8 @@ set -euo pipefail
 # Run after 'make bootstrap-infra' once the ingress-nginx LoadBalancer IP is assigned.
 # Requires: CF_ZONE_ID, CLOUDFLARE_API_TOKEN in environment (.envrc sourced).
 
-DOMAIN="${DOMAIN:-cip.idlevice.ca}"
+DOMAIN="${DOMAIN:-idlevice.ca}"
+ENV_PREFIX="${ENV_PREFIX:-cip}"
 
 # Get LB IP from the cluster (preferred) or fall back to OVH_LB_IP env var
 LB_IP=""
@@ -59,13 +60,12 @@ upsert_record() {
   fi
 }
 
-# One record per service + a wildcard for convenience
-upsert_record "keycloak.${DOMAIN}"
-upsert_record "api.${DOMAIN}"
-upsert_record "langfuse.${DOMAIN}"
-upsert_record "bot.${DOMAIN}"
-upsert_record "grafana.${DOMAIN}"
-upsert_record "*.${DOMAIN}"
+# One record per service (pattern: {service}-${ENV_PREFIX}.${DOMAIN})
+upsert_record "keycloak-${ENV_PREFIX}.${DOMAIN}"
+upsert_record "api-${ENV_PREFIX}.${DOMAIN}"
+upsert_record "langfuse-${ENV_PREFIX}.${DOMAIN}"
+upsert_record "bot-${ENV_PREFIX}.${DOMAIN}"
+upsert_record "grafana-${ENV_PREFIX}.${DOMAIN}"
 
 echo ""
 echo "=== DNS configured ==="

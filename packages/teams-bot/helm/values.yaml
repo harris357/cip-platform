@@ -34,7 +34,8 @@ envFrom:
 
 ingress:
   enabled: true
-  host: bot.cip.idlevice.ca   # set as BOT_MESSAGING_ENDPOINT in Azure bot registration
+  # Hostname pattern: bot-${ENV_PREFIX}.${DOMAIN} — update .envrc to change
+  host: bot-cip.idlevice.ca   # set as BOT_MESSAGING_ENDPOINT in Azure bot registration
   tls: true
   # MS Bot Framework / AzureBotService source CIDRs. Empty = unrestricted (safe default while
   # populating IPs). Get current list:

@@ -1,3 +1,13 @@
+locals {
+  hostnames = {
+    keycloak = "keycloak-${var.env_prefix}.${var.domain}"
+    grafana  = "grafana-${var.env_prefix}.${var.domain}"
+    langfuse = "langfuse-${var.env_prefix}.${var.domain}"
+    bot      = "bot-${var.env_prefix}.${var.domain}"
+    api      = "api-${var.env_prefix}.${var.domain}"
+  }
+}
+
 resource "kubernetes_namespace" "cip_infra" {
   metadata { name = "cip-infra" }
 }
@@ -121,7 +131,7 @@ resource "helm_release" "keycloak" {
   chart      = "keycloakx"
   version    = "7.1.11"
   namespace  = kubernetes_namespace.cip_auth.metadata[0].name
-  values     = [templatefile("${path.module}/../../helm/keycloak-values.yaml", { domain = var.domain })]
+  values     = [templatefile("${path.module}/../../helm/keycloak-values.yaml", { keycloak_host = local.hostnames.keycloak })]
   depends_on = [helm_release.ingress_nginx, helm_release.cert_manager, helm_release.postgres]
   timeout    = 600
   wait       = true
@@ -145,7 +155,7 @@ resource "helm_release" "monitoring" {
   }
   set {
     name  = "grafana.ingress.hosts[0]"
-    value = "grafana.${var.domain}"
+    value = local.hostnames.grafana
   }
   set {
     name  = "grafana.ingress.tls[0].secretName"
@@ -153,7 +163,7 @@ resource "helm_release" "monitoring" {
   }
   set {
     name  = "grafana.ingress.tls[0].hosts[0]"
-    value = "grafana.${var.domain}"
+    value = local.hostnames.grafana
   }
   set {
     name  = "grafana.ingress.annotations.cert-manager\\.io/cluster-issuer"
