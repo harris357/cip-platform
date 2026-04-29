@@ -16,4 +16,10 @@ resource "ovh_cloud_project_kube" "cip" {
     # true  = "Nodes private interface" (requires a gateway in the private network)
     private_network_routing_as_default = false
   }
+
+  lifecycle {
+    # OVH API returns loadBalancersSubnetId from cluster state; sending it back as ""
+    # causes a 400. The cluster is already provisioned — ignore all post-create changes.
+    ignore_changes = all
+  }
 }
