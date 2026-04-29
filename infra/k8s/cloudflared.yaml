@@ -1,0 +1,70 @@
+---
+# Cloudflare Tunnel — exposes admin services (Keycloak, Grafana, Langfuse) without
+# a public ingress. All admin hostnames CNAME to the tunnel; nginx ingresses for
+# those services are disabled. The Teams bot bypasses this entirely (A record → OVH LB).
+#
+# Tunnel ID: a86334bd-4365-43d8-aa04-6436205099c1
+# DNS CNAMEs: <hostname> → a86334bd-4365-43d8-aa04-6436205099c1.cfargotunnel.com
+#
+# Requires secret: cloudflare-tunnel-credentials (key: token) in cip-infra.
+# Created by: bash scripts/create-secrets.sh
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cloudflared-config
+  namespace: cip-infra
+data:
+  config.yml: |
+    ingress:
+      - hostname: keycloak.cip.idlevice.ca
+        service: http://keycloak-keycloakx-http.cip-auth:80
+      - hostname: grafana.cip.idlevice.ca
+        service: http://monitoring-grafana.cip-observe:80
+      - hostname: langfuse.cip.idlevice.ca
+        service: http://langfuse-langfuse-web.cip-app:3000
+      - service: http_status:404
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cloudflared
+  namespace: cip-infra
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: cloudflared
+  template:
+    metadata:
+      labels:
+        app: cloudflared
+    spec:
+      containers:
+        - name: cloudflared
+          image: cloudflare/cloudflared:latest
+          args:
+            - tunnel
+            - --no-autoupdate
+            - --config
+            - /etc/cloudflared/config.yml
+            - run
+          env:
+            - name: TUNNEL_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: cloudflare-tunnel-credentials
+                  key: token
+          volumeMounts:
+            - name: config
+              mountPath: /etc/cloudflared
+              readOnly: true
+          resources:
+            requests:
+              memory: 64Mi
+              cpu: 10m
+            limits:
+              memory: 128Mi
+      volumes:
+        - name: config
+          configMap:
+            name: cloudflared-config

@@ -89,4 +89,10 @@ kubectl create secret generic cloudflare-api-token \
   --from-literal=api-token="${CLOUDFLARE_API_TOKEN}" \
   --dry-run=client -o yaml | kubectl apply -f -
 
+# Cloudflare Tunnel credentials (cloudflared pod — admin service access)
+kubectl create secret generic cloudflare-tunnel-credentials \
+  --namespace cip-infra \
+  --from-literal=token="${CLOUDFLARE_TUNNEL_TOKEN}" \
+  --dry-run=client -o yaml | kubectl apply -f -
+
 echo "=== Secrets created ==="
