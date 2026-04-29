@@ -20,7 +20,7 @@ data "cloudflare_zone" "main" {
 resource "cloudflare_record" "keycloak" {
   zone_id = data.cloudflare_zone.main.id
   name    = "keycloak.cip"
-  value   = "${local.tunnel_id}.cfargotunnel.com"
+  content = "${local.tunnel_id}.cfargotunnel.com"
   type    = "CNAME"
   proxied = true
 }
@@ -28,7 +28,7 @@ resource "cloudflare_record" "keycloak" {
 resource "cloudflare_record" "grafana" {
   zone_id = data.cloudflare_zone.main.id
   name    = "grafana.cip"
-  value   = "${local.tunnel_id}.cfargotunnel.com"
+  content = "${local.tunnel_id}.cfargotunnel.com"
   type    = "CNAME"
   proxied = true
 }
@@ -36,7 +36,7 @@ resource "cloudflare_record" "grafana" {
 resource "cloudflare_record" "langfuse" {
   zone_id = data.cloudflare_zone.main.id
   name    = "langfuse.cip"
-  value   = "${local.tunnel_id}.cfargotunnel.com"
+  content = "${local.tunnel_id}.cfargotunnel.com"
   type    = "CNAME"
   proxied = true
 }
@@ -52,7 +52,7 @@ resource "cloudflare_record" "bot" {
   count   = var.ingress_ip != "" ? 1 : 0
   zone_id = data.cloudflare_zone.main.id
   name    = "bot.cip"
-  value   = var.ingress_ip
+  content = var.ingress_ip
   type    = "A"
   proxied = false
 }
