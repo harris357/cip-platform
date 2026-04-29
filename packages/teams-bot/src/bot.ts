@@ -26,12 +26,15 @@ async function exchangeAadForKeycloak(aadToken: string, tenantId: string): Promi
   const keycloakBase = process.env['KEYCLOAK_URL'] ?? 'http://keycloak:8080';
   const clientId = process.env['KEYCLOAK_CLIENT_ID'] ?? 'teams-bot';
   const clientSecret = process.env['KEYCLOAK_CLIENT_SECRET'] ?? '';
-  const url = `${keycloakBase}/realms/${tenantId}/protocol/openid-connect/token`;
+  // KEYCLOAK_REALM is the dev override (cip-dev); prod uses the AAD tenant GUID as realm name.
+  const realm = process.env['KEYCLOAK_REALM'] ?? tenantId;
+  const url = `${keycloakBase}/auth/realms/${realm}/protocol/openid-connect/token`;
 
   const body = new URLSearchParams({
     grant_type: 'urn:ietf:params:oauth:grant-type:token-exchange',
     subject_token: aadToken,
     subject_token_type: 'urn:ietf:params:oauth:token-type:access_token',
+    subject_issuer: 'aad',
     client_id: clientId,
     client_secret: clientSecret,
     requested_token_type: 'urn:ietf:params:oauth:token-type:access_token',
@@ -108,7 +111,7 @@ export class CIPTeamsBot extends TeamsActivityHandler {
     });
   }
 
-  protected override async handleTeamsSigninVerifyState(context: TurnContext): Promise<void> {
+  protected override async handleTeamsSigninTokenExchange(context: TurnContext): Promise<void> {
     // Teams SSO silent flow succeeded — exchange AAD token for Keycloak JWT
     const aadToken = (context.activity.value as { token?: string } | undefined)?.token;
     if (aadToken) {

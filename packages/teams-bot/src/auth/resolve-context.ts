@@ -47,7 +47,7 @@ export async function resolveAuthContext(
     tenantConfig: {
       tenantId,
       name: tenantId,
-      litellmVirtualKey: '',
+      litellmVirtualKey: process.env['LITELLM_VIRTUAL_KEY'] ?? '',
       keycloakRealm: tenantId,
       natsPrefix: `cip.${tenantId}`,
       langfuseTags: {},
