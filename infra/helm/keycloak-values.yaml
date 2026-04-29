@@ -22,8 +22,10 @@ extraEnv: |
       secretKeyRef:
         name: keycloak-db-credentials
         key: password
-  - name: KC_PROXY
-    value: edge
+  - name: KC_PROXY_HEADERS
+    value: xforwarded
+  - name: KC_HTTP_ENABLED
+    value: "true"
   - name: KC_HOSTNAME
     value: keycloak.${domain}
   - name: KC_HOSTNAME_STRICT
@@ -45,6 +47,8 @@ ingress:
   ingressClassName: nginx
   annotations:
     cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/proxy-buffer-size: "128k"
+    nginx.ingress.kubernetes.io/proxy-set-headers: "cip-auth/keycloak-proxy-headers"
   rules:
     - host: keycloak.${domain}
       paths:

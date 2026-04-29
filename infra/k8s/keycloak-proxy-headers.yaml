@@ -1,0 +1,8 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: keycloak-proxy-headers
+  namespace: cip-auth
+data:
+  X-Forwarded-Proto: "https"
+  X-Forwarded-Port: "443"

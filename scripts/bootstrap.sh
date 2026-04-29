@@ -140,6 +140,58 @@ else
       409) echo "      Realm cip-dev already exists (skipped)." ;;
       *)   echo "      WARNING: Keycloak realm creation returned HTTP $HTTP_STATUS" ;;
     esac
+
+    # Create teams-bot client in cip-dev (idempotent)
+    KC_CLIENT_ID=$(curl -s \
+      "${KC_LOCAL}/admin/realms/cip-dev/clients?clientId=teams-bot" \
+      -H "Authorization: Bearer $KC_ADMIN_TOKEN" \
+      2>/dev/null | jq -r '.[0].id // empty' 2>/dev/null || echo "")
+
+    if [[ -n "$KC_CLIENT_ID" ]]; then
+      echo "      teams-bot client already exists (skipped)."
+    else
+      KC_CREATE_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+        -X POST "${KC_LOCAL}/admin/realms/cip-dev/clients" \
+        -H "Authorization: Bearer $KC_ADMIN_TOKEN" \
+        -H "Content-Type: application/json" \
+        -d '{
+          "clientId": "teams-bot",
+          "enabled": true,
+          "clientAuthenticatorType": "client-secret",
+          "serviceAccountsEnabled": true,
+          "publicClient": false,
+          "protocol": "openid-connect",
+          "standardFlowEnabled": false,
+          "directAccessGrantsEnabled": false
+        }' 2>/dev/null || echo "000")
+      case "$KC_CREATE_STATUS" in
+        201) echo "      teams-bot client created." ;;
+        *)   echo "      WARNING: teams-bot client creation returned HTTP $KC_CREATE_STATUS" ;;
+      esac
+      KC_CLIENT_ID=$(curl -s \
+        "${KC_LOCAL}/admin/realms/cip-dev/clients?clientId=teams-bot" \
+        -H "Authorization: Bearer $KC_ADMIN_TOKEN" \
+        2>/dev/null | jq -r '.[0].id // empty' 2>/dev/null || echo "")
+    fi
+
+    # Retrieve client secret and patch K8s secret (idempotent)
+    if [[ -n "$KC_CLIENT_ID" ]]; then
+      KC_CLIENT_SECRET=$(curl -s \
+        "${KC_LOCAL}/admin/realms/cip-dev/clients/${KC_CLIENT_ID}/client-secret" \
+        -H "Authorization: Bearer $KC_ADMIN_TOKEN" \
+        2>/dev/null | jq -r '.value // empty' 2>/dev/null || echo "")
+
+      if [[ -n "$KC_CLIENT_SECRET" ]]; then
+        kubectl patch secret teams-bot-credentials -n cip-app \
+          --type=merge \
+          -p "{\"data\":{\"KEYCLOAK_CLIENT_SECRET\":\"$(echo -n "$KC_CLIENT_SECRET" | base64 -w0)\"}}" \
+          2>/dev/null \
+          && echo "      KEYCLOAK_CLIENT_SECRET patched into teams-bot-credentials." \
+          || echo "      ACTION REQUIRED: teams-bot-credentials secret not found — add KEYCLOAK_CLIENT_SECRET=$KC_CLIENT_SECRET manually"
+      else
+        echo "      WARNING: could not retrieve teams-bot client secret"
+      fi
+    fi
   fi
 
   kill "$KC_PF_PID" 2>/dev/null || true
