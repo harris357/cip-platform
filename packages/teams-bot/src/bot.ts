@@ -77,7 +77,7 @@ export class CIPTeamsBot extends TeamsActivityHandler {
         // No token — send an OAuthCard with tokenExchangeResource.
         // Teams intercepts this, silently acquires an AAD token for the app,
         // and sends signin/tokenExchange back to onSigninInvokeActivity.
-        const resourceUri = `api://${process.env['BOT_DOMAIN'] ?? 'bot-cip.idlevice.ca'}/${process.env['BOT_APP_ID'] ?? ''}`;
+        const resourceUri = `api://botid-${process.env['BOT_APP_ID'] ?? ''}`;
         console.log(`[auth] no cached token for user ${userId} — initiating Teams SSO, resource=${resourceUri}`);
         await context.sendActivity(Activity.fromObject({
           type: 'message',
