@@ -12,12 +12,12 @@ data:
     model_list:
       - model_name: cip-vision
         litellm_params:
-          model: anthropic/claude-sonnet-4-20250514
+          model: anthropic/claude-sonnet-4-6
           api_key: os.environ/ANTHROPIC_API_KEY
 
       - model_name: cip-chat
         litellm_params:
-          model: anthropic/claude-sonnet-4-20250514
+          model: anthropic/claude-sonnet-4-6
           api_key: os.environ/ANTHROPIC_API_KEY
 
       - model_name: cip-lightweight
@@ -27,7 +27,7 @@ data:
 
       - model_name: cip-reasoning
         litellm_params:
-          model: anthropic/claude-opus-4-6
+          model: anthropic/claude-opus-4-7
           api_key: os.environ/ANTHROPIC_API_KEY
 
     general_settings:

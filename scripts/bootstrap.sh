@@ -180,6 +180,7 @@ else
       ;;
     400)
       echo "      Virtual key already exists (alias: dev-tenant — skipped)."
+      echo "      To retrieve it: curl -s http://localhost:14000/key/info?key=<token> -H \"Authorization: Bearer \$LITELLM_MASTER_KEY\" | jq '.info.token'"
       ;;
     *)
       echo "      WARNING: could not generate virtual key (HTTP $LL_STATUS)"

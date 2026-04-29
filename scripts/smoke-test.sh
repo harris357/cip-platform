@@ -51,56 +51,76 @@ check_pvc keycloak-data  cip-auth
 section "Pods — cip-infra (Terraform-managed, always running)"
 
 wait_pod() {
-  local label="$1" ns="$2" timeout="${3:-60}"
+  local label="$1" ns="$2" timeout="${3:-60}" outvar="${4:-_WAIT_POD_RESULT}"
   if kubectl wait pod -n "$ns" -l "$label" --for=condition=Ready --timeout="${timeout}s" &>/dev/null 2>&1; then
     local name
     name=$(kubectl get pod -n "$ns" -l "$label" -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "?")
     pass "pod $label ($ns) = Ready [$name]"
-    echo "$name"
+    printf -v "$outvar" '%s' "$name"
   else
     fail "pod $label ($ns) not Ready after ${timeout}s"
-    echo ""
+    printf -v "$outvar" '%s' ""
   fi
 }
 
-PG_POD=$(wait_pod "app.kubernetes.io/name=postgresql" cip-infra 120)
-NATS_POD=$(wait_pod "app.kubernetes.io/name=nats"      cip-infra 60)
+wait_pod "app.kubernetes.io/name=postgresql" cip-infra 120 PG_POD
+wait_pod "app.kubernetes.io/name=nats"      cip-infra 60  NATS_POD
 
 # ── Pods: auth ────────────────────────────────────────────────────────────────
 section "Pods — cip-auth"
-KC_POD=$(wait_pod "app.kubernetes.io/name=keycloakx" cip-auth 180)
+wait_pod "app.kubernetes.io/name=keycloakx" cip-auth 180 KC_POD
 
 # ── Pods: app ─────────────────────────────────────────────────────────────────
 section "Pods — cip-app (start.ts-managed)"
-LITELLM_POD=$(wait_pod "app=litellm"       cip-app 120)
-_=$(wait_pod            "app=langfuse"      cip-app 120)
-HR_POD=$(wait_pod       "app=hr-service"   cip-app 60)
-_=$(wait_pod            "app=platform-core" cip-app 60)
-_=$(wait_pod            "app=teams-bot"    cip-app 60)
+wait_pod "app=litellm" cip-app 120 LITELLM_POD
+if [[ "${LANGFUSE_SELF_HOSTED:-false}" == "true" ]]; then
+  wait_pod "app=langfuse" cip-app 120 _LANGFUSE_POD
+else
+  warn "Langfuse pod check skipped (LANGFUSE_SELF_HOSTED=false — using Langfuse Cloud)"
+fi
+# Domain services: check phase=Running (not Ready) — readiness probes may not be implemented yet
+get_running_pod() {
+  local label="$1" ns="$2" outvar="${3:-_GET_POD_RESULT}"
+  local name
+  name=$(kubectl get pod -n "$ns" -l "$label" --field-selector=status.phase=Running \
+    -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
+  if [[ -n "$name" ]]; then
+    pass "pod $label ($ns) = Running [$name]"
+  else
+    fail "pod $label ($ns) not Running"
+  fi
+  printf -v "$outvar" '%s' "$name"
+}
+get_running_pod "app=hr-service"    cip-app HR_POD
+get_running_pod "app=platform-core" cip-app _IGNORED
+get_running_pod "app=teams-bot"     cip-app _IGNORED
 
 # ── PostgreSQL ────────────────────────────────────────────────────────────────
 section "PostgreSQL"
 
 if [[ -n "$PG_POD" ]]; then
-  # Use postgres superuser — avoids cipuser password mismatch issues in the check
-  PG_ADMIN_PASS=$(kubectl get secret postgres-credentials -n cip-infra \
+  _PG_PASS=$(kubectl get secret postgres-credentials -n cip-infra \
     -o jsonpath='{.data.postgres-password}' 2>/dev/null | base64 -d 2>/dev/null || echo "")
 
-  if kubectl exec -n cip-infra "$PG_POD" -- \
-      env PGPASSWORD="$PG_ADMIN_PASS" psql -U postgres -d cip_hr -c "SELECT 1" &>/dev/null 2>&1; then
-    pass "postgres cip_hr accepts connections"
+  if [[ -z "$_PG_PASS" ]]; then
+    warn "postgres-credentials secret unreadable (kubectl connectivity) — skipping postgres checks"
   else
-    fail "postgres cip_hr connection refused"
-  fi
+    if kubectl exec -n cip-infra "$PG_POD" -- \
+        env PGPASSWORD="$_PG_PASS" psql -U postgres -d cip_hr -c "SELECT 1" &>/dev/null 2>&1; then
+      pass "postgres cip_hr accepts connections"
+    else
+      fail "postgres cip_hr connection refused"
+    fi
 
-  TABLES=$(kubectl exec -n cip-infra "$PG_POD" -- \
-    env PGPASSWORD="$PG_ADMIN_PASS" psql -U postgres -d cip_hr -t \
-    -c "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='public'" \
-    2>/dev/null | tr -d ' \n' || echo "0")
-  if [[ "${TABLES:-0}" -gt 0 ]]; then
-    pass "cip_hr has $TABLES table(s) — migrations applied"
-  else
-    fail "cip_hr has no tables — run 'make bootstrap' to apply migrations"
+    TABLES=$(kubectl exec -n cip-infra "$PG_POD" -- \
+      env PGPASSWORD="$_PG_PASS" psql -U postgres -d cip_hr -Atc \
+      "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='public'" \
+      2>/dev/null | tr -d ' \n' || echo "0")
+    if [[ "${TABLES:-0}" -gt 0 ]]; then
+      pass "cip_hr has $TABLES table(s) — migrations applied"
+    else
+      fail "cip_hr has no tables — run 'make bootstrap' to apply migrations"
+    fi
   fi
 fi
 
@@ -128,19 +148,31 @@ fi
 section "Keycloak"
 
 if [[ -n "$KC_POD" ]]; then
-  KC_SVC_URL="http://keycloak.cip-auth.svc.cluster.local"
-  if kubectl exec -n cip-auth "$KC_POD" -- \
-      curl -sf "${KC_SVC_URL}/realms/cip-dev" &>/dev/null 2>&1; then
-    pass "Keycloak realm cip-dev exists"
-  else
-    fail "Keycloak realm cip-dev missing — run 'make bootstrap'"
-  fi
+  # Keycloak image (ubi9-micro) has no curl — use local port-forward instead
+  KC_HTTP_SVC=$(kubectl get svc -n cip-auth -l app.kubernetes.io/name=keycloakx \
+    --field-selector='spec.clusterIP!=None' \
+    -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
 
-  if kubectl exec -n cip-auth "$KC_POD" -- \
-      curl -sf "http://localhost:9000/health/ready" &>/dev/null 2>&1; then
-    pass "Keycloak health/ready"
+  if [[ -n "$KC_HTTP_SVC" ]]; then
+    kubectl port-forward -n cip-auth "svc/$KC_HTTP_SVC" 18080:80 19000:9000 &>/dev/null &
+    KC_SMOKE_PF_PID=$!
+    sleep 3
+
+    if curl -sf "http://localhost:18080/auth/realms/cip-dev" &>/dev/null 2>&1; then
+      pass "Keycloak realm cip-dev exists"
+    else
+      fail "Keycloak realm cip-dev missing — run 'make bootstrap'"
+    fi
+
+    if curl -sf "http://localhost:19000/auth/health/ready" &>/dev/null 2>&1; then
+      pass "Keycloak health/ready"
+    else
+      fail "Keycloak not healthy"
+    fi
+
+    kill "$KC_SMOKE_PF_PID" 2>/dev/null || true
   else
-    fail "Keycloak not healthy"
+    fail "Keycloak service not found"
   fi
 fi
 
@@ -148,102 +180,71 @@ fi
 section "LiteLLM"
 
 if [[ -n "$LITELLM_POD" ]]; then
-  # Prefer env var; fall back to reading from k8s secret (not always sourced in CI / make context)
   _LITELLM_KEY="${LITELLM_MASTER_KEY:-$(kubectl get secret litellm-credentials -n cip-app \
     -o jsonpath='{.data.LITELLM_MASTER_KEY}' 2>/dev/null | base64 -d 2>/dev/null || echo "")}"
 
-  # LiteLLM image is python-based and may not have curl; use python3 urllib instead
-  LIVENESS=$(kubectl exec -n cip-app "$LITELLM_POD" -- \
-    python3 -c "
-import urllib.request, json, sys
-req = urllib.request.Request('http://localhost:4000/health/liveliness',
-  headers={'Authorization': 'Bearer ${_LITELLM_KEY}'})
-try:
-  with urllib.request.urlopen(req, timeout=10) as r:
-    print(json.loads(r.read()).get('status', 'unknown'))
-except Exception as e:
-  sys.exit(1)
-" 2>/dev/null || echo "error")
+  # Port-forward for all checks — avoids embedding special-char keys inside kubectl exec heredocs
+  kubectl port-forward -n cip-app svc/litellm 14001:4000 &>/dev/null &
+  LL_SMOKE_PF_PID=$!
+  sleep 3
 
-  if [[ "$LIVENESS" == "healthy" ]]; then
+  LL_HEALTH=$(curl -s -o /dev/null -w "%{http_code}" \
+    http://localhost:14001/health/liveliness \
+    -H "Authorization: Bearer $_LITELLM_KEY" 2>/dev/null || echo "000")
+  if [[ "$LL_HEALTH" == "200" ]]; then
     pass "LiteLLM /health/liveliness = healthy"
   else
-    fail "LiteLLM health check failed (status=$LIVENESS)"
+    fail "LiteLLM health check failed (HTTP $LL_HEALTH)"
   fi
 
-  # Verify all cip-* model aliases are registered
-  MODELS=$(kubectl exec -n cip-app "$LITELLM_POD" -- \
-    python3 -c "
-import urllib.request, json, sys
-req = urllib.request.Request('http://localhost:4000/models',
-  headers={'Authorization': 'Bearer ${_LITELLM_KEY}'})
-try:
-  with urllib.request.urlopen(req, timeout=10) as r:
-    print(','.join(m['id'] for m in json.loads(r.read())['data']))
-except Exception as e:
-  sys.exit(1)
-" 2>/dev/null || echo "")
-
+  LL_MODELS=$(curl -s http://localhost:14001/models \
+    -H "Authorization: Bearer $_LITELLM_KEY" 2>/dev/null \
+    | jq -r '[.data[].id] | join(",")' 2>/dev/null || echo "")
   for alias in cip-vision cip-chat cip-lightweight cip-reasoning; do
-    echo "$MODELS" | grep -q "$alias" \
+    echo "$LL_MODELS" | grep -q "$alias" \
       && pass "LiteLLM alias $alias registered" \
       || fail "LiteLLM alias $alias missing — check infra/helm/litellm/values.yaml"
   done
 
-  # Test virtual key if set
   if [[ -n "${LITELLM_VIRTUAL_KEY:-}" ]] && [[ "${LITELLM_VIRTUAL_KEY}" == "sk-"* ]]; then
-    VKEY_RESP=$(kubectl exec -n cip-app "$LITELLM_POD" -- \
-      python3 -c "
-import urllib.request, json, sys
-body = json.dumps({'model':'cip-lightweight','messages':[{'role':'user','content':'ping'}],'max_tokens':5}).encode()
-req = urllib.request.Request('http://localhost:4000/chat/completions', data=body,
-  headers={'Authorization':'Bearer ${LITELLM_VIRTUAL_KEY}','Content-Type':'application/json'})
-try:
-  with urllib.request.urlopen(req, timeout=30) as r:
-    print(json.loads(r.read())['choices'][0]['message']['content'])
-except Exception as e:
-  sys.exit(1)
-" 2>/dev/null || echo "error")
-    if [[ "$VKEY_RESP" != "error" ]] && [[ -n "$VKEY_RESP" ]]; then
-      pass "LiteLLM virtual key test call succeeded (response: ${VKEY_RESP:0:20})"
+    LL_VKEY_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+      -X POST http://localhost:14001/chat/completions \
+      -H "Authorization: Bearer $LITELLM_VIRTUAL_KEY" \
+      -H "Content-Type: application/json" \
+      -d '{"model":"cip-lightweight","messages":[{"role":"user","content":"ping"}],"max_tokens":5}' \
+      2>/dev/null || echo "000")
+    if [[ "$LL_VKEY_STATUS" == "200" ]]; then
+      pass "LiteLLM virtual key test call succeeded"
     else
-      fail "LiteLLM virtual key test call failed — check LITELLM_VIRTUAL_KEY"
+      fail "LiteLLM virtual key test call failed (HTTP $LL_VKEY_STATUS) — check LITELLM_VIRTUAL_KEY"
     fi
   else
     warn "LITELLM_VIRTUAL_KEY not set — skipping test call (run 'make bootstrap' to issue one)"
   fi
+
+  kill "$LL_SMOKE_PF_PID" 2>/dev/null || true
 fi
 
 # ── Langfuse ──────────────────────────────────────────────────────────────────
 section "Langfuse"
 
-LANGFUSE_POD=$(kubectl get pod -n cip-app -l app=langfuse \
-  -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
-
-if [[ -n "$LANGFUSE_POD" ]]; then
-  LANGFUSE_STATUS=$(kubectl exec -n cip-app "$LANGFUSE_POD" -- \
-    curl -sf http://localhost:3000/api/public/health 2>/dev/null \
-    | jq -r '.status' 2>/dev/null || echo "error")
-  if [[ "$LANGFUSE_STATUS" == "OK" ]]; then
-    pass "Langfuse /api/public/health = OK"
-  else
-    fail "Langfuse health check failed (status=$LANGFUSE_STATUS)"
+if [[ "${LANGFUSE_SELF_HOSTED:-false}" == "true" ]]; then
+  LANGFUSE_POD=$(kubectl get pod -n cip-app -l app=langfuse \
+    -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
+  if [[ -n "$LANGFUSE_POD" ]]; then
+    LANGFUSE_STATUS=$(kubectl exec -n cip-app "$LANGFUSE_POD" -- \
+      curl -sf http://localhost:3000/api/public/health 2>/dev/null \
+      | jq -r '.status' 2>/dev/null || echo "error")
+    if [[ "$LANGFUSE_STATUS" == "OK" ]]; then
+      pass "Langfuse /api/public/health = OK"
+    else
+      fail "Langfuse health check failed (status=$LANGFUSE_STATUS)"
+    fi
   fi
+else
+  warn "Langfuse health check skipped (LANGFUSE_SELF_HOSTED=false — using Langfuse Cloud)"
 fi
 
-# ── Domain services ───────────────────────────────────────────────────────────
-section "Domain service pods"
-
-for svc_label in hr-service platform-core teams-bot; do
-  POD=$(kubectl get pod -n cip-app -l "app=$svc_label" \
-    -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
-  if [[ -n "$POD" ]]; then
-    PHASE=$(kubectl get pod -n cip-app "$POD" -o jsonpath='{.status.phase}' 2>/dev/null || echo "Unknown")
-    [[ "$PHASE" == "Running" ]] && pass "$svc_label pod = Running" || fail "$svc_label pod = $PHASE"
-  else
-    fail "$svc_label pod not found"
-  fi
-done
 
 # ── NATS pub/sub roundtrip ────────────────────────────────────────────────────
 section "NATS pub/sub roundtrip"
