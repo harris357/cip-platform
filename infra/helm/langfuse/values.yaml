@@ -26,5 +26,5 @@ envFrom:
 
 ingress:
   enabled: true
-  host: langfuse.dev.cip.idlevice.ca
+  host: langfuse.cip.idlevice.ca
   tls: true

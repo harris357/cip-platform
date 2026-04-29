@@ -2,7 +2,7 @@ import { jwtVerify, createRemoteJWKSet } from 'jose';
 import type { TenantContext, TenantConfig } from '../types/tenant.js';
 import type { Request, Response, NextFunction } from 'express';
 
-const KEYCLOAK_URL = process.env['KEYCLOAK_URL'] ?? 'https://keycloak.dev.cip.io';
+const KEYCLOAK_URL = process.env['KEYCLOAK_URL'] ?? 'https://keycloak.cip.idlevice.ca';
 const KEYCLOAK_REALM = process.env['KEYCLOAK_REALM'] ?? 'cip-dev';
 
 const JWKS = createRemoteJWKSet(new URL(

@@ -59,7 +59,6 @@ kubectl run nats-setup --rm --restart=Never --attach --image=natsio/nats-box:lat
       && echo "KV bucket teams-channel-registry created." \
       || echo "KV bucket teams-channel-registry already exists (skipped)."
     # Subject filters must match buildSubject() output: cip.{tenantId}.{domain}.{event}.{version}
-    # Delete + recreate is safe in dev — streams hold no durable business data yet.
     # Each entry: NAME|SUBJECTS(space-separated for --subjects flags)|RETENTION
     for entry in \
       "CERTS|cip.*.cert.>|365d" \
@@ -69,16 +68,15 @@ kubectl run nats-setup --rm --restart=Never --attach --image=natsio/nats-box:lat
       name=$(echo "$entry" | cut -d"|" -f1)
       subjects_raw=$(echo "$entry" | cut -d"|" -f2)
       retention=$(echo "$entry" | cut -d"|" -f3)
+      if nats -s $S stream info "$name" > /dev/null 2>&1; then
+        echo "Stream $name already exists (skipped)"
+        continue
+      fi
       # Build --subjects flags (one per subject)
       subj_flags=""
       for s in $subjects_raw; do
         subj_flags="$subj_flags --subjects $s"
       done
-      if nats -s $S stream info "$name" > /dev/null 2>&1; then
-        nats -s $S stream rm "$name" --force > /dev/null 2>&1 \
-          && echo "Deleted existing stream $name (subject filter refresh)" \
-          || echo "WARNING: could not delete stream $name"
-      fi
       # shellcheck disable=SC2086
       if nats -s $S stream add "$name" \
              $subj_flags \
@@ -87,7 +85,7 @@ kubectl run nats-setup --rm --restart=Never --attach --image=natsio/nats-box:lat
              --retention limits \
              --replicas 1 \
              --discard old \
-             --no-confirm; then
+             --defaults; then
         echo "Created stream $name ($subjects_raw)"
       else
         echo "ERROR: failed to create stream $name"
@@ -97,22 +95,31 @@ kubectl run nats-setup --rm --restart=Never --attach --image=natsio/nats-box:lat
 
 # ── 4. Keycloak cip-dev realm ─────────────────────────────────────────────────
 echo "[4/5] Creating Keycloak cip-dev realm..."
-KC_POD=$(kubectl get pod -n cip-auth -l app.kubernetes.io/name=keycloakx \
-  --field-selector=status.phase=Running \
+KC_SVC=$(kubectl get svc -n cip-auth -l app.kubernetes.io/name=keycloakx \
+  --field-selector='spec.clusterIP!=None' \
   -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
 
-if [[ -z "$KC_POD" ]]; then
-  echo "      WARNING: Keycloak pod not running — skipping realm creation"
+if [[ -z "$KC_SVC" ]]; then
+  echo "      WARNING: Keycloak service not found — skipping realm creation"
 else
-  # Use in-pod curl so bootstrap works regardless of external DNS/TLS setup
-  KC_LOCAL="http://localhost:8080"
-  # Fall back to k8s secret when KEYCLOAK_ADMIN_PASSWORD is not sourced from .envrc
-  _KC_ADMIN_PASS="${KEYCLOAK_ADMIN_PASSWORD:-$(kubectl get secret keycloak-credentials -n cip-auth \
-    -o jsonpath='{.data.admin-password}' 2>/dev/null | base64 -d 2>/dev/null || echo "")}"
-  KC_TOKEN_RESP=$(kubectl exec -n cip-auth "$KC_POD" -- \
-    curl -s -X POST \
+  # Port-forward to avoid relying on curl inside the minimal Keycloak image (ubi9-micro has no curl)
+  KC_LOCAL="http://localhost:18080/auth"
+  kubectl port-forward -n cip-auth "svc/$KC_SVC" 18080:80 &>/dev/null &
+  KC_PF_PID=$!
+  sleep 3
+
+  # Always read from the K8s secret — it is the authoritative source (Keycloak initialized from it)
+  _KC_ADMIN_PASS=$(kubectl get secret keycloak-credentials -n cip-auth \
+    -o jsonpath='{.data.admin-password}' 2>/dev/null | base64 -d 2>/dev/null || echo "")
+  # Fall back to env var only if secret is unreadable
+  _KC_ADMIN_PASS="${_KC_ADMIN_PASS:-${KEYCLOAK_ADMIN_PASSWORD:-}}"
+
+  KC_TOKEN_RESP=$(curl -s -X POST \
     "${KC_LOCAL}/realms/master/protocol/openid-connect/token" \
-    -d "client_id=admin-cli&username=admin&password=${_KC_ADMIN_PASS}&grant_type=password" \
+    --data-urlencode "client_id=admin-cli" \
+    --data-urlencode "username=admin" \
+    --data-urlencode "password=${_KC_ADMIN_PASS}" \
+    --data-urlencode "grant_type=password" \
     2>/dev/null || echo "")
   KC_ADMIN_TOKEN=$(echo "$KC_TOKEN_RESP" | jq -r '.access_token' 2>/dev/null || echo "")
 
@@ -122,8 +129,7 @@ else
     echo "      Pass length: ${#_KC_ADMIN_PASS}, URL: ${KC_LOCAL}/realms/master/protocol/openid-connect/token"
     echo "      Raw response (first 200 chars): ${KC_TOKEN_RESP:0:200}"
   else
-    HTTP_STATUS=$(kubectl exec -n cip-auth "$KC_POD" -- \
-      curl -sf -o /dev/null -w "%{http_code}" \
+    HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
       -X POST "${KC_LOCAL}/admin/realms" \
       -H "Authorization: Bearer $KC_ADMIN_TOKEN" \
       -H "Content-Type: application/json" \
@@ -135,44 +141,53 @@ else
       *)   echo "      WARNING: Keycloak realm creation returned HTTP $HTTP_STATUS" ;;
     esac
   fi
+
+  kill "$KC_PF_PID" 2>/dev/null || true
 fi
 
 # ── 5. LiteLLM dev-tenant virtual key ────────────────────────────────────────
 echo "[5/5] Issuing LiteLLM virtual key for dev tenant..."
-LITELLM_POD=$(kubectl get pod -n cip-app -l app=litellm \
-  --field-selector=status.phase=Running \
-  -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
+LITELLM_SVC=$(kubectl get svc litellm -n cip-app \
+  -o jsonpath='{.metadata.name}' 2>/dev/null || echo "")
 
-if [[ -z "$LITELLM_POD" ]]; then
-  echo "      WARNING: LiteLLM pod not running yet — skipping virtual key (re-run bootstrap after start completes)"
+if [[ -z "$LITELLM_SVC" ]]; then
+  echo "      WARNING: LiteLLM service not found — skipping virtual key (re-run bootstrap after start completes)"
 else
-  # Read master key from secret so bootstrap works without sourcing .envrc
-  _MASTER_KEY="${LITELLM_MASTER_KEY:-$(kubectl get secret litellm-credentials -n cip-app \
-    -o jsonpath='{.data.LITELLM_MASTER_KEY}' 2>/dev/null | base64 -d 2>/dev/null || echo "")}"
+  # Port-forward to avoid relying on curl inside the LiteLLM container image
+  kubectl port-forward -n cip-app svc/litellm 14000:4000 &>/dev/null &
+  LL_PF_PID=$!
+  sleep 3
 
-  EXISTING_KEY=$(kubectl exec -n cip-app "$LITELLM_POD" -- \
-    curl -sf http://localhost:4000/key/list \
+  # Always read from the K8s secret — authoritative source
+  _MASTER_KEY=$(kubectl get secret litellm-credentials -n cip-app \
+    -o jsonpath='{.data.LITELLM_MASTER_KEY}' 2>/dev/null | base64 -d 2>/dev/null || echo "")
+  _MASTER_KEY="${_MASTER_KEY:-${LITELLM_MASTER_KEY:-}}"
+
+  # Capture both body and HTTP status in one request
+  LL_RESP=$(curl -s -w "\n%{http_code}" -X POST http://localhost:14000/key/generate \
     -H "Authorization: Bearer $_MASTER_KEY" \
-    2>/dev/null | jq -r --arg alias "dev-tenant" '.keys[] | select(.key_alias==$alias) | .key' \
-    2>/dev/null | head -1 || echo "")
+    -H "Content-Type: application/json" \
+    -d "{\"key_alias\": \"dev-tenant\", \"team_id\": \"${DEV_TENANT_ID:-dev}\"}" \
+    2>/dev/null || echo "")
+  LL_STATUS=$(echo "$LL_RESP" | tail -1)
+  LL_BODY=$(echo "$LL_RESP" | head -n -1)
 
-  if [[ -n "$EXISTING_KEY" ]]; then
-    echo "      Virtual key already exists (alias: dev-tenant)."
-  else
-    NEW_KEY=$(kubectl exec -n cip-app "$LITELLM_POD" -- \
-      curl -sf -X POST http://localhost:4000/key/generate \
-      -H "Authorization: Bearer $_MASTER_KEY" \
-      -H "Content-Type: application/json" \
-      -d "{\"key_alias\": \"dev-tenant\", \"team_id\": \"${DEV_TENANT_ID:-dev}\"}" \
-      2>/dev/null | jq -r '.key' 2>/dev/null || echo "")
-
-    if [[ -n "$NEW_KEY" && "$NEW_KEY" != "null" ]]; then
+  case "$LL_STATUS" in
+    200|201)
+      NEW_KEY=$(echo "$LL_BODY" | jq -r '.key' 2>/dev/null || echo "")
       echo "      Virtual key generated: $NEW_KEY"
       echo "      ACTION REQUIRED: add to .envrc → export LITELLM_VIRTUAL_KEY=$NEW_KEY"
-    else
-      echo "      WARNING: could not generate virtual key — check LITELLM_MASTER_KEY or LITELLM_DATABASE_URL"
-    fi
-  fi
+      ;;
+    400)
+      echo "      Virtual key already exists (alias: dev-tenant — skipped)."
+      ;;
+    *)
+      echo "      WARNING: could not generate virtual key (HTTP $LL_STATUS)"
+      echo "      Response: ${LL_BODY:0:300}"
+      ;;
+  esac
+
+  kill "$LL_PF_PID" 2>/dev/null || true
 fi
 
 echo ""

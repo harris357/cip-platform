@@ -13,7 +13,7 @@ env:
   LITELLM_BASE_URL: http://litellm.cip-app.svc.cluster.local:4000
   NATS_URL: nats://nats.cip-infra.svc.cluster.local:4222
   TEMPORAL_TASK_QUEUE: cip-hr-tasks
-  KEYCLOAK_URL: https://keycloak.dev.cip.io
+  KEYCLOAK_URL: https://keycloak.cip.idlevice.ca
   # Dev: single shared realm. Prod: realm per tenant = tenantId (set at deploy time).
   KEYCLOAK_REALM: cip-dev
   TEAMS_BOT_URL: http://teams-bot.cip-app.svc.cluster.local:3978

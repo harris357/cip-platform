@@ -15,7 +15,7 @@ service:
 env:
   LITELLM_BASE_URL: http://litellm.cip-app.svc.cluster.local:4000
   NATS_URL: nats://nats.cip-infra.svc.cluster.local:4222
-  KEYCLOAK_URL: https://keycloak.dev.cip.io
+  KEYCLOAK_URL: https://keycloak.cip.idlevice.ca
   # Dev: single shared realm. Prod: realm per tenant = tenantId (set at deploy time).
   KEYCLOAK_REALM: cip-dev
   # new keys — stubs; override at deploy time or via secret
@@ -32,5 +32,5 @@ envFrom:
 
 ingress:
   enabled: true
-  host: bot.dev.cip.idlevice.ca   # set as BOT_MESSAGING_ENDPOINT in Azure bot registration
+  host: bot.cip.idlevice.ca   # set as BOT_MESSAGING_ENDPOINT in Azure bot registration
   tls: true

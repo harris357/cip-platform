@@ -556,11 +556,11 @@ Part 1 — Azure Bot Registration
 - Create Azure Bot resource named `cip-bot-dev` (single-tenant)
 - Capture App ID → BOT_APP_ID
 - Capture Client Secret → BOT_APP_PASSWORD
-- Set Messaging endpoint: https://bot.dev.cip.idlevice.ca/api/messages
+- Set Messaging endpoint: https://bot.cip.idlevice.ca/api/messages
 - Enable Microsoft Teams channel
 
 Part 2 — Azure AD App Manifest (SSO)
-- Application ID URI: api://bot.dev.cip.idlevice.ca/<BOT_APP_ID>
+- Application ID URI: api://bot.cip.idlevice.ca/<BOT_APP_ID>
 - Add scope: access_as_user (Admins + Users consent)
 - Add Authorized client applications:
   - 1fec8e78-bce4-4aaf-ab1b-5451cc387264 (Teams Desktop)

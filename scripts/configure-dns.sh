@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Create or update Cloudflare A records pointing *.dev.cip.idlevice.ca at the OVH LB IP.
+# Create or update Cloudflare A records pointing *.cip.idlevice.ca at the OVH LB IP.
 # Run after 'make bootstrap-infra' once the ingress-nginx LoadBalancer IP is assigned.
 # Requires: CF_ZONE_ID, CLOUDFLARE_API_TOKEN in environment (.envrc sourced).
 
-DOMAIN="${DOMAIN:-dev.cip.idlevice.ca}"
+DOMAIN="${DOMAIN:-cip.idlevice.ca}"
 
 # Get LB IP from the cluster (preferred) or fall back to OVH_LB_IP env var
 LB_IP=""

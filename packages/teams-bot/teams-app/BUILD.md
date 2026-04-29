@@ -14,7 +14,7 @@ Complete the parts in order on first deployment; subsequent redeployments only n
    in the `teams-bot-credentials` K8s secret
 5. Under **Configuration → Messaging endpoint**, set:
    ```
-   https://bot.dev.cip.idlevice.ca/api/messages
+   https://bot.cip.idlevice.ca/api/messages
    ```
 6. Under **Channels**, enable **Microsoft Teams**
 
@@ -27,7 +27,7 @@ The bot's SSO requires the Azure AD app (the same App ID registered above) to ex
 1. **Azure Portal → App Registrations** → find the bot's App ID
 2. **Expose an API** → set Application ID URI to:
    ```
-   api://bot.dev.cip.idlevice.ca/<BOT_APP_ID>
+   api://bot.cip.idlevice.ca/<BOT_APP_ID>
    ```
 3. Add a scope named `access_as_user` — allow both **Admins** and **Users** to consent
 4. Add the following Teams client IDs as **Authorized client applications** for that scope:
@@ -35,7 +35,7 @@ The bot's SSO requires the Azure AD app (the same App ID registered above) to ex
    - Teams Mobile/Web: `5e3ce6c0-2b1f-4285-8d4b-75ee78787346`
 
 The `webApplicationInfo.resource` in `manifest.json` matches this URI:
-`api://bot.dev.cip.idlevice.ca/${{BOT_APP_ID}}`
+`api://bot.cip.idlevice.ca/${{BOT_APP_ID}}`
 
 ---
 

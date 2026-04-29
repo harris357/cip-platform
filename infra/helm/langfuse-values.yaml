@@ -1,6 +1,6 @@
 # Override values for the langfuse chart in the dev environment.
 # Base values are in infra/helm/langfuse/values.yaml.
 env:
-  NEXTAUTH_URL: https://langfuse.dev.cip.io
+  NEXTAUTH_URL: https://langfuse.cip.idlevice.ca
   LANGFUSE_DEFAULT_ORG_NAME: cip-dev
   LANGFUSE_DEFAULT_PROJECT_NAME: cip

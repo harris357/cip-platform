@@ -44,6 +44,6 @@ variable "nodepool_max_size" {
 
 variable "domain" {
   type        = string
-  description = "Base domain for all ingress hostnames (e.g. dev.cip.idlevice.ca)"
-  default     = "dev.cip.idlevice.ca"
+  description = "Base domain for all ingress hostnames (e.g. cip.idlevice.ca)"
+  default     = "cip.idlevice.ca"
 }
