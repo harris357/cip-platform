@@ -86,9 +86,6 @@ kubectl run nats-setup --rm --restart=Never --attach --image=natsio/nats-box:lat
              --max-age "$retention" \
              --retention limits \
              --replicas 1 \
-             --max-msgs -1 \
-             --max-bytes -1 \
-             --max-msg-size -1 \
              --discard old \
              --no-confirm; then
         echo "Created stream $name ($subjects_raw)"
@@ -123,6 +120,7 @@ else
     KC_ERROR=$(echo "$KC_TOKEN_RESP" | jq -r '.error_description // .error // "no response"' 2>/dev/null || echo "no response")
     echo "      WARNING: could not obtain Keycloak admin token: $KC_ERROR"
     echo "      Pass length: ${#_KC_ADMIN_PASS}, URL: ${KC_LOCAL}/realms/master/protocol/openid-connect/token"
+    echo "      Raw response (first 200 chars): ${KC_TOKEN_RESP:0:200}"
   else
     HTTP_STATUS=$(kubectl exec -n cip-auth "$KC_POD" -- \
       curl -sf -o /dev/null -w "%{http_code}" \
