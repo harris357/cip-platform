@@ -19,7 +19,7 @@ data "cloudflare_zone" "main" {
 # Admin services — routed through Cloudflare Tunnel (Cloudflare Access enforces auth)
 resource "cloudflare_record" "keycloak" {
   zone_id = data.cloudflare_zone.main.id
-  name    = "keycloak"
+  name    = "keycloak.cip"
   value   = "${local.tunnel_id}.cfargotunnel.com"
   type    = "CNAME"
   proxied = true
@@ -27,7 +27,7 @@ resource "cloudflare_record" "keycloak" {
 
 resource "cloudflare_record" "grafana" {
   zone_id = data.cloudflare_zone.main.id
-  name    = "grafana"
+  name    = "grafana.cip"
   value   = "${local.tunnel_id}.cfargotunnel.com"
   type    = "CNAME"
   proxied = true
@@ -35,7 +35,7 @@ resource "cloudflare_record" "grafana" {
 
 resource "cloudflare_record" "langfuse" {
   zone_id = data.cloudflare_zone.main.id
-  name    = "langfuse"
+  name    = "langfuse.cip"
   value   = "${local.tunnel_id}.cfargotunnel.com"
   type    = "CNAME"
   proxied = true
@@ -51,7 +51,7 @@ variable "ingress_ip" {
 resource "cloudflare_record" "bot" {
   count   = var.ingress_ip != "" ? 1 : 0
   zone_id = data.cloudflare_zone.main.id
-  name    = "bot"
+  name    = "bot.cip"
   value   = var.ingress_ip
   type    = "A"
   proxied = false
