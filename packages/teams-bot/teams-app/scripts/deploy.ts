@@ -122,6 +122,15 @@ function buildZip(entries: ZipEntry[]): Buffer {
   return Buffer.concat([...parts, cdBuf, eocd]);
 }
 
+function bumpPatchVersion(manifestPath: string): string {
+  const raw  = fs.readFileSync(manifestPath, 'utf8');
+  const obj  = JSON.parse(raw) as { version: string };
+  const [major, minor, patch] = obj.version.split('.').map(Number);
+  const next = `${major}.${minor}.${(patch ?? 0) + 1}`;
+  fs.writeFileSync(manifestPath, raw.replace(/"version":\s*"[^"]+"/, `"version": "${next}"`), 'utf8');
+  return next;
+}
+
 function buildAppPackage(cfg: Record<string, string>): Buffer {
   const appPkg = path.join(APP_DIR, 'appPackage');
   let manifest = fs.readFileSync(path.join(appPkg, 'manifest.json'), 'utf8');
@@ -309,6 +318,9 @@ async function main(): Promise<void> {
   }
 
   console.log('1. Building app package...');
+  const manifestPath = path.join(APP_DIR, 'appPackage', 'manifest.json');
+  const version = bumpPatchVersion(manifestPath);
+  console.log(`   Bumped manifest version → ${version}`);
   const zip     = buildAppPackage(cfg);
   const outDir  = path.join(APP_DIR, 'appPackage', 'build');
   const outFile = path.join(outDir, `appPackage.${env}.zip`);

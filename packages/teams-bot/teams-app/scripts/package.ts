@@ -31,6 +31,17 @@ function loadEnvFile(filePath: string): Record<string, string> {
   return result;
 }
 
+// ── Version bump ─────────────────────────────────────────────────────────────
+
+function bumpPatchVersion(manifestPath: string): string {
+  const raw  = fs.readFileSync(manifestPath, 'utf8');
+  const obj  = JSON.parse(raw) as { version: string };
+  const [major, minor, patch] = obj.version.split('.').map(Number);
+  const next = `${major}.${minor}.${(patch ?? 0) + 1}`;
+  fs.writeFileSync(manifestPath, raw.replace(/"version":\s*"[^"]+"/, `"version": "${next}"`), 'utf8');
+  return next;
+}
+
 // ── ZIP builder (no external deps) ──────────────────────────────────────────
 
 const CRC_TABLE: Uint32Array = (() => {
@@ -122,6 +133,8 @@ if (missing.length) {
 }
 
 const appPkg  = path.join(APP_DIR, 'appPackage');
+const version = bumpPatchVersion(path.join(appPkg, 'manifest.json'));
+console.log(`Bumped manifest version → ${version}`);
 let manifest  = fs.readFileSync(path.join(appPkg, 'manifest.json'), 'utf8');
 manifest      = manifest.replaceAll('${{BOT_APP_ID}}', envVars['BOT_APP_ID']!);
 manifest      = manifest.replaceAll('${{BOT_DOMAIN}}',  envVars['BOT_DOMAIN']!);
