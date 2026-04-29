@@ -5,6 +5,7 @@
 
 args:
   - start
+  - --features=token-exchange
 
 extraEnv: |
   - name: KC_DB

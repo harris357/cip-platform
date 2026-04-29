@@ -192,6 +192,116 @@ else
         echo "      WARNING: could not retrieve teams-bot client secret"
       fi
     fi
+
+    # Configure AAD identity provider + token exchange (idempotent)
+    _BOT_APP_ID="${BOT_APP_ID:-}"
+    _TENANT_ID="${TENANT_ID:-}"
+    _BOT_APP_PASSWORD=$(kubectl get secret teams-bot-credentials -n cip-app \
+      -o jsonpath='{.data.BOT_APP_PASSWORD}' 2>/dev/null | base64 -d 2>/dev/null || echo "")
+
+    if [[ -z "$_BOT_APP_ID" || -z "$_TENANT_ID" || -z "$_BOT_APP_PASSWORD" ]]; then
+      echo "      WARNING: BOT_APP_ID, TENANT_ID, or BOT_APP_PASSWORD missing — skipping AAD IDP setup"
+      echo "      Ensure BOT_APP_ID and TENANT_ID are exported in .envrc"
+    else
+      # Create AAD OIDC identity provider
+      _AAD_EXISTS=$(curl -s \
+        "${KC_LOCAL}/admin/realms/cip-dev/identity-provider/instances/aad" \
+        -H "Authorization: Bearer $KC_ADMIN_TOKEN" \
+        2>/dev/null | jq -r '.alias // empty' 2>/dev/null || echo "")
+
+      if [[ -n "$_AAD_EXISTS" ]]; then
+        echo "      AAD identity provider already exists (skipped)."
+      else
+        _IDP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
+          -X POST "${KC_LOCAL}/admin/realms/cip-dev/identity-provider/instances" \
+          -H "Authorization: Bearer $KC_ADMIN_TOKEN" \
+          -H "Content-Type: application/json" \
+          -d "{
+            \"alias\": \"aad\",
+            \"displayName\": \"Microsoft AAD\",
+            \"providerId\": \"oidc\",
+            \"enabled\": true,
+            \"config\": {
+              \"clientId\": \"${_BOT_APP_ID}\",
+              \"clientSecret\": \"${_BOT_APP_PASSWORD}\",
+              \"tokenUrl\": \"https://login.microsoftonline.com/${_TENANT_ID}/oauth2/v2.0/token\",
+              \"authorizationUrl\": \"https://login.microsoftonline.com/${_TENANT_ID}/oauth2/v2.0/authorize\",
+              \"jwksUrl\": \"https://login.microsoftonline.com/${_TENANT_ID}/discovery/v2.0/keys\",
+              \"validateSignature\": \"true\",
+              \"useJwksUrl\": \"true\",
+              \"issuer\": \"https://login.microsoftonline.com/${_TENANT_ID}/v2.0\",
+              \"defaultScope\": \"openid profile email\",
+              \"syncMode\": \"IMPORT\"
+            }
+          }" 2>/dev/null || echo "000")
+        case "$_IDP_STATUS" in
+          201) echo "      AAD identity provider created." ;;
+          *)   echo "      WARNING: AAD IDP creation returned HTTP $_IDP_STATUS" ;;
+        esac
+      fi
+
+      # Enable fine-grained token exchange permissions on teams-bot
+      if [[ -n "$KC_CLIENT_ID" ]]; then
+        _PERM_RESP=$(curl -s -X PUT \
+          "${KC_LOCAL}/admin/realms/cip-dev/clients/${KC_CLIENT_ID}/management/permissions" \
+          -H "Authorization: Bearer $KC_ADMIN_TOKEN" \
+          -H "Content-Type: application/json" \
+          -d '{"enabled": true}' 2>/dev/null || echo "{}")
+        _TEX_PERM_ID=$(echo "$_PERM_RESP" | jq -r '.scopePermissions["token-exchange"] // empty' 2>/dev/null || echo "")
+
+        if [[ -n "$_TEX_PERM_ID" ]]; then
+          # Get realm-management client (owns the authz resources)
+          _RM_ID=$(curl -s \
+            "${KC_LOCAL}/admin/realms/cip-dev/clients?clientId=realm-management" \
+            -H "Authorization: Bearer $KC_ADMIN_TOKEN" \
+            2>/dev/null | jq -r '.[0].id // empty' 2>/dev/null || echo "")
+
+          if [[ -n "$_RM_ID" ]]; then
+            # Create a client policy allowing teams-bot to perform token exchange (idempotent)
+            _POLICY_ID=$(curl -s \
+              "${KC_LOCAL}/admin/realms/cip-dev/clients/${_RM_ID}/authz/resource-server/policy?name=teams-bot-token-exchange" \
+              -H "Authorization: Bearer $KC_ADMIN_TOKEN" \
+              2>/dev/null | jq -r '.[0].id // empty' 2>/dev/null || echo "")
+
+            if [[ -z "$_POLICY_ID" ]]; then
+              _POLICY_RESP=$(curl -s -w "\n%{http_code}" \
+                -X POST "${KC_LOCAL}/admin/realms/cip-dev/clients/${_RM_ID}/authz/resource-server/policy/client" \
+                -H "Authorization: Bearer $KC_ADMIN_TOKEN" \
+                -H "Content-Type: application/json" \
+                -d "{\"name\":\"teams-bot-token-exchange\",\"type\":\"client\",\"logic\":\"POSITIVE\",\"decisionStrategy\":\"UNANIMOUS\",\"clients\":[\"${KC_CLIENT_ID}\"]}" \
+                2>/dev/null || echo "")
+              _POLICY_ID=$(echo "$_POLICY_RESP" | head -n -1 | jq -r '.id // empty' 2>/dev/null || echo "")
+              echo "      Token exchange client policy: HTTP $(echo "$_POLICY_RESP" | tail -1)"
+            else
+              echo "      Token exchange policy already exists (skipped)."
+            fi
+
+            # Attach policy to the token-exchange scope permission
+            if [[ -n "$_POLICY_ID" ]]; then
+              _TEX_PERM=$(curl -s \
+                "${KC_LOCAL}/admin/realms/cip-dev/clients/${_RM_ID}/authz/resource-server/permission/scope/${_TEX_PERM_ID}" \
+                -H "Authorization: Bearer $KC_ADMIN_TOKEN" 2>/dev/null || echo "{}")
+              _RES_ID=$(echo "$_TEX_PERM" | jq -r '.resources[0] // empty' 2>/dev/null || echo "")
+              _SCOPE_ID=$(echo "$_TEX_PERM" | jq -r '.scopes[0] // empty' 2>/dev/null || echo "")
+              _EXISTING=$(echo "$_TEX_PERM" | jq -r '[.policies[]?.id] | join(",")' 2>/dev/null || echo "")
+
+              if echo "$_EXISTING" | grep -q "$_POLICY_ID"; then
+                echo "      Token exchange permission already configured (skipped)."
+              else
+                curl -s -o /dev/null -w "      Token exchange permission update: HTTP %{http_code}\n" \
+                  -X PUT "${KC_LOCAL}/admin/realms/cip-dev/clients/${_RM_ID}/authz/resource-server/permission/scope/${_TEX_PERM_ID}" \
+                  -H "Authorization: Bearer $KC_ADMIN_TOKEN" \
+                  -H "Content-Type: application/json" \
+                  -d "{\"id\":\"${_TEX_PERM_ID}\",\"type\":\"scope\",\"logic\":\"POSITIVE\",\"decisionStrategy\":\"UNANIMOUS\",\"resources\":[\"${_RES_ID}\"],\"scopes\":[\"${_SCOPE_ID}\"],\"policies\":[\"${_POLICY_ID}\"]}" \
+                  2>/dev/null
+              fi
+            fi
+          fi
+        else
+          echo "      WARNING: could not enable token exchange permissions — is --features=token-exchange set?"
+        fi
+      fi
+    fi
   fi
 
   kill "$KC_PF_PID" 2>/dev/null || true
