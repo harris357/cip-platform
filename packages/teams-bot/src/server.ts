@@ -6,7 +6,8 @@ import { getChannelRef } from './teams-protocol/channel-registry.js';
 const auth = new ConfigurationBotFrameworkAuthentication({
   ...(process.env['BOT_APP_ID'] ? { MicrosoftAppId: process.env['BOT_APP_ID'] } : {}),
   ...(process.env['BOT_APP_PASSWORD'] ? { MicrosoftAppPassword: process.env['BOT_APP_PASSWORD'] } : {}),
-  MicrosoftAppType: 'MultiTenant',
+  MicrosoftAppType: (process.env['MICROSOFT_APP_TYPE'] ?? 'MultiTenant') as 'MultiTenant' | 'SingleTenant' | 'UserAssignedMsi',
+  ...(process.env['MICROSOFT_APP_TENANT_ID'] ? { MicrosoftAppTenantId: process.env['MICROSOFT_APP_TENANT_ID'] } : {}),
 });
 
 export const adapter = new CloudAdapter(auth);
