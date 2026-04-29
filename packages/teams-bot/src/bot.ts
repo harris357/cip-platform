@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { TurnContext } from '@microsoft/agents-hosting';
 import { Activity } from '@microsoft/agents-activity';
 import { TeamsActivityHandler } from '@microsoft/agents-hosting-extensions-teams';
@@ -73,18 +74,17 @@ export class CIPTeamsBot extends TeamsActivityHandler {
       const keycloakJwt = getCachedToken(userId);
 
       if (!keycloakJwt) {
-        // Interactive OAuth — no tokenExchangeResource means no silent SSO attempt.
-        // Teams shows a "Sign in" button; user clicks once per session.
-        // signin/verifyState or signin/tokenExchange arrives in onSigninInvokeActivity.
+        const resourceUri = `api://${process.env['BOT_DOMAIN'] ?? 'bot-cip.idlevice.ca'}/${process.env['BOT_APP_ID'] ?? ''}`;
         const oauthCard = {
           contentType: 'application/vnd.microsoft.card.oauth',
           content: {
             connectionName: 'sso',
             title: 'Sign in to CIP',
             text: 'Please sign in to get started. This happens once per session.',
+            tokenExchangeResource: { id: randomUUID(), uri: resourceUri },
           },
         };
-        console.log(`[auth] no cached token for user ${userId} — sending interactive OAuthCard connectionName=sso`);
+        console.log(`[auth] sending OAuthCard connectionName=sso tokenExchangeResource.uri="${resourceUri}"`);
         await context.sendActivity(Activity.fromObject({
           type: 'message',
           attachments: [oauthCard],
@@ -148,6 +148,20 @@ export class CIPTeamsBot extends TeamsActivityHandler {
     const value = context.activity.value as { token?: string } | undefined;
     const aadToken = value?.token;
     console.log(`[sso] invoke name=${context.activity.name} hasToken=${!!aadToken}`);
+
+    // Decode and log the JWT header+payload so we can inspect the aud claim.
+    if (aadToken) {
+      try {
+        const [, payloadB64] = aadToken.split('.');
+        const payload = JSON.parse(Buffer.from(payloadB64 ?? '', 'base64url').toString('utf8')) as {
+          aud?: string; iss?: string; tid?: string; ver?: string; scp?: string;
+        };
+        console.log(`[sso] token claims: aud="${payload.aud}" iss="${payload.iss}" tid="${payload.tid}" ver="${payload.ver}" scp="${payload.scp}"`);
+      } catch {
+        console.warn('[sso] could not decode token JWT');
+      }
+    }
+
     if (aadToken) {
       try {
         const tenantId: string =
