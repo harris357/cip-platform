@@ -79,12 +79,12 @@ export class CIPTeamsBot extends TeamsActivityHandler {
         const oauthCard = {
           contentType: 'application/vnd.microsoft.card.oauth',
           content: {
-            connectionName: 'teams-sso',
+            connectionName: 'sso',
             title: 'Sign in to CIP',
             text: 'Please sign in to get started. This happens once per session.',
           },
         };
-        console.log(`[auth] no cached token for user ${userId} — sending interactive OAuthCard (no SSO)`);
+        console.log(`[auth] no cached token for user ${userId} — sending interactive OAuthCard connectionName=sso`);
         await context.sendActivity(Activity.fromObject({
           type: 'message',
           attachments: [oauthCard],
