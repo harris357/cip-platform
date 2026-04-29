@@ -13,8 +13,7 @@ service:
   port: 3978
 
 env:
-  MICROSOFT_APP_TYPE: SingleTenant
-  MICROSOFT_APP_TENANT_ID: "8ce0ee69-ceac-4dc1-9691-ff463edcebb9"
+  MICROSOFT_APP_TYPE: MultiTenant
   LITELLM_BASE_URL: http://litellm.cip-app.svc.cluster.local:4000
   NATS_URL: nats://nats.cip-infra.svc.cluster.local:4222
   KEYCLOAK_URL: http://keycloak-keycloakx.cip-auth.svc.cluster.local
