@@ -58,16 +58,21 @@ kubectl run nats-setup --rm --restart=Never --attach --image=natsio/nats-box:lat
     nats -s $S kv add teams-channel-registry --ttl=24h \
       && echo "KV bucket teams-channel-registry created." \
       || echo "KV bucket teams-channel-registry already exists (skipped)."
+    # Subject filters must match buildSubject() output: cip.{tenantId}.{domain}.{event}.{version}
+    # Each entry: NAME|SUBJECTS(comma-separated)|RETENTION
     for entry in \
-      "CERTS|cip.*.certs.>|365d" \
-      "HR_EVENTS|cip.*.hr.>|90d" \
-      "PLATFORM_EVENTS|cip.*.platform.>|30d" \
+      "CERTS|cip.*.cert.>|365d" \
+      "HR_EVENTS|cip.*.employee.>,cip.*.worker.>|90d" \
+      "PLATFORM_EVENTS|cip.*.compliance.>,cip.*.tenant.>|30d" \
       "HITL_EVENTS|cip.*.hitl.>|7d"; do
       name=$(echo "$entry" | cut -d"|" -f1)
       subjects=$(echo "$entry" | cut -d"|" -f2)
       retention=$(echo "$entry" | cut -d"|" -f3)
       if nats -s $S stream info "$name" > /dev/null 2>&1; then
-        echo "Stream $name already exists (skipped)"
+        # Update subjects in case they changed (edit is non-destructive)
+        nats -s $S stream edit "$name" --subjects "$subjects" --no-confirm > /dev/null 2>&1 \
+          && echo "Stream $name updated (subjects refreshed)" \
+          || echo "Stream $name already exists (edit skipped)"
       elif nats -s $S stream add "$name" \
              --subjects "$subjects" \
              --storage file \
