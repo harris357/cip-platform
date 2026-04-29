@@ -1,12 +1,10 @@
-# DNS records for cip.idlevice.ca (Cloudflare zone).
+# DNS records for cip.idlevice.ca (Cloudflare zone: idlevice.ca).
 #
-# Admin services (keycloak, grafana, langfuse) CNAME to the Cloudflare Tunnel —
-# no public ingress needed. Teams bot stays as an A record → OVH floating IP.
+# Admin services (keycloak.cip, grafana.cip, langfuse.cip) are managed automatically
+# by cloudflared as Tunnel-type records — do not manage those here.
 #
-# Tunnel ID is derived at plan time from var.cloudflare_tunnel_token (no hardcoding).
-# Set in .envrc:
-#   export TF_VAR_cloudflare_api_token=$CLOUDFLARE_API_TOKEN
-#   export TF_VAR_cloudflare_tunnel_token=$CLOUDFLARE_TUNNEL_TOKEN
+# Only the Teams bot A record is managed by Terraform (it bypasses the tunnel).
+# Set TF_VAR_ingress_ip to the OVH floating IP before applying.
 
 locals {
   tunnel_id = jsondecode(base64decode(var.cloudflare_tunnel_token))["t"]
@@ -14,31 +12,6 @@ locals {
 
 data "cloudflare_zone" "main" {
   name = var.cloudflare_zone
-}
-
-# Admin services — routed through Cloudflare Tunnel (Cloudflare Access enforces auth)
-resource "cloudflare_record" "keycloak" {
-  zone_id = data.cloudflare_zone.main.id
-  name    = "keycloak.cip"
-  content = "${local.tunnel_id}.cfargotunnel.com"
-  type    = "CNAME"
-  proxied = true
-}
-
-resource "cloudflare_record" "grafana" {
-  zone_id = data.cloudflare_zone.main.id
-  name    = "grafana.cip"
-  content = "${local.tunnel_id}.cfargotunnel.com"
-  type    = "CNAME"
-  proxied = true
-}
-
-resource "cloudflare_record" "langfuse" {
-  zone_id = data.cloudflare_zone.main.id
-  name    = "langfuse.cip"
-  content = "${local.tunnel_id}.cfargotunnel.com"
-  type    = "CNAME"
-  proxied = true
 }
 
 # Teams bot — bypasses the tunnel, hits OVH LB / nginx directly
