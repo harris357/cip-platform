@@ -25,11 +25,6 @@ app.use(authorizeJWT(authConfig));
 app.post('/api/messages', async (req, res) => {
   const body = req.body as { type?: string; name?: string };
   console.log(`[activity] type=${body.type ?? '?'} name=${body.name ?? '-'}`);
-  if (body.type === 'invoke') {
-    // Log the full raw activity so we can see exactly what Teams sends on signin/failure,
-    // signin/tokenExchange, etc. — including channelData and entities.
-    console.log(`[activity:invoke] RAW: ${JSON.stringify(req.body, null, 2)}`);
-  }
   await adapter.process(req, res, context => bot.run(context));
 });
 

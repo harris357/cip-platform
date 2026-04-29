@@ -74,20 +74,25 @@ export class CIPTeamsBot extends TeamsActivityHandler {
       const keycloakJwt = getCachedToken(userId);
 
       if (!keycloakJwt) {
+        // No token — send an OAuthCard with tokenExchangeResource.
+        // Teams intercepts this, silently acquires an AAD token for the app,
+        // and sends signin/tokenExchange back to onSigninInvokeActivity.
         const resourceUri = `api://${process.env['BOT_DOMAIN'] ?? 'bot-cip.idlevice.ca'}/${process.env['BOT_APP_ID'] ?? ''}`;
-        const oauthCard = {
-          contentType: 'application/vnd.microsoft.card.oauth',
-          content: {
-            connectionName: 'sso',
-            title: 'Sign in to CIP',
-            text: 'Please sign in to get started. This happens once per session.',
-            tokenExchangeResource: { id: randomUUID(), uri: resourceUri },
-          },
-        };
-        console.log(`[auth] sending OAuthCard connectionName=sso tokenExchangeResource.uri="${resourceUri}"`);
+        console.log(`[auth] no cached token for user ${userId} — initiating Teams SSO, resource=${resourceUri}`);
         await context.sendActivity(Activity.fromObject({
           type: 'message',
-          attachments: [oauthCard],
+          attachments: [{
+            contentType: 'application/vnd.microsoft.card.oauth',
+            content: {
+              connectionName: 'teams-sso',
+              title: 'Sign in to CIP',
+              text: 'Verifying your identity — this happens once per session.',
+              tokenExchangeResource: {
+                id: randomUUID(),
+                uri: resourceUri,
+              },
+            },
+          }],
         }));
         await next();
         return;
@@ -129,11 +134,7 @@ export class CIPTeamsBot extends TeamsActivityHandler {
   protected override async onInvokeActivity(context: TurnContext): Promise<{ status: number; body?: unknown }> {
     if (context.activity.name === 'signin/failure') {
       const err = context.activity.value as { code?: string; message?: string } | undefined;
-      // Log everything — value, channelData, entities — to understand what Teams compared.
-      console.error(`[sso] signin/failure value: ${JSON.stringify(err)}`);
-      console.error(`[sso] signin/failure channelData: ${JSON.stringify(context.activity.channelData)}`);
-      console.error(`[sso] signin/failure entities: ${JSON.stringify(context.activity.entities)}`);
-      console.error(`[sso] signin/failure from: ${JSON.stringify(context.activity.from)}`);
+      console.error(`[sso] signin/failure: ${JSON.stringify(err)}`);
       await context.sendActivity(
         `Sign-in failed (${err?.code ?? 'unknown'}): ${err?.message ?? JSON.stringify(err)}. ` +
         'Check Azure AD app registration or contact your administrator.',
@@ -148,20 +149,6 @@ export class CIPTeamsBot extends TeamsActivityHandler {
     const value = context.activity.value as { token?: string } | undefined;
     const aadToken = value?.token;
     console.log(`[sso] invoke name=${context.activity.name} hasToken=${!!aadToken}`);
-
-    // Decode and log the JWT header+payload so we can inspect the aud claim.
-    if (aadToken) {
-      try {
-        const [, payloadB64] = aadToken.split('.');
-        const payload = JSON.parse(Buffer.from(payloadB64 ?? '', 'base64url').toString('utf8')) as {
-          aud?: string; iss?: string; tid?: string; ver?: string; scp?: string;
-        };
-        console.log(`[sso] token claims: aud="${payload.aud}" iss="${payload.iss}" tid="${payload.tid}" ver="${payload.ver}" scp="${payload.scp}"`);
-      } catch {
-        console.warn('[sso] could not decode token JWT');
-      }
-    }
-
     if (aadToken) {
       try {
         const tenantId: string =
