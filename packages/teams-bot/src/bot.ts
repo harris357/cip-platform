@@ -84,7 +84,7 @@ export class CIPTeamsBot extends TeamsActivityHandler {
           attachments: [{
             contentType: 'application/vnd.microsoft.card.oauth',
             content: {
-              connectionName: 'teams-sso',
+              connectionName: 'sso',
               title: 'Sign in to CIP',
               text: 'Verifying your identity — this happens once per session.',
               tokenExchangeResource: {
@@ -149,6 +149,17 @@ export class CIPTeamsBot extends TeamsActivityHandler {
     const value = context.activity.value as { token?: string } | undefined;
     const aadToken = value?.token;
     console.log(`[sso] invoke name=${context.activity.name} hasToken=${!!aadToken}`);
+    if (aadToken) {
+      try {
+        const [, payloadB64] = aadToken.split('.');
+        const payload = JSON.parse(Buffer.from(payloadB64 ?? '', 'base64url').toString('utf8')) as {
+          aud?: string; iss?: string; tid?: string; ver?: string; scp?: string;
+        };
+        console.log(`[sso] token claims: aud="${payload.aud}" iss="${payload.iss}" tid="${payload.tid}" ver="${payload.ver}" scp="${payload.scp}"`);
+      } catch {
+        console.warn('[sso] could not decode token JWT');
+      }
+    }
     if (aadToken) {
       try {
         const tenantId: string =
