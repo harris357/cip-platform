@@ -1,4 +1,6 @@
+import { randomUUID } from 'node:crypto';
 import { TurnContext } from '@microsoft/agents-hosting';
+import { Activity } from '@microsoft/agents-activity';
 import { TeamsActivityHandler } from '@microsoft/agents-hosting-extensions-teams';
 import type { Tool as McpTool } from '@modelcontextprotocol/sdk/types.js';
 import { resolveAuthContext } from './auth/resolve-context.js';
@@ -72,11 +74,26 @@ export class CIPTeamsBot extends TeamsActivityHandler {
       const keycloakJwt = getCachedToken(userId);
 
       if (!keycloakJwt) {
-        // Token cache miss — prompt the user to trigger SSO
-        // Teams will automatically re-run the silent token exchange and call
-        // onSigninInvokeActivity, which populates the cache.
-        console.log(`[auth] no cached token for user ${userId} — sending SSO prompt`);
-        await context.sendActivity('Please wait a moment while I verify your identity...');
+        // No token — send an OAuthCard with tokenExchangeResource.
+        // Teams intercepts this, silently acquires an AAD token for the app,
+        // and sends signin/tokenExchange back to onSigninInvokeActivity.
+        console.log(`[auth] no cached token for user ${userId} — initiating Teams SSO`);
+        const resourceUri = `api://${process.env['BOT_DOMAIN'] ?? 'bot-cip.idlevice.ca'}/${process.env['BOT_APP_ID'] ?? ''}`;
+        await context.sendActivity(Activity.fromObject({
+          type: 'message',
+          attachments: [{
+            contentType: 'application/vnd.microsoft.card.oauth',
+            content: {
+              connectionName: 'sso',
+              title: 'Sign in to CIP',
+              text: 'Verifying your identity — this happens once per session.',
+              tokenExchangeResource: {
+                id: randomUUID(),
+                uri: resourceUri,
+              },
+            },
+          }],
+        }));
         await next();
         return;
       }
