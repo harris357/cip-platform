@@ -13,6 +13,10 @@ terraform {
       source  = "hashicorp/helm"
       version = "~> 2.12"
     }
+    cloudflare = {
+      source  = "cloudflare/cloudflare"
+      version = "~> 4.0"
+    }
   }
   # Uncomment after running `terraform apply` once to create the cip-tfstate bucket,
   # then run `terraform init -migrate-state` to move state into OVH Object Store.
@@ -28,6 +32,10 @@ terraform {
   #   skip_region_validation      = true
   #   force_path_style            = true
   # }
+}
+
+provider "cloudflare" {
+  api_token = var.cloudflare_api_token
 }
 
 provider "ovh" {
