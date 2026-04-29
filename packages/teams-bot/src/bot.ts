@@ -143,8 +143,10 @@ export class CIPTeamsBot extends TeamsActivityHandler {
         const keycloakJwt = await exchangeAadForKeycloak(aadToken, tenantId);
         cacheToken(context.activity.from?.id ?? '', keycloakJwt);
         console.log('[sso] token cached for user', context.activity.from?.id);
+        await context.sendActivity("You're signed in. What can I help you with?");
       } catch (err) {
         console.error('[CIPTeamsBot] SSO token exchange failed:', err);
+        await context.sendActivity('Sign-in failed. Please try sending a message again.');
       }
     } else {
       console.warn('[sso] invoke received but no token in value:', JSON.stringify(value));
