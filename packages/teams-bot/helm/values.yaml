@@ -17,7 +17,7 @@ env:
   BOT_DOMAIN: bot-cip.idlevice.ca
   LITELLM_BASE_URL: http://litellm.cip-app.svc.cluster.local:4000
   NATS_URL: nats://nats.cip-infra.svc.cluster.local:4222
-  KEYCLOAK_URL: http://keycloak-keycloakx.cip-auth.svc.cluster.local
+  KEYCLOAK_URL: http://keycloak-keycloakx-http.cip-auth.svc.cluster.local
   # Dev: single shared realm. Prod: realm per tenant = tenantId (set at deploy time).
   KEYCLOAK_REALM: cip-dev
   # new keys — stubs; override at deploy time or via secret
