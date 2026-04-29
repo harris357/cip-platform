@@ -84,7 +84,7 @@ export class CIPTeamsBot extends TeamsActivityHandler {
           attachments: [{
             contentType: 'application/vnd.microsoft.card.oauth',
             content: {
-              connectionName: 'sso',
+              connectionName: 'teams-sso',
               title: 'Sign in to CIP',
               text: 'Verifying your identity — this happens once per session.',
               tokenExchangeResource: {
