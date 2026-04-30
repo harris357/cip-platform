@@ -140,36 +140,44 @@ export class CIPTeamsBot extends TeamsActivityHandler {
   ): Promise<void> {
     if (!text && fileAttachments.length === 0) return;
 
+    const tStart = Date.now();
+
     // Tell Teams to render "<bot> is typing..." while we work.
     await context.sendActivity(Activity.fromObject({ type: 'typing' }));
+    const tTyping = Date.now();
 
     const ctx = await resolveAuthContext(context, tenantCtx, keycloakJwt);
+    const tAuth = Date.now();
+
     await updateChannelRegistry(context, ctx.tenantId, ctx.bearerToken);
+    const tRegistry = Date.now();
 
     if (fileAttachments.length > 0) {
       for (const file of fileAttachments) {
-        const t0 = Date.now();
+        const tDl0 = Date.now();
         const key = await downloadToObjectStore(file, ctx);
+        const tDl1 = Date.now();
         const result = await executeTool('process_document', { objectStoreKey: key }, ctx);
-        console.log(`[turn] tenantId=${ctx.tenantId} file=${file.name ?? '?'} executeTool=${Date.now() - t0}ms`);
+        const tExec1 = Date.now();
         await renderResponse(context, result);
+        console.log(`[turn] tenantId=${ctx.tenantId} mode=file file=${file.name ?? '?'} typing=${tTyping - tStart}ms auth=${tAuth - tTyping}ms registry=${tRegistry - tAuth}ms download=${tDl1 - tDl0}ms exec=${tExec1 - tDl1}ms render=${Date.now() - tExec1}ms total=${Date.now() - tStart}ms`);
       }
       return;
     }
 
-    const tDiscover = Date.now();
     const tools = await discoverTools(ctx);
-    const tRoute = Date.now();
+    const tDiscover = Date.now();
     const selected = await routeIntent(text, tools, ctx);
-    const tExec = Date.now();
+    const tRoute = Date.now();
 
     if (selected) {
       const result = await executeTool(selected.name, selected.args, ctx);
-      console.log(`[turn] tenantId=${ctx.tenantId} discover=${tRoute - tDiscover}ms route=${tExec - tRoute}ms exec=${Date.now() - tExec}ms tool=${selected.name}`);
+      const tExec = Date.now();
       await renderResponse(context, result);
+      console.log(`[turn] tenantId=${ctx.tenantId} mode=tool typing=${tTyping - tStart}ms auth=${tAuth - tTyping}ms registry=${tRegistry - tAuth}ms discover=${tDiscover - tRegistry}ms route=${tRoute - tDiscover}ms exec=${tExec - tRoute}ms render=${Date.now() - tExec}ms total=${Date.now() - tStart}ms tool=${selected.name}`);
     } else {
-      console.log(`[turn] tenantId=${ctx.tenantId} discover=${tRoute - tDiscover}ms route=${tExec - tRoute}ms exec=- (no tool match)`);
       await context.sendActivity(buildNoToolMessage(tools));
+      console.log(`[turn] tenantId=${ctx.tenantId} mode=no-tool typing=${tTyping - tStart}ms auth=${tAuth - tTyping}ms registry=${tRegistry - tAuth}ms discover=${tDiscover - tRegistry}ms route=${tRoute - tDiscover}ms reply=${Date.now() - tRoute}ms total=${Date.now() - tStart}ms`);
     }
   }
 
@@ -243,8 +251,12 @@ export class CIPTeamsBot extends TeamsActivityHandler {
         context, tenantCtx, keycloakJwt, pending.text, pending.fileAttachments,
       );
     } else {
-      // Edge case: SSO completed without a pending message.
-      await context.sendActivity('Signed in.');
+      // Teams sends signin/tokenExchange twice per OAuthCard (two AAD tokens
+      // with different iat). The first replays the pending message; the
+      // second arrives after pending was cleared. Stay silent — sending
+      // "Signed in." here surfaces a confusing second message AFTER the bot
+      // has already replied to the user's actual question.
+      console.log(`[sso] duplicate tokenExchange (no pending message) userId=${userId} — staying silent`);
     }
   }
 }
