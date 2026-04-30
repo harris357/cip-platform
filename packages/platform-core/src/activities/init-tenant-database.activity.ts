@@ -1,39 +1,56 @@
 import { createPool, withTenantRLS } from '@cip/shared/src/clients/postgres.js';
 
+// Slice 38 — system role catalog for newly provisioned tenants.
+// Each role pairs:
+//   - `code`: stable role identifier, unique within tenant (DB key)
+//   - `keycloak_role`: realm role this maps to. Slice 32 only defines two
+//     realm roles (`hr`, `employee`), so the coarse gate is binary.
+//   - `permissions`: fine-grained capability set, dot-style codes from the
+//     Slice 38 catalog (cert.*, employee.*, compliance.*).
+//
+// Roles that grant any HR-tier permission (employee management, cert.approve,
+// cert.list_all, compliance.view) map to realm role `hr`. The pure
+// self-service role (`field_employee`) maps to `employee`.
 const SYSTEM_ROLES = [
   {
-    keycloak_role: 'hr_admin',
+    code: 'hr_admin',
+    keycloak_role: 'hr',
     label: 'HR Administrator',
-    capabilities: {
-      uploadCertForOthers: true,
-      viewTeamCerts: true,
-      resolveHitl: true,
-      uploadCertForSelf: true,
-      viewOwnCerts: true,
-      viewAllCerts: true,
-      viewCostReports: true,
-      allocateEmployees: true,
-    },
+    permissions: [
+      'employee.create', 'employee.list', 'employee.find',
+      'employee.assign_role', 'employee.revoke_role',
+      'employee.migrate_identity', 'employee.disable',
+      'employee.grant_permission', 'employee.revoke_permission',
+      'cert.approve', 'cert.list_all', 'cert.submit', 'cert.view_own',
+      'compliance.view',
+    ],
   },
   {
-    keycloak_role: 'field_operations',
+    code: 'field_operations',
+    keycloak_role: 'hr',
     label: 'Field Operations',
-    capabilities: { uploadCertForOthers: true, viewTeamCerts: true, resolveHitl: true },
+    permissions: [
+      'employee.list', 'employee.find',
+      'cert.approve', 'cert.list_all', 'cert.submit', 'cert.view_own',
+    ],
   },
   {
-    keycloak_role: 'field_employee',
+    code: 'field_employee',
+    keycloak_role: 'employee',
     label: 'Field Employee',
-    capabilities: { uploadCertForSelf: true, viewOwnCerts: true },
+    permissions: ['cert.submit', 'cert.view_own', 'compliance.view_own'],
   },
   {
-    keycloak_role: 'compliance_manager',
+    code: 'compliance_manager',
+    keycloak_role: 'hr',
     label: 'Compliance Manager',
-    capabilities: { viewAllCerts: true, viewCostReports: true },
+    permissions: ['compliance.view', 'cert.list_all'],
   },
   {
-    keycloak_role: 'site_manager',
+    code: 'site_manager',
+    keycloak_role: 'hr',
     label: 'Site Manager',
-    capabilities: { viewTeamCerts: true, allocateEmployees: true },
+    permissions: ['employee.list', 'cert.list_all'],
   },
 ] as const;
 
@@ -44,10 +61,19 @@ export async function initTenantDatabase(input: { tenantId: string }): Promise<v
     await withTenantRLS(client, input.tenantId, async (c) => {
       for (const role of SYSTEM_ROLES) {
         await c.query(
-          `INSERT INTO roles (tenant_id, keycloak_role, label, capabilities, is_system_role)
-           VALUES ($1, $2, $3, $4::jsonb, true)
-           ON CONFLICT (tenant_id, keycloak_role) DO NOTHING`,
-          [input.tenantId, role.keycloak_role, role.label, JSON.stringify(role.capabilities)],
+          `INSERT INTO roles (tenant_id, code, keycloak_role, label, permissions, is_system_role)
+           VALUES ($1, $2, $3, $4, $5::jsonb, true)
+           ON CONFLICT (tenant_id, code) DO UPDATE
+             SET permissions   = EXCLUDED.permissions,
+                 label         = EXCLUDED.label,
+                 keycloak_role = EXCLUDED.keycloak_role`,
+          [
+            input.tenantId,
+            role.code,
+            role.keycloak_role,
+            role.label,
+            JSON.stringify(role.permissions),
+          ],
         );
       }
 

@@ -29,29 +29,35 @@
 - **Files:**
   - `packages/hr-service/src/db/migrations/002_domain_model.sql`
   - `packages/platform-core/src/activities/init-tenant-database.activity.ts`
-- **Status:** RESOLVED inline (hr-service) / OPEN (platform-core) — 2026-04-30 (Slice 38)
+- **Status:** RESOLVED — 2026-04-30 (Slice 38)
 - **Issue:** Slice 38's spec assumed the `roles` table had a `code TEXT`
   column with `(tenant_id, code)` UNIQUE; the actual schema from Slice 05A
   had only `keycloak_role` with `(tenant_id, keycloak_role)` UNIQUE, and
   used a `capabilities JSONB` object instead of the new `permissions JSONB`
   array. Additionally, `init-tenant-database.activity.ts` in platform-core
-  seeds the legacy `capabilities` shape during tenant bootstrap.
-- **Why it matters:** New tenants provisioned via platform-core will not
-  automatically receive `permissions` arrays. The existing `capabilities`
-  column is dead code post-Slice-38 (the only consumer, the
-  `get_employee_capabilities` tool, has been removed).
+  seeded the legacy `capabilities` shape during tenant bootstrap, and its
+  `keycloak_role` values (`hr_admin`, `field_operations`, etc.) didn't
+  correspond to any realm role after Slice 32 (which defines only `hr` and
+  `employee`).
+- **Why it matters:** Without these fixes, new tenants provisioned via
+  platform-core would (a) violate the new `(tenant_id, code) NOT NULL`
+  UNIQUE constraint at INSERT time, and (b) receive realm-role values
+  that no JWT would carry — every HR-only tool gate would refuse.
 - **Resolution (hr-service):** `008_role_permissions.sql` (Slice 38) adds
   `code TEXT NOT NULL` (backfilled from `keycloak_role`), drops the legacy
   `(tenant_id, keycloak_role)` UNIQUE, adds `(tenant_id, code)` UNIQUE,
   and adds `permissions JSONB NOT NULL DEFAULT '[]'`. The `capabilities`
-  column remains in place to avoid an INSERT-incompatible migration.
-- **Outstanding (platform-core):** Update
-  `init-tenant-database.activity.ts` to emit `code` and `permissions`
-  for each seeded role (mapping the existing four-role catalog to the
-  Slice 38 permission codes: `employee.list`, `cert.submit`,
-  `cert.view_own`, `cert.list_all`, `cert.approve`, `compliance.view`,
-  etc). Remove the `capabilities` field once all dev/prod tenants have
-  been re-seeded.
+  column remains in place (default `{}`) to avoid an INSERT-incompatible
+  migration; future cleanup slice can drop it once no consumer remains.
+- **Resolution (platform-core):** `init-tenant-database.activity.ts`
+  rewrites the SYSTEM_ROLES catalog to emit `code` + `keycloak_role` +
+  `permissions` for each of the five seeded roles. `keycloak_role` is
+  now strictly `'hr'` or `'employee'` aligned with Slice 32's realm
+  catalog. Permissions use the Slice 38 dot-style codes
+  (`employee.*`, `cert.*`, `compliance.*`). The INSERT uses ON CONFLICT
+  `(tenant_id, code) DO UPDATE` so re-runs converge the catalog
+  forward as the platform role definitions evolve. The `capabilities`
+  column is no longer set; the table default (`'{}'::jsonb`) applies.
 
 ### CS-019
 - **Logged in:** Slice 33 (HR MCP Tools + Migration + Disable)
