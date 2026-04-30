@@ -23,6 +23,7 @@
 | 35 | Tenants + Tenant Identity Providers Tables | [SLICE_35_TENANTS_AND_IDENTITY_PROVIDERS.md](./SLICE_35_TENANTS_AND_IDENTITY_PROVIDERS.md) | PENDING |
 | 36 | Multi-Tenant Teams Bot (in-code routing) | [SLICE_36_MULTI_TENANT_BOT.md](./SLICE_36_MULTI_TENANT_BOT.md) | PENDING |
 | 37 | Per-Tenant KC Client Secrets via K8s Secrets | [SLICE_37_PER_TENANT_KC_SECRETS.md](./SLICE_37_PER_TENANT_KC_SECRETS.md) | PENDING |
+| 38 | Module-Level Permissions (renames "capabilities") | [SLICE_38_PERMISSIONS.md](./SLICE_38_PERMISSIONS.md) | PENDING |
 
 All slices 01–21 are complete — see [archive/](./archive/).
 
@@ -33,11 +34,17 @@ All slices 01–21 are complete — see [archive/](./archive/).
 ```
 22 ──► 23 ──► 24
               └─► 25 ──► 32 ──► 31 ──► 33
+                          └────────────────────► 38   (independent of 31/33; needs 32)
                                        └─► 35 ──► 36 ──► 37
 22 ──► 26                      (independent; can run after 22)
 23 ──► 27
 {24, 25, 26, 27} ──► 28 ──► 29 ──► 30
 ```
+
+Slice 38 (permissions) only depends on Slice 32 (realm roles). It can run
+in parallel with the 31/33/35/36/37 chain. When Slice 33 (HR MCP tools)
+runs, its prompt should reference Slice 38's permission catalog so each
+tool is annotated with the right `requiredPermission`.
 
 The HR-management chain (25 → 32 → 31 → 33) is independent of the deploy chain
 and can run in parallel with operational slices (29, 30):

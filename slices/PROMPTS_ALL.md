@@ -366,6 +366,82 @@ Commit: slice(37): per-tenant KC client secrets via K8s secrets + bot dynamic lo
 
 ---
 
+## PROMPT Slice 38 — Module-Level Permissions
+
+```
+You are working on the CIP Platform TypeScript monorepo.
+
+Session: Slice 38 — Module-Level Permissions + Permission Management Tools
+Package: @cip/teams-bot, @cip/hr-service
+Verify: pnpm --filter @cip/teams-bot typecheck && pnpm --filter @cip/hr-service typecheck && pnpm -r run typecheck
+
+Prerequisite: Slice 32 (realm roles 'hr' and 'employee') must be complete.
+Independent of Slices 31/33/35/36/37.
+
+Read before writing:
+- CLAUDE.md
+- slices/SLICE_38_PERMISSIONS.md   (this slice's full spec)
+- slices/SLICE_32_REALM_ROLES_AND_AUDIT.md
+- slices/CROSS_SLICE_NOTES.md
+- docs/users-roles-auth-normalization-plan.md  (background — two-layer model)
+
+Goal: Replace the empty `capabilities` plumbing with a working two-layer
+access model. Realm role (Slice 32) gates which service the user can call;
+permission (this slice) gates which TOOL within that service. Bot's
+discoverTools filters tools by requiredPermission annotation against the
+user's permission map; tool handlers also assert server-side (defense
+in depth).
+
+THIS SLICE INCLUDES A RENAME: every reference to "capabilities" /
+"capability" in bot and hr-service source code becomes "permissions" /
+"permission". The word "capability" must not appear in deliverables
+(except in any comment that explicitly references the MCP protocol's
+unrelated `capabilities` field — these are protocol-level, not auth-level).
+
+Files to create:
+- packages/hr-service/src/db/migrations/00X_role_permissions.sql
+- packages/hr-service/src/db/queries/permissions.ts
+- packages/hr-service/src/modules/employees/mcp-tools/get-employee-permissions.tool.ts
+    (replaces / renames any existing get-employee-capabilities tool stub)
+- packages/hr-service/src/modules/employees/mcp-tools/employee.grant-permission.tool.ts
+- packages/hr-service/src/modules/employees/mcp-tools/employee.revoke-permission.tool.ts
+
+Files to modify:
+- packages/teams-bot/src/auth/resolve-context.ts
+    rename ctx.capabilities → ctx.permissions; call get_employee_permissions
+- packages/teams-bot/src/mcp/tool-discovery.ts
+    annotation lookup key requiredCapability → requiredPermission
+- packages/teams-bot/src/bot.ts (if it references the field directly)
+- packages/hr-service/src/mcp-server/auth.ts
+    add assertPermission(authInfo, code) helper (DB-backed)
+- packages/hr-service/src/modules/employees/mcp-tools/sync-employee.ts
+    doc-comment update
+- packages/hr-service/src/modules/employees/mcp-tools/index.ts
+    register new tools, drop old get_employee_capabilities registration
+
+Hard rules (Seven Non-Negotiables):
+- Permission code format: <resource>.<action>, lowercase, dots not colons
+- tenantId flows through unchanged; permissions are tenant-scoped
+- Defense in depth: bot discoverTools filter (UX) AND tool handler
+  assertPermission (security) — both required
+- Zod-validated outputs from new MCP tools
+- No @anthropic-ai/sdk imports
+- Stubs forbidden — every function ships with a working body
+- Don't touch Slice 33's MCP tool implementations (those don't exist
+  yet); when Slice 33 runs, it will declare requiredPermission against
+  this slice's catalog
+
+Acceptance: see "Acceptance Criteria" in SLICE_38_PERMISSIONS.md.
+
+If a finding requires changing earlier slice output: log a cross-slice
+note per slices/CROSS_SLICE_NOTES.md and continue. Do not refactor
+outside this slice.
+
+Commit: slice(38): module-level permissions + permission management tools
+```
+
+---
+
 ## PROMPT CROSS-SLICE
 
 ```
