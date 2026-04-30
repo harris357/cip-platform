@@ -74,10 +74,22 @@ logs:         ## Tail logs from a service. Usage: make logs svc=hr-service
 TAG ?= $(shell git rev-parse --short HEAD)
 deploy:       ## Deploy a service via helm upgrade (chart + values change). Usage: make deploy svc=hr-service [TAG=<sha>]
 	@[ -n "$(svc)" ] || (echo "Error: svc= is required"; exit 1)
-	@helm upgrade --install $(svc) ./packages/$(svc)/helm \
-		--namespace cip-app --create-namespace \
-		--set image.tag=$(TAG) \
-		--atomic --timeout 5m
+	@if [ -d "./packages/$(svc)/helm" ]; then \
+		echo "→ Deploying app chart packages/$(svc)/helm with image tag $(TAG)"; \
+		helm upgrade --install $(svc) ./packages/$(svc)/helm \
+			--namespace cip-app --create-namespace \
+			--set image.tag=$(TAG) \
+			--atomic --timeout 5m; \
+	elif [ -d "./infra/helm/$(svc)" ]; then \
+		echo "→ Deploying infra chart infra/helm/$(svc) (image tag ignored)"; \
+		helm upgrade --install $(svc) ./infra/helm/$(svc) \
+			--namespace cip-app --create-namespace \
+			$$( [ -f "./infra/helm/$(svc)-values.yaml" ] && echo "-f ./infra/helm/$(svc)-values.yaml" ) \
+			--atomic --timeout 5m; \
+	else \
+		echo "Error: no chart found at packages/$(svc)/helm or infra/helm/$(svc)"; \
+		exit 1; \
+	fi
 	@echo "Deployed $(svc):$(TAG)"
 
 # Auto-discover internal services that have a Helm chart (used by redeploy-all).
