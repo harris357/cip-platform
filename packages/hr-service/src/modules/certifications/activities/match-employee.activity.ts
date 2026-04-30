@@ -1,10 +1,11 @@
 import { z } from 'zod';
 import { eq } from 'drizzle-orm';
-import { createLiteLLMClient } from '@cip/shared';
+import { callLLM, createLiteLLMClient } from '@cip/shared';
 import type { ExtractionResult } from '@cip/shared';
 import { getDb } from '../../../db/index.js';
 import { withTenantRLS } from '../../../db/rls.js';
 import { employees } from '../../../db/schema.js';
+import { resolveAlias } from '../../../services/alias-resolver.js';
 import { nameAliasSet } from './nickname-map.js';
 
 // ── Zod schema ────────────────────────────────────────────────────────────────
@@ -85,6 +86,7 @@ async function llmSelectEmployee(
   candidates: EmployeeRow[],
 ): Promise<string | null> {
   const client = createLiteLLMClient({ tenantId, virtualKey });
+  const alias = await resolveAlias({ service: 'hr-service', purpose: 'employee_match', tenantId });
 
   const list = candidates
     .map((e, i) => `${i + 1}. REF=${i + 1} | Name="${e.fullName}" | Email="${e.email}"`)
@@ -103,10 +105,12 @@ If one candidate is clearly the same person, reply with ONLY their REF number (t
 If you are not confident, reply with exactly: NO_MATCH
 Do not explain.`;
 
-  const response = await client.chat.completions.create({
-    model:    'cip-lightweight',
+  const response = await callLLM(client, {
+    model:      alias,
     max_tokens: 8,
-    messages: [{ role: 'user', content: prompt }],
+    messages:   [{ role: 'user', content: prompt }],
+    purpose:    'hr-service.employee_match',
+    tenantId,
   });
 
   const text = response.choices[0]?.message.content?.trim() ?? 'NO_MATCH';

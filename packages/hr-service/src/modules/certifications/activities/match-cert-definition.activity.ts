@@ -1,10 +1,11 @@
 import { z } from 'zod';
 import { eq } from 'drizzle-orm';
-import { createLiteLLMClient } from '@cip/shared';
+import { callLLM, createLiteLLMClient } from '@cip/shared';
 import type { ExtractionResult } from '@cip/shared';
 import { getDb } from '../../../db/index.js';
 import { withTenantRLS } from '../../../db/rls.js';
 import { certificateDefinitions } from '../../../db/schema.js';
+import { resolveAlias } from '../../../services/alias-resolver.js';
 
 // ── Zod schema ────────────────────────────────────────────────────────────────
 
@@ -70,6 +71,7 @@ async function llmSelectCertDef(
   allCerts: CertRow[],
 ): Promise<string | null> {
   const client = createLiteLLMClient({ tenantId, virtualKey });
+  const alias = await resolveAlias({ service: 'hr-service', purpose: 'cert_def_match', tenantId });
 
   const library = allCerts
     .map((c, i) => `${i + 1}. REF=${i + 1} | "${c.displayName}"`)
@@ -88,10 +90,12 @@ Common variations to recognise: abbreviations (WHMIS, H2S, CPR), OCR errors, reo
 If you are not confident, reply with exactly: NO_MATCH
 Do not explain.`;
 
-  const response = await client.chat.completions.create({
-    model:    'cip-lightweight',
+  const response = await callLLM(client, {
+    model:      alias,
     max_tokens: 8,
-    messages: [{ role: 'user', content: prompt }],
+    messages:   [{ role: 'user', content: prompt }],
+    purpose:    'hr-service.cert_def_match',
+    tenantId,
   });
 
   const text = response.choices[0]?.message.content?.trim() ?? 'NO_MATCH';

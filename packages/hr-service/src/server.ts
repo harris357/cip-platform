@@ -3,6 +3,7 @@ import { tenantAuthMiddleware } from '@cip/shared/src/utils/tenant-context.js';
 import { healthRouter } from './routes/health.js';
 import { adminTenantsRouter } from './routes/admin-tenants.js';
 import { adminEmployeesRouter } from './routes/admin-employees.js';
+import { adminRoutingRouter } from './routes/admin-routing.js';
 
 export function createApp(): Express {
   const app = express();
@@ -15,6 +16,10 @@ export function createApp(): Express {
   // have their own X-Platform-Admin-Token middleware. Mount BEFORE the
   // tenant JWT middleware so they bypass it.
   app.use(adminTenantsRouter);
+
+  // Slice 39A: routing rules read by the bot's alias-resolver. Same
+  // platform-admin token, mounted before the tenant JWT middleware.
+  app.use(adminRoutingRouter);
 
   // All other routes require a valid tenant JWT
   app.use(tenantAuthMiddleware);

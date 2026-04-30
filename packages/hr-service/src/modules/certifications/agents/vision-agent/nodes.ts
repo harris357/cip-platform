@@ -1,5 +1,6 @@
-import { createLiteLLMClient, ExtractionResultSchema } from '@cip/shared';
+import { callLLM, createLiteLLMClient, ExtractionResultSchema } from '@cip/shared';
 import type { ExtractionResult } from '@cip/shared';
+import { resolveAlias } from '../../../../services/alias-resolver.js';
 import { VisionAgentAnnotation } from './state.js';
 import { EXTRACTION_PROMPT } from './prompts.js';
 
@@ -53,9 +54,16 @@ export async function extractFields(state: typeof VisionAgentAnnotation.State) {
   if (!state.documentBase64) throw new Error('documentBase64 is required');
 
   const client = createLiteLLMClient({ tenantId: state.tenantId, virtualKey });
+  const alias = await resolveAlias({
+    service:  'hr-service',
+    purpose:  'vision_extract',
+    tenantId: state.tenantId,
+  });
 
-  const response = await client.chat.completions.create({
-    model: 'cip-vision',
+  const response = await callLLM(client, {
+    model: alias,
+    purpose:  'hr-service.vision_extract',
+    tenantId: state.tenantId,
     messages: [
       { role: 'system', content: EXTRACTION_PROMPT },
       {

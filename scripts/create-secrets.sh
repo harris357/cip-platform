@@ -12,10 +12,11 @@ for ns in cip-app cip-auth cip-infra cert-manager; do
   kubectl get namespace "$ns" &>/dev/null || kubectl create namespace "$ns"
 done
 
-# LiteLLM credentials (only pod that gets ANTHROPIC_API_KEY)
+# LiteLLM credentials (provider API keys all live here — secrets never reach app pods)
 kubectl create secret generic litellm-credentials \
   --namespace cip-app \
   --from-literal=ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY}" \
+  --from-literal=MISTRAL_API_KEY="${MISTRAL_API_KEY:-}" \
   --from-literal=LITELLM_MASTER_KEY="${LITELLM_MASTER_KEY}" \
   --from-literal=LITELLM_DATABASE_URL="${DATABASE_URL_LITELLM}" \
   --from-literal=LANGFUSE_PUBLIC_KEY="${LANGFUSE_PUBLIC_KEY}" \

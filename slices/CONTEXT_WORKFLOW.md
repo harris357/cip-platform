@@ -22,14 +22,16 @@
 | 33 | HR MCP Tools + Identity Migration + Disable Workflows | [archive/SLICE_33_HR_MCP_TOOLS_AND_MIGRATION.md](./archive/SLICE_33_HR_MCP_TOOLS_AND_MIGRATION.md) | COMPLETE |
 | 35 | Tenants + Tenant Identity Providers Tables | [archive/SLICE_35_TENANTS_AND_IDENTITY_PROVIDERS.md](./archive/SLICE_35_TENANTS_AND_IDENTITY_PROVIDERS.md) | COMPLETE |
 | 36 | Multi-Tenant Teams Bot (in-code routing) | [archive/SLICE_36_MULTI_TENANT_BOT.md](./archive/SLICE_36_MULTI_TENANT_BOT.md) | COMPLETE |
-| 37 | Per-Tenant KC Client Secrets via K8s Secrets | [SLICE_37_PER_TENANT_KC_SECRETS.md](./SLICE_37_PER_TENANT_KC_SECRETS.md) | PENDING |
-| 38 | Module-Level Permissions (renames "capabilities") | [SLICE_38_PERMISSIONS.md](./SLICE_38_PERMISSIONS.md) | PENDING |
+| 37 | Per-Tenant KC Client Secrets via K8s Secrets | [archive/SLICE_37_PER_TENANT_KC_SECRETS.md](./archive/SLICE_37_PER_TENANT_KC_SECRETS.md) | COMPLETE |
+| 38 | Module-Level Permissions (renames "capabilities") | [archive/SLICE_38_PERMISSIONS.md](./archive/SLICE_38_PERMISSIONS.md) | COMPLETE |
+| 39A | Per-Purpose LLM Routing Foundation | [SLICE_39A_PER_PURPOSE_ROUTING.md](./SLICE_39A_PER_PURPOSE_ROUTING.md) | PENDING |
+| 39B | LLM-as-Classifier in the Bot | [SLICE_39B_BOT_CLASSIFIER.md](./SLICE_39B_BOT_CLASSIFIER.md) | PENDING |
 
 All slices 01–21 are complete — see [archive/](./archive/). Slices 31, 32,
-33, 35, 36 completed during the auth/multi-tenant work and have been moved
-to [archive/](./archive/) too; their prompts are kept in
-[PROMPTS_ALL.md](./PROMPTS_ALL.md) under the "Archived prompts" section
-for reference.
+33, 35, 36, 37, 38 completed during the auth/multi-tenant + permissions
+work and have been moved to [archive/](./archive/) too; their prompts are
+kept in [PROMPTS_ALL.md](./PROMPTS_ALL.md) under the "Archived prompts"
+section for reference.
 
 ---
 
@@ -39,31 +41,26 @@ Only pending slices shown. Completed slices are archived.
 
 ```
 COMPLETE: 22 ──► 23 ──► 24
-                  └─► 25 ──► 32 ──► 31 ──► 33
-                                            └─► 35 ──► 36
+                  └─► 25 ──► 32 ──► 31 ──► 33 ──► 38
+                                            └─► 35 ──► 36 ──► 37
                   └─► 26          └─► 27       └─► 28
 
-PENDING:                          (independent of each other)
-            38           (permissions; needs 32 only — done)
-            37           (per-tenant KC secrets; needs 35 + 36 — both done)
+PENDING:    39A ──► 39B          (per-purpose LLM routing; 39B depends on 39A)
 ```
 
 ### Recommended next order
 
-1. **Slice 38** — Module-Level Permissions. Fixes the **observable
-   "no tool match" behaviour** in the bot today: `discoverTools` filters
-   by `requiredCapability` against an empty `ctx.capabilities` map, so
-   the LLM rarely sees any tools. Slice 38 implements
-   `get_employee_permissions` against the role catalog, renames
-   capabilities → permissions across the codebase, and lets the LLM
-   actually pick the right tool.
-2. **Slice 37** — Per-Tenant KC Client Secrets via K8s Secrets. Production
-   hygiene for multi-tenant deployments. Today's single-realm dev works
-   fine via the `KEYCLOAK_CLIENT_SECRET` fallback. Run this when you're
-   ready to onboard a second tenant.
-
-Slices 37 and 38 are the only code-pending slices. 38 first gives a
-faster observable win; 37 is more architectural.
+1. **Slice 39A** — Per-Purpose LLM Routing Foundation. Adds a
+   `routing_rules` table (tunable via SQL), per-purpose Langfuse tagging,
+   `resolveAlias()` helpers, and `store_model_in_db: true` on LiteLLM.
+   No user-visible behaviour change. Ship + validate Langfuse data shows
+   per-purpose attribution before 39B.
+2. **Slice 39B** — LLM-as-Classifier in the Bot. Adds Stage-1 Mistral Nemo
+   classifier with chitchat/meta inline-reply short-circuit. Stage-2 tool
+   selection on a category-filtered catalog routed through `routing_rules`.
+   Falls back to legacy single-stage routing if the classifier returns
+   malformed JSON. Includes a `BOT_DEBUG_CLASSIFICATION` env-flag debug
+   banner for live visibility.
 
 ---
 

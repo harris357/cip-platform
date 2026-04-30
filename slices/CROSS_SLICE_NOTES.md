@@ -22,6 +22,37 @@
 
 ## Open Notes
 
+### CS-022
+- **Logged in:** Slice 39A (Per-Purpose LLM Routing Foundation)
+- **Affects:** Slice 05A (HR domain schema) + future platform-config refactor
+- **Files:**
+  - `packages/hr-service/src/db/migrations/009_routing_rules.sql`
+  - `packages/hr-service/src/db/migrations/004_tenants.sql`
+  - `packages/hr-service/src/db/migrations/005_tenant_settings.sql` (or wherever tenant_settings lives)
+- **Status:** OPEN
+- **Issue:** `routing_rules` joins `tenants`, `tenant_settings`, and
+  `tenant_identity_providers` as platform-level config that physically
+  lives in `cip_hr` (hr-service's DB). Architecturally these all belong
+  in `cip_platform` (platform-core's DB). The routing table perpetuates
+  the existing smell rather than fixing it.
+- **Why it matters:** Cross-service queries like "what did Acme spend
+  on bot routing this month?" naturally join `routing_rules` with tenant
+  metadata, which is co-located today — fine for now. But if a future
+  tenant-onboarding workflow in platform-core wants to seed
+  `routing_rules` at provision time (similar to the role catalog seed
+  CS-021 fixed), it needs to either reach across to cip_hr or call
+  hr-service via HTTP. Adds friction; conflicts with the goal of
+  making platform-core the canonical owner of platform-scoped data.
+- **Fix:** A future cleanup slice migrates `tenants`,
+  `tenant_identity_providers`, `tenant_settings`, `routing_rules` →
+  `cip_platform`. hr-service queries these via an internal `/admin`
+  endpoint on platform-core. Estimated effort: 1–2 days, mostly
+  mechanical (`pg_dump | restore` for the four tables, repoint
+  callers in hr-service to platform-core HTTP).
+- **Defer until:** platform-core has a second consumer for this data,
+  OR a customer onboarding flow needs DB-level access to
+  `routing_rules` at provision time.
+
 ### CS-021
 - **Logged in:** Slice 38 (Module-Level Permissions)
 - **Affects:** Slice 05A (HR domain schema), `@cip/platform-core` tenant
