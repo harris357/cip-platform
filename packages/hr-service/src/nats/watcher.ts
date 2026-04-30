@@ -19,12 +19,13 @@ async function subscribeWithRetry(
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
       return await js.subscribe(subject, {});
-    } catch {
+    } catch (err) {
+      const errMsg = err instanceof Error ? `${err.name}: ${err.message}` : String(err);
       if (attempt < maxAttempts) {
-        console.warn(`[watcher] ${label}: JetStream stream not ready, retrying in ${delayMs / 1000}s (${attempt}/${maxAttempts})...`);
+        console.warn(`[watcher] ${label} subject="${subject}" attempt ${attempt}/${maxAttempts} failed: ${errMsg} — retrying in ${delayMs / 1000}s`);
         await new Promise((r) => setTimeout(r, delayMs));
       } else {
-        throw new Error(`[watcher] ${label}: stream still not available after ${maxAttempts} attempts — run 'make bootstrap'`);
+        throw new Error(`[watcher] ${label} subject="${subject}" failed after ${maxAttempts} attempts. Last error: ${errMsg}`);
       }
     }
   }
