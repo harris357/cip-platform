@@ -23,6 +23,12 @@ kubectl create secret generic litellm-credentials \
   --from-literal=LANGFUSE_HOST="${LANGFUSE_HOST}" \
   --dry-run=client -o yaml | kubectl apply -f -
 
+# PLATFORM_ADMIN_TOKEN: shared bearer token used between platform-core,
+# teams-bot, and hr-service for the /admin/tenants* endpoints. Must be
+# the SAME value on all three. Generate once in .envrc:
+#   export PLATFORM_ADMIN_TOKEN="$(openssl rand -hex 32)"
+# Empty default → endpoints return 401 to everyone (intentionally fail-closed).
+
 # HR Service credentials (virtual key only — NOT the real Anthropic key)
 kubectl create secret generic hr-service-credentials \
   --namespace cip-app \
@@ -31,6 +37,7 @@ kubectl create secret generic hr-service-credentials \
   --from-literal=TEMPORAL_ADDRESS="${TEMPORAL_ADDRESS}" \
   --from-literal=TEMPORAL_NAMESPACE="${TEMPORAL_NAMESPACE}" \
   --from-literal=DATABASE_URL_HR="${DATABASE_URL_HR}" \
+  --from-literal=PLATFORM_ADMIN_TOKEN="${PLATFORM_ADMIN_TOKEN:-}" \
   --from-literal=AWS_ACCESS_KEY_ID="${AWS_ACCESS_KEY_ID:-}" \
   --from-literal=AWS_SECRET_ACCESS_KEY="${AWS_SECRET_ACCESS_KEY:-}" \
   --dry-run=client -o yaml | kubectl apply -f -
@@ -43,6 +50,7 @@ kubectl create secret generic platform-core-credentials \
   --from-literal=TEMPORAL_ADDRESS="${TEMPORAL_ADDRESS}" \
   --from-literal=TEMPORAL_NAMESPACE="${TEMPORAL_NAMESPACE}" \
   --from-literal=DATABASE_URL_PLATFORM="${DATABASE_URL_PLATFORM}" \
+  --from-literal=PLATFORM_ADMIN_TOKEN="${PLATFORM_ADMIN_TOKEN:-}" \
   --dry-run=client -o yaml | kubectl apply -f -
 
 # Teams Bot credentials
@@ -52,6 +60,7 @@ kubectl create secret generic teams-bot-credentials \
   --from-literal=BOT_APP_ID="${BOT_APP_ID:-}" \
   --from-literal=BOT_APP_PASSWORD="${BOT_APP_PASSWORD:-}" \
   --from-literal=KEYCLOAK_CLIENT_SECRET="${KEYCLOAK_CLIENT_SECRET:-}" \
+  --from-literal=PLATFORM_ADMIN_TOKEN="${PLATFORM_ADMIN_TOKEN:-}" \
   --from-literal=AWS_ACCESS_KEY_ID="${AWS_ACCESS_KEY_ID:-}" \
   --from-literal=AWS_SECRET_ACCESS_KEY="${AWS_SECRET_ACCESS_KEY:-}" \
   --dry-run=client -o yaml | kubectl apply -f -

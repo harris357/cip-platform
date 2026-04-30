@@ -47,6 +47,37 @@ DATABASE_URL_HR="postgres://cipuser:${PG_USER_PASSWORD}@localhost:15432/cip_hr" 
 kill "$PF_PID" 2>/dev/null || true
 echo "      Migrations done."
 
+# Seed the dev tenant + AAD IDP linkage (idempotent — ON CONFLICT DO UPDATE).
+# Maps the AAD tenant GUID (TENANT_ID from .envrc) to a fixed dev tenant
+# UUID, with realm='cip-dev' so the bot's tenant resolver finds it and
+# points at the existing dev realm rather than trying to provision a new one.
+# Runs inside the postgres pod (no local psql required).
+if [[ -n "${TENANT_ID:-}" ]]; then
+  echo "      Seeding dev tenant row + AAD IDP linkage..."
+  kubectl exec -i -n cip-infra "$POSTGRES_POD" -- \
+    env PGPASSWORD="$PG_USER_PASSWORD" psql -U cipuser -d cip_hr -v ON_ERROR_STOP=1 <<SQL 2>&1 \
+      | sed 's/^/      /' || true
+INSERT INTO tenants (id, display_name, status, tier, admin_email, realm)
+VALUES (
+  '00000000-0000-0000-0000-000000000001',
+  'CIP Dev', 'active', 'standard', 'admin@cip-dev.local', 'cip-dev'
+)
+ON CONFLICT (id) DO UPDATE SET realm = EXCLUDED.realm, updated_at = NOW();
+
+INSERT INTO tenant_identity_providers (tenant_id, provider_type, alias, enabled, config)
+VALUES (
+  '00000000-0000-0000-0000-000000000001',
+  'aad_oidc', 'aad', true,
+  jsonb_build_object('aad_tenant_id', '${TENANT_ID}')
+)
+ON CONFLICT (tenant_id, alias) DO UPDATE
+  SET config = EXCLUDED.config, enabled = true, updated_at = NOW();
+SQL
+else
+  echo "      WARNING: TENANT_ID not in env — skipping dev tenant seed."
+  echo "      Set TENANT_ID in .envrc to your Entra tenant GUID and re-run."
+fi
+
 # ── 2+3. NATS KV bucket + JetStream streams ───────────────────────────────────
 echo "[2/5] Creating NATS KV bucket for channel registry..."
 echo "[3/5] Creating NATS JetStream streams..."
