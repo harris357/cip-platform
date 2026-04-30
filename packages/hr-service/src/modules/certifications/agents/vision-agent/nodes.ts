@@ -1,10 +1,11 @@
-import { callLLM, createLiteLLMClient, ExtractionResultSchema } from '@cip/shared';
+import { callLLM, createLiteLLMClient, ExtractionResultSchema, getPrompt } from '@cip/shared';
 import type { ExtractionResult } from '@cip/shared';
 import { resolveAlias } from '../../../../services/alias-resolver.js';
 import { VisionAgentAnnotation } from './state.js';
-import { EXTRACTION_PROMPT } from './prompts.js';
 
 const REQUIRED_FIELDS = ['holderName', 'certName', 'issuingBody', 'issueDate', 'expiryDate', 'certNumber'] as const;
+// Slice 41: prompt version comes from Langfuse (PromptHandle.version) — kept
+// here as a static fallback for the parseExtractionResponse return shape.
 const PROMPT_VERSION = 'v1.0.0';
 
 interface CompletionResponse {
@@ -59,13 +60,18 @@ export async function extractFields(state: typeof VisionAgentAnnotation.State) {
     purpose:  'vision_extract',
     tenantId: state.tenantId,
   });
+  const prompt = await getPrompt({
+    name:     'hr-service.vision_extract',
+    tenantId: state.tenantId,
+  });
 
   const response = await callLLM(client, {
     model: alias,
-    purpose:  'hr-service.vision_extract',
-    tenantId: state.tenantId,
+    purpose:      'hr-service.vision_extract',
+    promptHandle: prompt,
+    tenantId:     state.tenantId,
     messages: [
-      { role: 'system', content: EXTRACTION_PROMPT },
+      { role: 'system', content: prompt.compile() },
       {
         role: 'user',
         content: [

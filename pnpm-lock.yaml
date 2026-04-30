@@ -146,6 +146,9 @@ importers:
 
   packages/shared:
     dependencies:
+      '@huggingface/jinja':
+        specifier: ^0.5.8
+        version: 0.5.8
       '@langfuse/langchain':
         specifier: ^5.0.0
         version: 5.2.0(@langchain/core@0.3.80(@opentelemetry/api@1.9.1)(openai@4.104.0(ws@8.20.0)(zod@3.25.76)))(@opentelemetry/api@1.9.1)
@@ -646,6 +649,10 @@ packages:
     engines: {node: '>=18.14.1'}
     peerDependencies:
       hono: ^4
+
+  '@huggingface/jinja@0.5.8':
+    resolution: {integrity: sha512-ZdElB7DPS7QQS8ZnFc5RPPtkg+eN11z8AmIZWAyes6pSbwXqiFB/POVevvm01begdSX1ho9Gxln/F6qlQMsuaA==}
+    engines: {node: '>=18'}
 
   '@humanwhocodes/config-array@0.13.0':
     resolution: {integrity: sha512-DZLEEqFWQFiyK6h5YIeynKx7JlvCYWL0cImfSRXZ9l4Sg2efkFGTuFf6vzXjK1cq6IYkU+Eg/JizXw+TD2vRNw==}
@@ -3913,6 +3920,8 @@ snapshots:
   '@hono/node-server@1.19.14(hono@4.12.14)':
     dependencies:
       hono: 4.12.14
+
+  '@huggingface/jinja@0.5.8': {}
 
   '@humanwhocodes/config-array@0.13.0':
     dependencies:

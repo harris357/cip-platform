@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { eq } from 'drizzle-orm';
-import { callLLM, createLiteLLMClient } from '@cip/shared';
+import { callLLM, createLiteLLMClient, getPrompt } from '@cip/shared';
 import type { ExtractionResult } from '@cip/shared';
 import { getDb } from '../../../db/index.js';
 import { withTenantRLS } from '../../../db/rls.js';
@@ -72,29 +72,20 @@ async function llmSelectCertDef(
 ): Promise<string | null> {
   const client = createLiteLLMClient({ tenantId, virtualKey });
   const alias = await resolveAlias({ service: 'hr-service', purpose: 'cert_def_match', tenantId });
+  const prompt = await getPrompt({ name: 'hr-service.cert_def_match', tenantId });
 
   const library = allCerts
     .map((c, i) => `${i + 1}. REF=${i + 1} | "${c.displayName}"`)
     .join('\n');
 
-  const prompt = `Match a certificate name extracted via OCR to a certificate library.
-
-Extracted name (may contain OCR errors or abbreviations):
-  "${certName}"
-
-Certificate library:
-${library}
-
-If one entry is clearly the same certificate, reply with ONLY its REF number (the integer after "REF=").
-Common variations to recognise: abbreviations (WHMIS, H2S, CPR), OCR errors, reordered words.
-If you are not confident, reply with exactly: NO_MATCH
-Do not explain.`;
+  const promptText = prompt.compile({ certName, library });
 
   const response = await callLLM(client, {
-    model:      alias,
-    max_tokens: 8,
-    messages:   [{ role: 'user', content: prompt }],
-    purpose:    'hr-service.cert_def_match',
+    model:        alias,
+    max_tokens:   8,
+    messages:     [{ role: 'user', content: promptText }],
+    purpose:      'hr-service.cert_def_match',
+    promptHandle: prompt,
     tenantId,
   });
 

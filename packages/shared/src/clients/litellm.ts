@@ -3,6 +3,7 @@ import type {
   ChatCompletion,
   ChatCompletionCreateParamsNonStreaming,
 } from 'openai/resources/chat/completions';
+import type { PromptHandle } from './langfuse.js';
 
 export interface LiteLLMClientOptions {
   tenantId:   string;
@@ -31,15 +32,21 @@ export function createLiteLLMClient(opts: LiteLLMClientOptions): OpenAI {
 export async function callLLM(
   client: OpenAI,
   args: ChatCompletionCreateParamsNonStreaming & {
-    purpose:    string;
-    tenantId:   string;
-    extraMeta?: Record<string, string | number | boolean>;
+    purpose:       string;
+    tenantId:      string;
+    promptHandle?: PromptHandle;                     // Slice 41: prompt provenance
+    extraMeta?:    Record<string, string | number | boolean>;
   },
 ): Promise<ChatCompletion> {
-  const { purpose, tenantId, extraMeta, ...rest } = args;
+  const { purpose, tenantId, promptHandle, extraMeta, ...rest } = args;
   const metadata: Record<string, string> = {
     purpose,
     tenantId,
+    ...(promptHandle ? {
+      prompt_name:    promptHandle.name,
+      prompt_version: String(promptHandle.version ?? 'fallback'),
+      prompt_source:  promptHandle.source,
+    } : {}),
     ...Object.fromEntries(
       Object.entries(extraMeta ?? {}).map(([k, v]) => [k, String(v)]),
     ),

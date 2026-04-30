@@ -31,6 +31,9 @@ kubectl create secret generic litellm-credentials \
 # Empty default → endpoints return 401 to everyone (intentionally fail-closed).
 
 # HR Service credentials (virtual key only — NOT the real Anthropic key)
+# Slice 41: LANGFUSE_* added so getPrompt() can fetch from Langfuse Cloud.
+# Without these, getPrompt() falls back to baked-in defaults (still works,
+# just no live tuning).
 kubectl create secret generic hr-service-credentials \
   --namespace cip-app \
   --from-literal=LITELLM_VIRTUAL_KEY="${LITELLM_VIRTUAL_KEY}" \
@@ -41,6 +44,9 @@ kubectl create secret generic hr-service-credentials \
   --from-literal=PLATFORM_ADMIN_TOKEN="${PLATFORM_ADMIN_TOKEN:-}" \
   --from-literal=AWS_ACCESS_KEY_ID="${AWS_ACCESS_KEY_ID:-}" \
   --from-literal=AWS_SECRET_ACCESS_KEY="${AWS_SECRET_ACCESS_KEY:-}" \
+  --from-literal=LANGFUSE_PUBLIC_KEY="${LANGFUSE_PUBLIC_KEY:-}" \
+  --from-literal=LANGFUSE_SECRET_KEY="${LANGFUSE_SECRET_KEY:-}" \
+  --from-literal=LANGFUSE_HOST="${LANGFUSE_HOST:-https://cloud.langfuse.com}" \
   --dry-run=client -o yaml | kubectl apply -f -
 
 # Platform Core credentials
@@ -55,6 +61,7 @@ kubectl create secret generic platform-core-credentials \
   --dry-run=client -o yaml | kubectl apply -f -
 
 # Teams Bot credentials
+# Slice 41: LANGFUSE_* added so getPrompt() can fetch from Langfuse Cloud.
 kubectl create secret generic teams-bot-credentials \
   --namespace cip-app \
   --from-literal=LITELLM_VIRTUAL_KEY="${LITELLM_VIRTUAL_KEY}" \
@@ -64,6 +71,9 @@ kubectl create secret generic teams-bot-credentials \
   --from-literal=PLATFORM_ADMIN_TOKEN="${PLATFORM_ADMIN_TOKEN:-}" \
   --from-literal=AWS_ACCESS_KEY_ID="${AWS_ACCESS_KEY_ID:-}" \
   --from-literal=AWS_SECRET_ACCESS_KEY="${AWS_SECRET_ACCESS_KEY:-}" \
+  --from-literal=LANGFUSE_PUBLIC_KEY="${LANGFUSE_PUBLIC_KEY:-}" \
+  --from-literal=LANGFUSE_SECRET_KEY="${LANGFUSE_SECRET_KEY:-}" \
+  --from-literal=LANGFUSE_HOST="${LANGFUSE_HOST:-https://cloud.langfuse.com}" \
   --dry-run=client -o yaml | kubectl apply -f -
 
 # Langfuse credentials (DATABASE_URL, NEXTAUTH_SECRET, SALT)

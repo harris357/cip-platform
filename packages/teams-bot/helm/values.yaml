@@ -61,6 +61,11 @@ env:
   # Slice 39B: minimal "_⏱ X.Xs_" footer after every reply. On by default;
   # turn off in production with BOT_SHOW_RESPONSE_TIME=false.
   BOT_SHOW_RESPONSE_TIME: "true"
+  # Slice 41: which Langfuse prompt label to fetch from. 'production' is
+  # the canonical version; promote a draft version via the Langfuse UI to
+  # take effect. Override to 'staging' on a single canary pod to A/B-test
+  # a new prompt without affecting other tenants.
+  LANGFUSE_PROMPT_LABEL: "production"
 
 envFrom:
   - secretRef:

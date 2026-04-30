@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { eq } from 'drizzle-orm';
-import { callLLM, createLiteLLMClient } from '@cip/shared';
+import { callLLM, createLiteLLMClient, getPrompt } from '@cip/shared';
 import type { ExtractionResult } from '@cip/shared';
 import { getDb } from '../../../db/index.js';
 import { withTenantRLS } from '../../../db/rls.js';
@@ -87,29 +87,24 @@ async function llmSelectEmployee(
 ): Promise<string | null> {
   const client = createLiteLLMClient({ tenantId, virtualKey });
   const alias = await resolveAlias({ service: 'hr-service', purpose: 'employee_match', tenantId });
+  const prompt = await getPrompt({ name: 'hr-service.employee_match', tenantId });
 
   const list = candidates
     .map((e, i) => `${i + 1}. REF=${i + 1} | Name="${e.fullName}" | Email="${e.email}"`)
     .join('\n');
 
-  const prompt = `Match a certificate holder to one of these candidates.
-
-Certificate holder:
-  Name:  ${extractedName ?? '(not found)'}
-  Email: ${extractedEmail ?? '(not found)'}
-
-Candidates:
-${list}
-
-If one candidate is clearly the same person, reply with ONLY their REF number (the integer after "REF=").
-If you are not confident, reply with exactly: NO_MATCH
-Do not explain.`;
+  const promptText = prompt.compile({
+    extractedName:  extractedName ?? '(not found)',
+    extractedEmail: extractedEmail ?? '(not found)',
+    candidates:     list,
+  });
 
   const response = await callLLM(client, {
-    model:      alias,
-    max_tokens: 8,
-    messages:   [{ role: 'user', content: prompt }],
-    purpose:    'hr-service.employee_match',
+    model:        alias,
+    max_tokens:   8,
+    messages:     [{ role: 'user', content: promptText }],
+    purpose:      'hr-service.employee_match',
+    promptHandle: prompt,
     tenantId,
   });
 
