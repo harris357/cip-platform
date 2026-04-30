@@ -52,7 +52,7 @@ echo "[2/5] Creating NATS KV bucket for channel registry..."
 echo "[3/5] Creating NATS JetStream streams..."
 # The nats/nats image does not ship the nats CLI; use nats-box instead.
 kubectl delete pod nats-setup -n cip-infra 2>/dev/null || true
-kubectl run nats-setup --rm --restart=Never --attach --image=natsio/nats-box:latest \
+kubectl run nats-setup --rm -i --restart=Never --image=natsio/nats-box:latest \
   -n cip-infra -- sh -c '
     S=nats://nats:4222
     nats -s $S kv add teams-channel-registry --ttl=24h \
