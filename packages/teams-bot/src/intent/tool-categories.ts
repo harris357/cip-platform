@@ -15,6 +15,23 @@ export const CATEGORIES = [
 export type Category = (typeof CATEGORIES)[number];
 
 /**
+ * Slice 41 enrichment: human-readable description for each category.
+ * Becomes the source of truth fed to the classifier prompt — the
+ * `{% for c in categories %}` block iterates {name, description} pairs
+ * from this map, filtered by `availableCategories(tools)`. Adding a
+ * new category here automatically flows through to the classifier
+ * prompt's enum without an additional edit.
+ */
+export const CATEGORY_DESCRIPTIONS: Record<Category, string> = {
+  chitchat:    'greetings, thanks, social pleasantries. Emit a brief friendly inline_reply (1 sentence).',
+  meta:        'questions about the bot itself ("what can you do?", "help"). Emit a one-paragraph inline_reply describing the bot\'s capabilities at a high level.',
+  cert_query:  'the user wants to read certification or compliance data.',
+  cert_action: 'the user wants to upload/submit/approve a certificate.',
+  hr_admin:    'the user wants to manage employees, roles, or permissions.',
+  reasoning:   'multi-step intents that span categories, or anything unclear. Use sparingly — only when no single category fits.',
+};
+
+/**
  * Slice 39B: which Slice 39A `purpose` to resolve for each category's
  * Stage-2 LLM call. Categories with null skip Stage 2 entirely (the
  * classifier's inline_reply path handles the user response).
@@ -79,25 +96,35 @@ export function filterToolsByCategory(
 
 /**
  * Slice 41 enrichment: which categories have at least one permitted tool
- * for this caller? Used to pass per-user flags into the classifier prompt
- * so the Langfuse-stored Jinja2 template can omit categories the user
- * can't actually use.
- *
- * Single source of truth: derives from the (already-permission-filtered)
- * tool list + the static TOOLS_FOR_CATEGORY map. Adding a new category
- * here automatically flows through to the classifier prompt — no separate
- * permission-to-category mapping to keep in sync.
+ * for this caller? Drives the dynamic list passed to the classifier
+ * prompt. Single source of truth — derives from the (already-permission-
+ * filtered) tool list + TOOLS_FOR_CATEGORY. Adding a new category is
+ * a one-file edit.
  *
  * `chitchat`, `meta`, `reasoning` are always available (no tool gating).
+ * Categories with `null` in TOOLS_FOR_CATEGORY are treated as
+ * always-available (chitchat/meta produce inline replies; reasoning
+ * uses the full catalog as a multi-step fallback).
  */
-export function availableCategories(tools: McpTool[]): Record<Category, boolean> {
-  const out: Record<Category, boolean> = {
-    chitchat:    true,
-    meta:        true,
-    reasoning:   true,
-    cert_query:  filterToolsByCategory(tools, 'cert_query').length  > 0,
-    cert_action: filterToolsByCategory(tools, 'cert_action').length > 0,
-    hr_admin:    filterToolsByCategory(tools, 'hr_admin').length    > 0,
-  };
-  return out;
+export function availableCategories(tools: McpTool[]): Category[] {
+  return CATEGORIES.filter(cat => {
+    const tools_for = TOOLS_FOR_CATEGORY[cat];
+    if (tools_for === null) return true;       // chitchat/meta/reasoning
+    return filterToolsByCategory(tools, cat).length > 0;
+  });
+}
+
+/**
+ * Slice 41 enrichment: produces the {name, description} list that the
+ * classifier prompt iterates over with `{% for c in categories %}`.
+ * The single representation passed to the LLM — no per-category
+ * boolean flags to keep in sync.
+ */
+export function categoryListForClassifier(
+  tools: McpTool[],
+): Array<{ name: Category; description: string }> {
+  return availableCategories(tools).map(name => ({
+    name,
+    description: CATEGORY_DESCRIPTIONS[name],
+  }));
 }
