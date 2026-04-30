@@ -1,6 +1,6 @@
 import type { TurnContext } from '@microsoft/agents-hosting';
 import type { ConversationReference } from '@microsoft/agents-activity';
-import { getNatsConnection } from '@cip/shared/src/clients/nats.js';
+import { getNatsConnection, Kvm, type KV } from '@cip/shared/src/clients/nats.js';
 import { getMcpClient } from '../mcp/client.js';
 
 const BUCKET = process.env['CHANNEL_REGISTRY_BUCKET'] ?? 'teams-channel-registry';
@@ -13,17 +13,14 @@ interface TenantChannelConfig {
 const configCache = new Map<string, { config: TenantChannelConfig; expiresAt: number }>();
 const CONFIG_TTL = 5 * 60 * 1000;
 
-// KV type inferred from nats — avoid direct nats import in this package
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-let _kv: any;
+let _kv: KV | undefined;
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function getKv(): Promise<any> {
+async function getKv(): Promise<KV> {
   if (!_kv) {
     const nc = await getNatsConnection();
-    const js = nc.jetstream();
+    const kvm = new Kvm(nc);
     // Lazy-create the bucket if it doesn't exist; idempotent across pods.
-    _kv = await js.views.kv(BUCKET, { history: 1, ttl: TTL_MS });
+    _kv = await kvm.create(BUCKET, { history: 1, ttl: TTL_MS });
   }
   return _kv;
 }

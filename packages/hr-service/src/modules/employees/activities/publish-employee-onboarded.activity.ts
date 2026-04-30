@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { getNatsConnection, sc, Subjects } from '@cip/shared';
+import { getNatsConnection, getJetStream, sc, Subjects } from '@cip/shared';
 
 export interface PublishEmployeeOnboardedInput {
   tenantId:     string;
@@ -25,7 +25,7 @@ export async function publishEmployeeOnboardedActivity(
   });
 
   const nc = await getNatsConnection();
-  const js = nc.jetstream();
+  const js = getJetStream(nc);
   await js.publish(
     Subjects.employeeOnboarded(input.tenantId),
     sc.encode(JSON.stringify(payload)),

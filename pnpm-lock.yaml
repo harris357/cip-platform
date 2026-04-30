@@ -149,6 +149,18 @@ importers:
       '@langfuse/langchain':
         specifier: ^5.0.0
         version: 5.2.0(@langchain/core@0.3.80(@opentelemetry/api@1.9.1)(openai@4.104.0(zod@3.25.76)))(@opentelemetry/api@1.9.1)
+      '@nats-io/jetstream':
+        specifier: ^3.0.0
+        version: 3.3.1
+      '@nats-io/kv':
+        specifier: ^3.0.0
+        version: 3.3.1
+      '@nats-io/nats-core':
+        specifier: ^3.0.0
+        version: 3.3.1
+      '@nats-io/transport-node':
+        specifier: ^3.0.0
+        version: 3.3.1
       '@temporalio/activity':
         specifier: ^1.10.0
         version: 1.16.1
@@ -170,9 +182,6 @@ importers:
       langfuse:
         specifier: ^3.0.0
         version: 3.38.20
-      nats:
-        specifier: ^2.28.0
-        version: 2.29.3
       openai:
         specifier: ^4.0.0
         version: 4.104.0(zod@3.25.76)
@@ -862,6 +871,27 @@ packages:
     peerDependenciesMeta:
       '@cfworker/json-schema':
         optional: true
+
+  '@nats-io/jetstream@3.3.1':
+    resolution: {integrity: sha512-oTIxM47pQfv4zCMlLN7FtARxSclMlUUPPn9I3VxRwMH+N2jkj1WCApu+tSL778KuljxfG8txi/MPwoWSXqbbQQ==}
+
+  '@nats-io/kv@3.3.1':
+    resolution: {integrity: sha512-KqFTRNxDFbeZ5rMG/2dOYVYRujd6gzSfDm0Eo9r5GMbSDT7waNzD6Hz9hOqXwBL7/72F/fJ7+NfPVD9KWq37ew==}
+
+  '@nats-io/nats-core@3.3.1':
+    resolution: {integrity: sha512-myFXGTo4cCfKrsLDjkoEz7FjjjvSfBRjun7Qx3n3Z5OzW4JUY8Ou7VQsGAdXLQxHN3ae/XNXvmXxshDoFPex4w==}
+
+  '@nats-io/nkeys@2.0.3':
+    resolution: {integrity: sha512-JVt56GuE6Z89KUkI4TXUbSI9fmIfAmk6PMPknijmuL72GcD+UgIomTcRWiNvvJKxA01sBbmIPStqJs5cMRBC3A==}
+    engines: {node: '>=18.0.0'}
+
+  '@nats-io/nuid@2.0.3':
+    resolution: {integrity: sha512-TpA3HEBna/qMVudy+3HZr5M3mo/L1JPofpVT4t0HkFGkz2Cn9wrlrQC8tvR8Md5Oa9//GtGG26eN0qEWF5Vqew==}
+    engines: {node: '>= 18.x'}
+
+  '@nats-io/transport-node@3.3.1':
+    resolution: {integrity: sha512-GBvY0VcvyQEILgy5bjpqU1GpDYmSF06bW59I7cewZuNGS9u3AoV/gf+a+3ep45T/Z+UC661atq/b7x+QV12w+Q==}
+    engines: {node: '>= 18.0.0'}
 
   '@nodelib/fs.scandir@2.1.5':
     resolution: {integrity: sha512-vq24Bq3ym5HEQm2NKCr3yXDwjc7vTsEThRDnkp2DK9p1uqLR+DHurm/NOTo0KG7HYHU7eppKZj3MyqYuMBf62g==}
@@ -4005,6 +4035,32 @@ snapshots:
       '@cfworker/json-schema': 4.1.1
     transitivePeerDependencies:
       - supports-color
+
+  '@nats-io/jetstream@3.3.1':
+    dependencies:
+      '@nats-io/nats-core': 3.3.1
+
+  '@nats-io/kv@3.3.1':
+    dependencies:
+      '@nats-io/jetstream': 3.3.1
+      '@nats-io/nats-core': 3.3.1
+
+  '@nats-io/nats-core@3.3.1':
+    dependencies:
+      '@nats-io/nkeys': 2.0.3
+      '@nats-io/nuid': 2.0.3
+
+  '@nats-io/nkeys@2.0.3':
+    dependencies:
+      tweetnacl: 1.0.3
+
+  '@nats-io/nuid@2.0.3': {}
+
+  '@nats-io/transport-node@3.3.1':
+    dependencies:
+      '@nats-io/nats-core': 3.3.1
+      '@nats-io/nkeys': 2.0.3
+      '@nats-io/nuid': 2.0.3
 
   '@nodelib/fs.scandir@2.1.5':
     dependencies:

@@ -1,6 +1,5 @@
 import { z } from 'zod';
-import { StorageType, RetentionPolicy } from 'nats';
-import { getNatsConnection, createJetStreamManager } from '@cip/shared';
+import { StorageType, RetentionPolicy, getNatsConnection, createJetStreamManager } from '@cip/shared';
 
 const STREAM_CONFIGS = [
   { domain: 'hr',       maxAge: 365 * 24 * 60 * 60 * 1_000_000_000 },   // 1 year (ns)
