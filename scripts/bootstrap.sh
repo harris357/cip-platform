@@ -108,11 +108,12 @@ else
   KC_PF_PID=$!
   sleep 3
 
-  # Always read from the K8s secret — it is the authoritative source (Keycloak initialized from it)
-  _KC_ADMIN_PASS=$(kubectl get secret keycloak-credentials -n cip-auth \
-    -o jsonpath='{.data.admin-password}' 2>/dev/null | base64 -d 2>/dev/null || echo "")
-  # Fall back to env var only if secret is unreadable
-  _KC_ADMIN_PASS="${_KC_ADMIN_PASS:-${KEYCLOAK_ADMIN_PASSWORD:-}}"
+  # Env var is authoritative (set at KC first boot); secret may have drifted.
+  _KC_ADMIN_PASS="${KEYCLOAK_ADMIN_PASSWORD:-}"
+  if [[ -z "$_KC_ADMIN_PASS" ]]; then
+    _KC_ADMIN_PASS=$(kubectl get secret keycloak-credentials -n cip-auth \
+      -o jsonpath='{.data.admin-password}' 2>/dev/null | base64 -d 2>/dev/null || echo "")
+  fi
 
   KC_TOKEN_RESP=$(curl -s -X POST \
     "${KC_LOCAL}/realms/master/protocol/openid-connect/token" \
@@ -193,6 +194,55 @@ else
       fi
     fi
 
+    # Create bot-auto-create first broker login flow (idempotent).
+    # Two steps, no browser required: create new user OR silently link existing user by email.
+    _FLOW_EXISTS=$(curl -s \
+      "${KC_LOCAL}/admin/realms/cip-dev/authentication/flows" \
+      -H "Authorization: Bearer $KC_ADMIN_TOKEN" 2>/dev/null \
+      | jq -r '.[] | select(.alias == "bot-auto-create") | .alias' 2>/dev/null || echo "")
+
+    if [[ -n "$_FLOW_EXISTS" ]]; then
+      echo "      bot-auto-create flow already exists (skipped)."
+    else
+      curl -s -o /dev/null -w "      bot-auto-create flow: HTTP %{http_code}\n" \
+        -X POST "${KC_LOCAL}/admin/realms/cip-dev/authentication/flows" \
+        -H "Authorization: Bearer $KC_ADMIN_TOKEN" \
+        -H "Content-Type: application/json" \
+        -d '{
+          "alias": "bot-auto-create",
+          "description": "Auto-creates KC users from external IDP tokens without browser interaction",
+          "providerId": "basic-flow",
+          "topLevel": true,
+          "builtIn": false
+        }' 2>/dev/null
+
+      # Add executions: Create User If Unique, then Automatically Set Existing User
+      curl -s -o /dev/null \
+        -X POST "${KC_LOCAL}/admin/realms/cip-dev/authentication/flows/bot-auto-create/executions/execution" \
+        -H "Authorization: Bearer $KC_ADMIN_TOKEN" \
+        -H "Content-Type: application/json" \
+        -d '{"provider": "idp-create-user-if-unique"}' 2>/dev/null
+      curl -s -o /dev/null \
+        -X POST "${KC_LOCAL}/admin/realms/cip-dev/authentication/flows/bot-auto-create/executions/execution" \
+        -H "Authorization: Bearer $KC_ADMIN_TOKEN" \
+        -H "Content-Type: application/json" \
+        -d '{"provider": "idp-auto-link"}' 2>/dev/null
+
+      # Set both executions to ALTERNATIVE
+      _EXECS_JSON=$(curl -s \
+        "${KC_LOCAL}/admin/realms/cip-dev/authentication/flows/bot-auto-create/executions" \
+        -H "Authorization: Bearer $KC_ADMIN_TOKEN" 2>/dev/null || echo "[]")
+      while IFS= read -r _EXEC; do
+        curl -s -o /dev/null \
+          -X PUT "${KC_LOCAL}/admin/realms/cip-dev/authentication/flows/bot-auto-create/executions" \
+          -H "Authorization: Bearer $KC_ADMIN_TOKEN" \
+          -H "Content-Type: application/json" \
+          -d "$(echo "$_EXEC" | jq '.requirement = "ALTERNATIVE"')" 2>/dev/null
+      done < <(echo "$_EXECS_JSON" | jq -c '.[]' 2>/dev/null)
+
+      echo "      bot-auto-create flow configured."
+    fi
+
     # Configure AAD identity provider + token exchange (idempotent)
     _BOT_APP_ID="${BOT_APP_ID:-}"
     _TENANT_ID="${TENANT_ID:-}"
@@ -221,6 +271,7 @@ else
             \"displayName\": \"Microsoft AAD\",
             \"providerId\": \"oidc\",
             \"enabled\": true,
+            \"firstBrokerLoginFlowAlias\": \"bot-auto-create\",
             \"config\": {
               \"clientId\": \"${_BOT_APP_ID}\",
               \"clientSecret\": \"${_BOT_APP_PASSWORD}\",
@@ -249,8 +300,9 @@ else
       _IDP_UPDATED=$(echo "$_IDP_JSON" | jq '
         .config.jwtAuthorizationGrantEnabled = "true" |
         .config.allowClientIdAsAudience = "true" |
-        .config.jwtAuthorizationGrantMaxAllowedAssertionExpiration = "3600" |
-        .config.supportsClientAssertionReuse = "true"
+        .config.jwtAuthorizationGrantMaxAllowedAssertionExpiration = "14400" |
+        .config.supportsClientAssertionReuse = "true" |
+        .firstBrokerLoginFlowAlias = "bot-auto-create"
       ' 2>/dev/null || echo "{}")
       curl -s -o /dev/null -w "      AAD IDP JWT grant settings: HTTP %{http_code}\n" \
         -X PUT "${KC_LOCAL}/admin/realms/cip-dev/identity-provider/instances/aad" \
