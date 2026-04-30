@@ -163,7 +163,7 @@ export class CIPTeamsBot extends TeamsActivityHandler {
         const result = await executeTool('process_document', { objectStoreKey: key }, ctx);
         const tExec1 = Date.now();
         await renderResponse(context, result);
-        await sendResponseTime(context, Date.now() - tStart);
+        await sendResponseTime(context, Date.now() - tStart, { tool: 'process_document' });
         console.log(`[turn] tenantId=${ctx.tenantId} mode=file file=${file.name ?? '?'} typing=${tTyping - tStart}ms auth=${tAuth - tTyping}ms registry=${tRegistry - tAuth}ms download=${tDl1 - tDl0}ms exec=${tExec1 - tDl1}ms render=${Date.now() - tExec1}ms total=${Date.now() - tStart}ms`);
       }
       return;
@@ -175,12 +175,13 @@ export class CIPTeamsBot extends TeamsActivityHandler {
     // Slice 39B Stage 1: classify intent. chitchat/meta short-circuit with
     // inline_reply (no Stage-2 LLM call). Anything else falls through to
     // category-filtered tool selection.
-    const classification = await classify(text, ctx);
+    const { classification, alias: classifierAlias } = await classify(text, ctx);
     const tClassify = Date.now();
+    const classifierFell = classification === null;
 
     if (classification?.inline_reply) {
       await context.sendActivity(classification.inline_reply);
-      await sendResponseTime(context, Date.now() - tStart);
+      await sendResponseTime(context, Date.now() - tStart, { classifierAlias });
       await maybeSendDebugBanner(context, {
         classification,
         alias: null,
@@ -205,7 +206,12 @@ export class CIPTeamsBot extends TeamsActivityHandler {
       const result = await executeTool(selected.name, selected.args, ctx);
       const tExec = Date.now();
       await renderResponse(context, result);
-      await sendResponseTime(context, Date.now() - tStart);
+      await sendResponseTime(context, Date.now() - tStart, {
+        classifierAlias,
+        routerAlias: stage2Alias,
+        tool:        selected.name,
+        classifierFell,
+      });
       await maybeSendDebugBanner(context, {
         classification,
         alias: stage2Alias,
@@ -217,10 +223,15 @@ export class CIPTeamsBot extends TeamsActivityHandler {
           total:    Date.now() - tStart,
         },
       });
-      console.log(`[turn] tenantId=${ctx.tenantId} mode=tool category=${category} fallback=${classification ? 'no' : 'yes'} typing=${tTyping - tStart}ms auth=${tAuth - tTyping}ms registry=${tRegistry - tAuth}ms discover=${tDiscover - tRegistry}ms classify=${tClassify - tDiscover}ms route=${tRoute - tClassify}ms exec=${tExec - tRoute}ms render=${Date.now() - tExec}ms total=${Date.now() - tStart}ms tool=${selected.name}`);
+      console.log(`[turn] tenantId=${ctx.tenantId} mode=tool category=${category} fallback=${classifierFell ? 'yes' : 'no'} typing=${tTyping - tStart}ms auth=${tAuth - tTyping}ms registry=${tRegistry - tAuth}ms discover=${tDiscover - tRegistry}ms classify=${tClassify - tDiscover}ms route=${tRoute - tClassify}ms exec=${tExec - tRoute}ms render=${Date.now() - tExec}ms total=${Date.now() - tStart}ms tool=${selected.name}`);
     } else {
       await context.sendActivity(buildNoToolMessage(filteredTools));
-      await sendResponseTime(context, Date.now() - tStart);
+      await sendResponseTime(context, Date.now() - tStart, {
+        classifierAlias,
+        routerAlias: stage2Alias,
+        tool:        null,
+        classifierFell,
+      });
       await maybeSendDebugBanner(context, {
         classification,
         alias: stage2Alias,
@@ -231,7 +242,7 @@ export class CIPTeamsBot extends TeamsActivityHandler {
           total:    Date.now() - tStart,
         },
       });
-      console.log(`[turn] tenantId=${ctx.tenantId} mode=no-tool category=${category} fallback=${classification ? 'no' : 'yes'} typing=${tTyping - tStart}ms auth=${tAuth - tTyping}ms registry=${tRegistry - tAuth}ms discover=${tDiscover - tRegistry}ms classify=${tClassify - tDiscover}ms route=${tRoute - tClassify}ms reply=${Date.now() - tRoute}ms total=${Date.now() - tStart}ms`);
+      console.log(`[turn] tenantId=${ctx.tenantId} mode=no-tool category=${category} fallback=${classifierFell ? 'yes' : 'no'} typing=${tTyping - tStart}ms auth=${tAuth - tTyping}ms registry=${tRegistry - tAuth}ms discover=${tDiscover - tRegistry}ms classify=${tClassify - tDiscover}ms route=${tRoute - tClassify}ms reply=${Date.now() - tRoute}ms total=${Date.now() - tStart}ms`);
     }
   }
 

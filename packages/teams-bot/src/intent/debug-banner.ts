@@ -28,19 +28,43 @@ function responseTimeEnabled(): boolean {
   return (process.env['BOT_SHOW_RESPONSE_TIME'] ?? 'true').toLowerCase() === 'true';
 }
 
+export interface ResponseTimeDetail {
+  classifierAlias?: string | null; // Stage-1 alias (cip-classifier or override)
+  routerAlias?:     string | null; // Stage-2 alias (null on inline / chitchat)
+  tool?:            string | null; // tool name selected by Stage 2
+  classifierFell?:  boolean;       // true if classifier failed and we fell back
+}
+
 /**
- * Slice 39B: minimal "_⏱ X.Xs_" footer sent as a separate Teams activity
+ * Slice 39B: "_⏱ X.Xs · <pipeline>_" footer sent as a separate Teams activity
  * after every bot reply. Always-on by default; toggle with
  * BOT_SHOW_RESPONSE_TIME=false. Independent of the full classifier debug
- * banner (which carries timing too) — call both, or either, or neither.
+ * banner (which carries timings + classification details) — call both, or
+ * either, or neither.
+ *
+ * The pipeline suffix shows which models/tool ran for this turn:
+ *   "_⏱ 2.98s · cip-classifier_"                                  (chitchat/meta)
+ *   "_⏱ 1.53s · cip-classifier → cip-router-fast → list_staff_"   (tool path)
+ *   "_⏱ 2.50s · cip-classifier → cip-router-fast → ∅_"            (no-tool match)
+ *   "_⏱ 4.50s · ∅ → cip-chat → list_staff_"                       (classifier failed, fallback)
  */
 export async function sendResponseTime(
   context: TurnContext,
   totalMs: number,
+  detail?: ResponseTimeDetail,
 ): Promise<void> {
   if (!responseTimeEnabled()) return;
   const seconds = (totalMs / 1000).toFixed(2);
-  await context.sendActivity(`_⏱ ${seconds}s_`);
+
+  const parts: string[] = [];
+  if (detail) {
+    parts.push(detail.classifierFell ? '∅' : (detail.classifierAlias ?? '?'));
+    if (detail.routerAlias)         parts.push(detail.routerAlias);
+    if (detail.tool)                parts.push(detail.tool);
+    else if (detail.routerAlias)    parts.push('∅');   // Stage 2 ran, picked nothing
+  }
+  const suffix = parts.length > 0 ? ` · ${parts.join(' → ')}` : '';
+  await context.sendActivity(`_⏱ ${seconds}s${suffix}_`);
 }
 
 export async function maybeSendDebugBanner(
