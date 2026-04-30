@@ -207,6 +207,39 @@ echo "[4/6] Creating confidential clients..."
 TEAMS_BOT_SECRET=$(create_client "teams-bot" "Microsoft Teams bot — JWT AG exchange")
 HR_SERVICE_SECRET=$(create_client "hr-service" "HR service — service account for KC admin API and MCP")
 
+# ── Slice 37: store the per-tenant KC client secret as a K8s secret ──────────
+# Naming convention: tenant-aad-<TENANT_ID> (lowercase UUID). The bot reads
+# this via its ServiceAccount on cache miss; updating it (rotation) takes
+# effect within 5 minutes without a bot pod restart.
+TENANT_KC_SECRET_NAME="tenant-aad-${TENANT_ID}"
+echo "[5a/6] Writing per-tenant K8s secret ${TENANT_KC_SECRET_NAME}..."
+kubectl create secret generic "${TENANT_KC_SECRET_NAME}" \
+  --namespace cip-app \
+  --from-literal=KEYCLOAK_CLIENT_SECRET="${TEAMS_BOT_SECRET}" \
+  --dry-run=client -o yaml | kubectl apply -f - \
+  | sed 's/^/      /'
+
+# Update tenant_identity_providers.secret_ref so the bot's resolver picks
+# up the new secret on its next cache miss. Runs inside the postgres pod —
+# no local psql required.
+POSTGRES_POD=$(kubectl get pod -n cip-infra -l app.kubernetes.io/name=postgresql \
+  -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
+if [[ -n "$POSTGRES_POD" && -n "${PG_USER_PASSWORD:-}" ]]; then
+  echo "[5b/6] Updating tenant_identity_providers.secret_ref..."
+  kubectl exec -i -n cip-infra "$POSTGRES_POD" -- \
+    env PGPASSWORD="$PG_USER_PASSWORD" psql -U cipuser -d cip_hr -v ON_ERROR_STOP=1 <<SQL 2>&1 \
+      | sed 's/^/      /' || true
+UPDATE tenant_identity_providers
+   SET secret_ref = '${TENANT_KC_SECRET_NAME}', updated_at = NOW()
+ WHERE tenant_id = '${TENANT_ID}'::uuid
+   AND provider_type = 'aad_oidc';
+SQL
+else
+  echo "      WARNING: skipping secret_ref UPDATE (postgres pod or PG_USER_PASSWORD missing)"
+  echo "      Manually: UPDATE tenant_identity_providers SET secret_ref='${TENANT_KC_SECRET_NAME}'"
+  echo "                WHERE tenant_id='${TENANT_ID}' AND provider_type='aad_oidc';"
+fi
+
 # ── 6. AAD IDP federation (only if --aad-tenant-id supplied) ─────────────────
 if [[ -n "$AAD_TENANT_ID" ]]; then
   echo "[5/6] Configuring AAD federation..."

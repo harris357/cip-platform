@@ -9,7 +9,7 @@
 // this BEFORE any token-exchange or MCP call. A failure here drops the
 // request with a [security] log line — defense in depth #1.
 
-import { lookupKcSecret } from './keycloak-secrets.js';
+import { resolveKcClientSecret } from './keycloak-secrets.js';
 
 export interface TenantContext {
   aadTenantId:    string;
@@ -26,6 +26,8 @@ export type ResolveError =
   | 'wrong_provider_type'
   | 'provider_disabled'
   | 'missing_kc_client_secret'
+  | 'k8s_secret_not_found'
+  | 'k8s_secret_read_failed'
   | `lookup_failed_${number}`;
 
 export type ResolveResult = TenantContext | { error: ResolveError };
@@ -76,8 +78,17 @@ export async function resolveTenantContext(aadTenantId: string): Promise<Resolve
   // tenant.realm is the KC realm name (defaults to id::text for prod;
   // override in DB for dev where one shared realm serves the test tenant).
   const realm = data.tenant.realm;
-  const kcClientSecret = lookupKcSecret(realm);
-  if (!kcClientSecret) return { error: 'missing_kc_client_secret' };
+  let kcClientSecret: string | null = null;
+  try {
+    kcClientSecret = await resolveKcClientSecret(realm, data.provider.secretRef);
+  } catch (err) {
+    console.error(`[security] k8s secret read failed: realm=${realm} secret_ref=${data.provider.secretRef}`, err);
+    return { error: 'k8s_secret_read_failed' };
+  }
+  if (!kcClientSecret) {
+    // secret_ref pointed at a non-existent K8s secret AND no env fallback had a value.
+    return { error: data.provider.secretRef ? 'k8s_secret_not_found' : 'missing_kc_client_secret' };
+  }
 
   const ctx: TenantContext = {
     aadTenantId,

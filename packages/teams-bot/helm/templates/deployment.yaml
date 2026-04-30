@@ -15,6 +15,9 @@ spec:
       labels:
         app: teams-bot
     spec:
+      {{- if .Values.serviceAccount.create }}
+      serviceAccountName: {{ .Chart.Name }}
+      {{- end }}
       containers:
         - name: teams-bot
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
@@ -22,6 +25,12 @@ spec:
           ports:
             - containerPort: {{ .Values.service.port }}
           env:
+            # Slice 37: pod namespace via downward API — k8s-secret-loader
+            # uses it to default the namespace for per-tenant secret reads.
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
             {{- range $key, $val := .Values.env }}
             - name: {{ $key }}
               value: {{ $val | quote }}

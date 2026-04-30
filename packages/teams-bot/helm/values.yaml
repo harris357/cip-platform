@@ -3,11 +3,22 @@
 #                                 AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY
 # Keys (Slice 36 multi-tenant):   PLATFORM_ADMIN_TOKEN — same value as on hr-service
 #                                 KEYCLOAK_CLIENT_SECRETS — JSON map of {realm: secret}
-#                                   e.g. {"<tenant-uuid>":"abc123","<tenant-uuid-2>":"def456"}
-#                                   The legacy KEYCLOAK_CLIENT_SECRET still works as a
-#                                   fallback for the realm named by KEYCLOAK_REALM_FALLBACK.
+#                                   (Slice 37 deprecates this in favour of per-tenant
+#                                    K8s secrets named tenant-aad-<tenantId>; kept as
+#                                    backwards-compat fallback during migration.)
+#
+# Slice 37: per-tenant K8s secrets named tenant-aad-<tenantId> hold each
+# tenant's KEYCLOAK_CLIENT_SECRET. Provisioning creates them via
+# scripts/provision-tenant.sh; the bot reads them via its ServiceAccount
+# (created by service-account.yaml when serviceAccount.create=true).
 
 replicaCount: 1
+
+serviceAccount:
+  # Slice 37: when true, helm creates a ServiceAccount + Role + RoleBinding
+  # giving the bot pod secrets:get on the cip-app namespace. Required for
+  # the per-tenant KC client secret reads.
+  create: true
 
 image:
   repository: ghcr.io/harris357/teams-bot
