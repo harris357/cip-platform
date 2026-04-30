@@ -317,14 +317,46 @@ else
   echo "[5/6] Skipping AAD federation (no --aad-tenant-id supplied)."
 fi
 
-# ── 7. LiteLLM virtual key for the tenant ─────────────────────────────────────
-echo "[6/6] Issuing LiteLLM virtual key..."
+# ── 6a. LiteLLM tier policy (Slice 40) + 7. virtual key issuance ─────────────
+# Both steps share a single LiteLLM port-forward + master-key fetch.
+echo "[6/7] Setting LiteLLM team policy + issuing virtual key..."
 LITELLM_SVC=$(kubectl get svc litellm -n cip-app \
   -o jsonpath='{.metadata.name}' 2>/dev/null || echo "")
 
 LITELLM_VKEY=""
+MAX_BUDGET=0
+RPM_LIMIT=0
+MODELS='[]'
+
+# Tier → policy mapping. Trial gets the bot baseline only (no vision, no
+# reasoning) — keeps demo/pilot tenants from accidentally burning premium
+# model budget. Standard adds the cert workflow + cheap OCR. Enterprise
+# unlocks the premium reasoning + full-quality OCR aliases.
+case "$TIER" in
+  trial)
+    MAX_BUDGET=10
+    RPM_LIMIT=60
+    MODELS='["cip-classifier","cip-chat","cip-router-fast","cip-lightweight","cip-document"]'
+    ;;
+  standard)
+    MAX_BUDGET=200
+    RPM_LIMIT=300
+    MODELS='["cip-classifier","cip-chat","cip-router-fast","cip-router-careful","cip-lightweight","cip-document","cip-vision","cip-ocr-document-small","cip-ocr-image-small"]'
+    ;;
+  enterprise)
+    MAX_BUDGET=2000
+    RPM_LIMIT=1500
+    MODELS='["cip-classifier","cip-chat","cip-router-fast","cip-router-careful","cip-reasoning","cip-lightweight","cip-document","cip-vision","cip-ocr-document","cip-ocr-document-small","cip-ocr-image","cip-ocr-image-small"]'
+    ;;
+  *)
+    # Already validated at arg-parse time, but defense in depth.
+    echo "      ERROR: unknown tier '$TIER'" >&2
+    exit 1
+    ;;
+esac
+
 if [[ -z "$LITELLM_SVC" ]]; then
-  echo "      WARNING: LiteLLM service not found — skipping virtual key."
+  echo "      WARNING: LiteLLM service not found — skipping team policy + virtual key."
 else
   kubectl port-forward -n cip-app svc/litellm 14000:4000 &>/dev/null &
   LL_PF_PID=$!
@@ -334,19 +366,79 @@ else
     -o jsonpath='{.data.LITELLM_MASTER_KEY}' 2>/dev/null | base64 -d 2>/dev/null || echo "")
   _MASTER_KEY="${_MASTER_KEY:-${LITELLM_MASTER_KEY:-}}"
 
+  # ── Slice 40: tier-driven team policy ──────────────────────────────────────
+  TEAM_PAYLOAD=$(jq -n \
+    --arg id    "$TENANT_ID" \
+    --arg name  "$NAME" \
+    --arg dur   "30d" \
+    --arg tier  "$TIER" \
+    --argjson budget "$MAX_BUDGET" \
+    --argjson rpm    "$RPM_LIMIT" \
+    --argjson models "$MODELS" \
+    '{
+      team_id:         $id,
+      team_alias:      $name,
+      max_budget:      $budget,
+      budget_duration: $dur,
+      rpm_limit:       $rpm,
+      models:          $models,
+      metadata:        { tier: $tier }
+    }')
+
+  # Try create first; on 400/409 (already exists), update instead.
+  TEAM_NEW=$(curl -s -w "\n%{http_code}" -X POST http://localhost:14000/team/new \
+    -H "Authorization: Bearer $_MASTER_KEY" \
+    -H "Content-Type: application/json" \
+    -d "$TEAM_PAYLOAD")
+  TEAM_NEW_STATUS=$(echo "$TEAM_NEW" | tail -1)
+  case "$TEAM_NEW_STATUS" in
+    200|201) echo "      Team created (tier=$TIER)." ;;
+    400|409)
+      TEAM_UPD=$(curl -s -w "\n%{http_code}" -X POST http://localhost:14000/team/update \
+        -H "Authorization: Bearer $_MASTER_KEY" \
+        -H "Content-Type: application/json" \
+        -d "$TEAM_PAYLOAD")
+      TEAM_UPD_STATUS=$(echo "$TEAM_UPD" | tail -1)
+      if [[ "$TEAM_UPD_STATUS" =~ ^20[0-9]$ ]]; then
+        echo "      Team policy updated (tier=$TIER)."
+      else
+        kill "$LL_PF_PID" 2>/dev/null || true
+        echo "      ERROR: team update failed: HTTP $TEAM_UPD_STATUS" >&2
+        echo "      Response: $(echo "$TEAM_UPD" | head -n -1 | head -c 200)" >&2
+        exit 1
+      fi
+      ;;
+    *)
+      kill "$LL_PF_PID" 2>/dev/null || true
+      echo "      ERROR: team create failed: HTTP $TEAM_NEW_STATUS" >&2
+      echo "      Response: $(echo "$TEAM_NEW" | head -n -1 | head -c 200)" >&2
+      exit 1
+      ;;
+  esac
+
+  # Verify by reading /team/info — non-fatal warning if it disagrees.
+  TEAM_INFO=$(curl -s -H "Authorization: Bearer $_MASTER_KEY" \
+    "http://localhost:14000/team/info?team_id=$TENANT_ID")
+  ACTUAL_BUDGET=$(echo "$TEAM_INFO" | jq -r '.team_info.max_budget // "?"')
+  if [[ "$ACTUAL_BUDGET" != "$MAX_BUDGET" ]]; then
+    echo "      WARNING: /team/info reports max_budget=$ACTUAL_BUDGET (expected $MAX_BUDGET)" >&2
+  fi
+  echo "      Tier policy: budget=\$$MAX_BUDGET/30d, rpm=$RPM_LIMIT, $(echo "$MODELS" | jq -r 'length') aliases."
+
+  # ── Virtual key issued under the team — inherits team's budget + models ────
   LL_RESP=$(curl -s -X POST http://localhost:14000/key/generate \
     -H "Authorization: Bearer $_MASTER_KEY" \
     -H "Content-Type: application/json" \
     -d "$(jq -n --arg t "$TENANT_ID" '{
       key_alias: ("cip-tenant-"+$t),
-      metadata: { tenantId: $t },
-      max_budget: 100
+      team_id:   $t,
+      metadata:  { tenantId: $t }
     }')")
   LITELLM_VKEY=$(echo "$LL_RESP" | jq -r '.key // empty')
   kill "$LL_PF_PID" 2>/dev/null || true
 
   if [[ -n "$LITELLM_VKEY" ]]; then
-    echo "      Virtual key issued."
+    echo "      Virtual key issued under team $TENANT_ID."
   else
     echo "      WARNING: LiteLLM did not return a key. Response: ${LL_RESP:0:200}"
   fi
@@ -362,6 +454,9 @@ Display name:      $NAME
 Tenant ID:         $TENANT_ID
 Keycloak realm:    $REALM
 Tier:              $TIER
+  max_budget:      \$$MAX_BUDGET / 30 days
+  rpm_limit:       $RPM_LIMIT
+  allowed models:  $(echo "$MODELS" | jq -r 'join(", ")' 2>/dev/null || echo "$MODELS")
 Admin email:       $ADMIN_EMAIL
 $([ -n "$AAD_TENANT_ID" ] && echo "AAD tenant:        $AAD_TENANT_ID (federation configured)")
 
