@@ -67,6 +67,12 @@ export async function classify(
       ],
       response_format: { type: 'json_object' },
       temperature: 0,
+      // Without an explicit cap, Mistral's response_format=json_object
+      // truncates at a low default and meta replies get cut mid-string.
+      // 1024 is enough for the largest plausible inline_reply (a markdown
+      // list of every category) plus the JSON envelope. Cost is negligible:
+      // nemo at ~$0.15/M output → 1024 tokens × $0.0000015 = $0.00015/call.
+      max_tokens: 1024,
       purpose:      'bot.intent_classify',
       promptHandle: prompt,
       tenantId:     ctx.tenantId,
