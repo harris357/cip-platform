@@ -14,7 +14,7 @@ import { discoverTools } from './mcp/tool-discovery.js';
 import { routeIntent } from './intent/router.js';
 import { classify } from './intent/classifier.js';
 import { filterToolsByCategory } from './intent/tool-categories.js';
-import { maybeSendDebugBanner } from './intent/debug-banner.js';
+import { maybeSendDebugBanner, sendResponseTime } from './intent/debug-banner.js';
 import { executeTool } from './mcp/tool-executor.js';
 
 export function buildWelcomeMessage(): string {
@@ -163,6 +163,7 @@ export class CIPTeamsBot extends TeamsActivityHandler {
         const result = await executeTool('process_document', { objectStoreKey: key }, ctx);
         const tExec1 = Date.now();
         await renderResponse(context, result);
+        await sendResponseTime(context, Date.now() - tStart);
         console.log(`[turn] tenantId=${ctx.tenantId} mode=file file=${file.name ?? '?'} typing=${tTyping - tStart}ms auth=${tAuth - tTyping}ms registry=${tRegistry - tAuth}ms download=${tDl1 - tDl0}ms exec=${tExec1 - tDl1}ms render=${Date.now() - tExec1}ms total=${Date.now() - tStart}ms`);
       }
       return;
@@ -179,6 +180,7 @@ export class CIPTeamsBot extends TeamsActivityHandler {
 
     if (classification?.inline_reply) {
       await context.sendActivity(classification.inline_reply);
+      await sendResponseTime(context, Date.now() - tStart);
       await maybeSendDebugBanner(context, {
         classification,
         alias: null,
@@ -203,6 +205,7 @@ export class CIPTeamsBot extends TeamsActivityHandler {
       const result = await executeTool(selected.name, selected.args, ctx);
       const tExec = Date.now();
       await renderResponse(context, result);
+      await sendResponseTime(context, Date.now() - tStart);
       await maybeSendDebugBanner(context, {
         classification,
         alias: stage2Alias,
@@ -217,6 +220,7 @@ export class CIPTeamsBot extends TeamsActivityHandler {
       console.log(`[turn] tenantId=${ctx.tenantId} mode=tool category=${category} fallback=${classification ? 'no' : 'yes'} typing=${tTyping - tStart}ms auth=${tAuth - tTyping}ms registry=${tRegistry - tAuth}ms discover=${tDiscover - tRegistry}ms classify=${tClassify - tDiscover}ms route=${tRoute - tClassify}ms exec=${tExec - tRoute}ms render=${Date.now() - tExec}ms total=${Date.now() - tStart}ms tool=${selected.name}`);
     } else {
       await context.sendActivity(buildNoToolMessage(filteredTools));
+      await sendResponseTime(context, Date.now() - tStart);
       await maybeSendDebugBanner(context, {
         classification,
         alias: stage2Alias,

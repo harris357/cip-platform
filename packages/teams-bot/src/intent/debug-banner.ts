@@ -22,6 +22,27 @@ function debugEnabled(): boolean {
   return (process.env['BOT_DEBUG_CLASSIFICATION'] ?? '').toLowerCase() === 'true';
 }
 
+function responseTimeEnabled(): boolean {
+  // Defaults to ON — small unobtrusive footer with total turn duration. Turn
+  // off in prod with BOT_SHOW_RESPONSE_TIME=false.
+  return (process.env['BOT_SHOW_RESPONSE_TIME'] ?? 'true').toLowerCase() === 'true';
+}
+
+/**
+ * Slice 39B: minimal "_⏱ X.Xs_" footer sent as a separate Teams activity
+ * after every bot reply. Always-on by default; toggle with
+ * BOT_SHOW_RESPONSE_TIME=false. Independent of the full classifier debug
+ * banner (which carries timing too) — call both, or either, or neither.
+ */
+export async function sendResponseTime(
+  context: TurnContext,
+  totalMs: number,
+): Promise<void> {
+  if (!responseTimeEnabled()) return;
+  const seconds = (totalMs / 1000).toFixed(2);
+  await context.sendActivity(`_⏱ ${seconds}s_`);
+}
+
 export async function maybeSendDebugBanner(
   context: TurnContext,
   input:   DebugInput,

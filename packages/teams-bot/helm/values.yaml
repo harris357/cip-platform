@@ -58,6 +58,9 @@ env:
   # Off in production; live-toggleable in dev with:
   #   kubectl set env -n cip-app deploy/teams-bot BOT_DEBUG_CLASSIFICATION=true
   BOT_DEBUG_CLASSIFICATION: "false"
+  # Slice 39B: minimal "_⏱ X.Xs_" footer after every reply. On by default;
+  # turn off in production with BOT_SHOW_RESPONSE_TIME=false.
+  BOT_SHOW_RESPONSE_TIME: "true"
 
 envFrom:
   - secretRef:
