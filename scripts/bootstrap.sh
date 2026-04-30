@@ -327,6 +327,68 @@ else
           -H "Content-Type: application/json" \
           -d "$_CLIENT_UPDATED" 2>/dev/null
       fi
+
+      # AAD IDP mapper: use the Entra `oid` claim as the federation key
+      # (BROKER_ID), instead of the default `sub`. Entra v2 `sub` is pairwise
+      # per-app; `oid` is global per tenant and what our admin tooling stores
+      # when provisioning a federated employee. Idempotent — skip if exists.
+      _OID_MAPPER_NAME="aad-oid-as-user-id"
+      _OID_MAPPER_EXISTS=$(curl -s \
+        "${KC_LOCAL}/admin/realms/cip-dev/identity-provider/instances/aad/mappers" \
+        -H "Authorization: Bearer $KC_ADMIN_TOKEN" 2>/dev/null \
+        | jq -r --arg n "$_OID_MAPPER_NAME" '.[] | select(.name==$n) | .name' 2>/dev/null || echo "")
+      if [[ -z "$_OID_MAPPER_EXISTS" ]]; then
+        curl -s -o /dev/null -w "      AAD oid→BROKER_ID mapper: HTTP %{http_code}\n" \
+          -X POST "${KC_LOCAL}/admin/realms/cip-dev/identity-provider/instances/aad/mappers" \
+          -H "Authorization: Bearer $KC_ADMIN_TOKEN" \
+          -H "Content-Type: application/json" \
+          -d "{
+            \"name\": \"${_OID_MAPPER_NAME}\",
+            \"identityProviderAlias\": \"aad\",
+            \"identityProviderMapper\": \"oidc-username-idp-mapper\",
+            \"config\": {
+              \"template\":  \"\${CLAIM.oid}\",
+              \"target\":    \"BROKER_ID\",
+              \"syncMode\":  \"FORCE\"
+            }
+          }" 2>/dev/null
+      else
+        echo "      AAD oid→BROKER_ID mapper already exists (skipped)."
+      fi
+    fi
+
+    # Realm-level Protocol Mapper: emit a hardcoded tenantId claim on every
+    # token issued by cip-dev. Internal services (hr-service MCP tools etc.)
+    # read this for tenant scoping. Value is the dev tenant UUID — for prod
+    # realms, provision-tenant.sh emits the realm name (= tenant.id) instead.
+    # Source of truth for the dev tenant UUID: tenants table, fixed at
+    # 00000000-0000-0000-0000-000000000001 by docs/onboarding SQL.
+    _DEV_TENANT_UUID="${CIP_DEV_TENANT_UUID:-00000000-0000-0000-0000-000000000001}"
+    _TENANT_MAPPER_NAME="cip-tenant-id"
+    _TENANT_MAPPER_EXISTS=$(curl -s \
+      "${KC_LOCAL}/admin/realms/cip-dev/protocol-mappers/models" \
+      -H "Authorization: Bearer $KC_ADMIN_TOKEN" 2>/dev/null \
+      | jq -r --arg n "$_TENANT_MAPPER_NAME" '.[] | select(.name==$n) | .name' 2>/dev/null || echo "")
+    if [[ -z "$_TENANT_MAPPER_EXISTS" ]]; then
+      curl -s -o /dev/null -w "      tenantId realm Protocol Mapper: HTTP %{http_code}\n" \
+        -X POST "${KC_LOCAL}/admin/realms/cip-dev/protocol-mappers/models" \
+        -H "Authorization: Bearer $KC_ADMIN_TOKEN" \
+        -H "Content-Type: application/json" \
+        -d "{
+          \"name\": \"${_TENANT_MAPPER_NAME}\",
+          \"protocol\": \"openid-connect\",
+          \"protocolMapper\": \"oidc-hardcoded-claim-mapper\",
+          \"config\": {
+            \"claim.name\":         \"tenantId\",
+            \"claim.value\":        \"${_DEV_TENANT_UUID}\",
+            \"jsonType.label\":     \"String\",
+            \"id.token.claim\":     \"true\",
+            \"access.token.claim\": \"true\",
+            \"userinfo.token.claim\":\"true\"
+          }
+        }" 2>/dev/null
+    else
+      echo "      tenantId realm Protocol Mapper already exists (skipped)."
     fi
   fi
 
