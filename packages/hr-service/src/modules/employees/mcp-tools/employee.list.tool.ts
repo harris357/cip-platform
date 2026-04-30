@@ -9,7 +9,7 @@ import { ok, refused } from './_envelope.js';
 
 export function registerEmployeeList(server: McpServer): void {
   server.tool(
-    'employee.list',
+    'employee_list',
     'List employees in the tenant (HR only). Optional filters: identityType, status (active/disabled).',
     {
       identityType: z.enum(['aad_federated', 'field_employee']).optional(),
@@ -21,7 +21,7 @@ export function registerEmployeeList(server: McpServer): void {
     async (args, context) => {
       const ctx = extractAuthContext(context.authInfo);
       if (!ctx.roles.includes('hr')) {
-        return refused('forbidden', 'employee.list requires the hr realm role');
+        return refused('forbidden', 'employee_list requires the hr realm role');
       }
       const db = getDb();
       const rows = await withTenantRLS(db, ctx.tenantId, async (tx) => {

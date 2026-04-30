@@ -7,7 +7,7 @@ import { ok, refused } from './_envelope.js';
 
 export function registerEmployeeMigrateIdentity(server: McpServer): void {
   server.tool(
-    'employee.migrate_identity',
+    'employee_migrate_identity',
     'Switch an employee between aad_federated and field_employee identity (HR only). For AAD target requires aadOid; for field target requires phone.',
     {
       employeeId:         z.string().uuid(),
@@ -20,7 +20,7 @@ export function registerEmployeeMigrateIdentity(server: McpServer): void {
     async (args, context) => {
       const ctx = extractAuthContext(context.authInfo);
       if (!ctx.roles.includes('hr')) {
-        return refused('forbidden', 'employee.migrate_identity requires the hr realm role');
+        return refused('forbidden', 'employee_migrate_identity requires the hr realm role');
       }
       try {
         const result = await migrateEmployeeIdentity({

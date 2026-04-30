@@ -6,7 +6,7 @@ import { ok, refused } from './_envelope.js';
 
 export function registerEmployeeCreate(server: McpServer): void {
   server.tool(
-    'employee.create',
+    'employee_create',
     'Provision a new employee (HR only). Creates the employees row and starts EmployeeOnboardingWorkflow.',
     {
       email:          z.string().email(),
@@ -21,7 +21,7 @@ export function registerEmployeeCreate(server: McpServer): void {
     async (args, context) => {
       const ctx = extractAuthContext(context.authInfo);
       if (!ctx.roles.includes('hr')) {
-        return refused('forbidden', 'employee.create requires the hr realm role');
+        return refused('forbidden', 'employee_create requires the hr realm role');
       }
       try {
         const result = await onboardEmployee({

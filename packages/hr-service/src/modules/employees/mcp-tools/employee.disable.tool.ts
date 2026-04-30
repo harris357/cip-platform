@@ -7,7 +7,7 @@ import { ok, refused } from './_envelope.js';
 
 export function registerEmployeeDisable(server: McpServer): void {
   server.tool(
-    'employee.disable',
+    'employee_disable',
     'Disable an employee (HR only). Sets KC user enabled=false, invalidates sessions, marks employees.disabled_at.',
     {
       employeeId: z.string().uuid(),
@@ -18,7 +18,7 @@ export function registerEmployeeDisable(server: McpServer): void {
     async (args, context) => {
       const ctx = extractAuthContext(context.authInfo);
       if (!ctx.roles.includes('hr')) {
-        return refused('forbidden', 'employee.disable requires the hr realm role');
+        return refused('forbidden', 'employee_disable requires the hr realm role');
       }
       try {
         const result = await disableEmployee({

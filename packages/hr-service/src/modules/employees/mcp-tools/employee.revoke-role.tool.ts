@@ -10,8 +10,8 @@ import { ok, refused } from './_envelope.js';
 
 export function registerEmployeeRevokeRole(server: McpServer): void {
   server.tool(
-    'employee.revoke_role',
-    'Revoke a Keycloak realm role from an employee (HR only). Cannot revoke the baseline "employee" role — use employee.disable instead.',
+    'employee_revoke_role',
+    'Revoke a Keycloak realm role from an employee (HR only). Cannot revoke the baseline "employee" role — use employee_disable instead.',
     {
       employeeId: z.string().uuid(),
       role:       z.enum(['hr', 'employee']),
@@ -21,7 +21,7 @@ export function registerEmployeeRevokeRole(server: McpServer): void {
     async (args, context) => {
       const ctx = extractAuthContext(context.authInfo);
       if (!ctx.roles.includes('hr')) {
-        return refused('forbidden', 'employee.revoke_role requires the hr realm role');
+        return refused('forbidden', 'employee_revoke_role requires the hr realm role');
       }
       // The baseline 'employee' role cannot be revoked (per the policy decision
       // in users-roles-auth-normalization-plan.md). Use employee.disable to
@@ -29,7 +29,7 @@ export function registerEmployeeRevokeRole(server: McpServer): void {
       if (args.role === 'employee') {
         return refused(
           'cannot_revoke_baseline',
-          'Cannot revoke the baseline "employee" role. Use employee.disable to terminate access.',
+          'Cannot revoke the baseline "employee" role. Use employee_disable to terminate access.',
         );
       }
 

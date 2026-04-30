@@ -7,7 +7,7 @@ import { ok, refused } from './_envelope.js';
 
 export function registerEmployeeFind(server: McpServer): void {
   server.tool(
-    'employee.find',
+    'employee_find',
     'Look up an employee by email (HR only).',
     { email: z.string().email() },
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -15,7 +15,7 @@ export function registerEmployeeFind(server: McpServer): void {
     async (args, context) => {
       const ctx = extractAuthContext(context.authInfo);
       if (!ctx.roles.includes('hr')) {
-        return refused('forbidden', 'employee.find requires the hr realm role');
+        return refused('forbidden', 'employee_find requires the hr realm role');
       }
       const pool = getPool();
       const client = await pool.connect();

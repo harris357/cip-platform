@@ -10,7 +10,7 @@ import { ok, refused } from './_envelope.js';
 
 export function registerEmployeeAssignRole(server: McpServer): void {
   server.tool(
-    'employee.assign_role',
+    'employee_assign_role',
     'Assign a Keycloak realm role to an employee (HR only).',
     {
       employeeId: z.string().uuid(),
@@ -21,7 +21,7 @@ export function registerEmployeeAssignRole(server: McpServer): void {
     async (args, context) => {
       const ctx = extractAuthContext(context.authInfo);
       if (!ctx.roles.includes('hr')) {
-        return refused('forbidden', 'employee.assign_role requires the hr realm role');
+        return refused('forbidden', 'employee_assign_role requires the hr realm role');
       }
 
       const pool = getPool();
