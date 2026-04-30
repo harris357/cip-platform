@@ -173,6 +173,25 @@ else
       *)   echo "      WARNING: Keycloak realm creation returned HTTP $HTTP_STATUS" ;;
     esac
 
+    # Slice 32: realm roles 'hr' and 'employee' (idempotent — 409 = already exists).
+    # employee = baseline access for everyone in the realm.
+    # hr      = additive role granting employee-management capability.
+    # Legacy roles (field_operations, field_employee) are not created here — they
+    # may exist from prior runs but aren't assigned to new users (see Slice 32's
+    # change to assign-default-role.activity.ts).
+    for role in hr employee; do
+      desc=""
+      case "$role" in
+        hr)       desc="Human Resources — can manage employees" ;;
+        employee) desc="Baseline employee access (cannot be revoked; use disable instead)" ;;
+      esac
+      curl -s -o /dev/null -w "      realm role ${role}: HTTP %{http_code}\n" \
+        -X POST "${KC_LOCAL}/admin/realms/cip-dev/roles" \
+        -H "Authorization: Bearer $KC_ADMIN_TOKEN" \
+        -H "Content-Type: application/json" \
+        -d "{\"name\": \"${role}\", \"description\": \"${desc}\"}" 2>/dev/null
+    done
+
     # Create teams-bot client in cip-dev (idempotent)
     KC_CLIENT_ID=$(curl -s \
       "${KC_LOCAL}/admin/realms/cip-dev/clients?clientId=teams-bot" \

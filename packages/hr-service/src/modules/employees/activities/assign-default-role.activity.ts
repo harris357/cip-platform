@@ -20,10 +20,13 @@ const AssignDefaultRoleOutputSchema = z.object({
   roleId: z.string().uuid(),
 });
 
-// Default role keycloak_role codes by identity type
+// Slice 32: every new employee gets the 'employee' realm role by default,
+// regardless of identityType. identity_type is HOW you authenticate, not WHAT
+// you can do. HR reps additionally get the 'hr' realm role via a separate
+// assignment (Slice 33's employee.assign_role tool); 'employee' is baseline.
 const DEFAULT_ROLE: Record<IdentityType, string> = {
-  aad_federated:  'field_operations',
-  field_employee: 'field_employee',
+  aad_federated:  'employee',
+  field_employee: 'employee',
 };
 
 export async function assignDefaultRoleActivity(
