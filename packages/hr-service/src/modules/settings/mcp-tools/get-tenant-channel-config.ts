@@ -11,7 +11,7 @@ export function registerGetTenantChannelConfig(server: McpServer): void {
     'Returns the channel_config JSONB for the calling tenant (called by Teams Bot)',
     {},
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    { requiredCapability: '' } as any,
+    { requiredPermission: '' } as any,
     async (_args, context) => {
       const { tenantId } = extractAuthContext(context.authInfo)
       const db = getDb()

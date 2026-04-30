@@ -15,7 +15,7 @@ export function registerProcessDocument(server: McpServer): void {
     'Trigger certification processing workflow for an uploaded document',
     { objectStoreKey: z.string().describe('Object store key for the uploaded document') },
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    { requiredCapability: 'uploadCertForSelf' } as any,
+    { requiredPermission: 'cert.submit' } as any,
     async ({ objectStoreKey }, context) => {
       const { tenantId, employeeId } = extractAuthContext(context.authInfo)
       const submissionId = randomUUID()

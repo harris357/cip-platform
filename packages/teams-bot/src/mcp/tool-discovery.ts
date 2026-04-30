@@ -18,11 +18,11 @@ export async function discoverTools(ctx: BotAuthContext): Promise<McpTool[]> {
   const result = await client.listTools();
 
   const tools = result.tools.filter(tool => {
-    const requiredCap = (tool.annotations as Record<string, unknown> | undefined)?.[
-      'requiredCapability'
+    const requiredPerm = (tool.annotations as Record<string, unknown> | undefined)?.[
+      'requiredPermission'
     ] as string | undefined;
-    if (!requiredCap) return true;
-    return ctx.capabilities[requiredCap] === true;
+    if (!requiredPerm) return true;
+    return ctx.permissions[requiredPerm] === true;
   });
 
   cache.set(ctx.tenantId, { tools, expiresAt: Date.now() + TTL });

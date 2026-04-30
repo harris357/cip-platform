@@ -54,10 +54,12 @@ export const tenantSettings = pgTable('tenant_settings', {
 export const roles = pgTable('roles', {
   id:           uuid('id').primaryKey().defaultRandom(),
   tenantId:     uuid('tenant_id').notNull(),
+  code:         text('code').notNull(),                      // Slice 38: short role identifier
   keycloakRole: text('keycloak_role').notNull(),
   label:        text('label').notNull(),
   description:  text('description'),
-  capabilities: jsonb('capabilities').notNull().default({}),
+  capabilities: jsonb('capabilities').notNull().default({}), // legacy — read by old get_employee_capabilities tool (removed in Slice 38)
+  permissions:  jsonb('permissions').notNull().default([]),  // Slice 38: array of permission codes
   isSystemRole: boolean('is_system_role').notNull().default(false),
   createdAt:    timestamp('created_at', { withTimezone: true }).defaultNow(),
 })

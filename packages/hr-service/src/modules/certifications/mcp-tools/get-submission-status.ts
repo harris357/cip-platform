@@ -16,7 +16,7 @@ export function registerGetSubmissionStatus(server: McpServer): void {
     'Get the status of a specific certification submission',
     { submissionId: z.string().uuid().describe('The submission UUID') },
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    { requiredCapability: 'viewOwnCerts' } as any,
+    { requiredPermission: 'cert.view_own' } as any,
     async ({ submissionId }, context) => {
       const { tenantId } = extractAuthContext(context.authInfo)
       const db = getDb()

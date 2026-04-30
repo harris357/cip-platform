@@ -5,7 +5,7 @@ import { getMcpClient } from '../mcp/client.js';
 
 export interface BotAuthContext extends AuthContext {
   employeeId: string;
-  capabilities: Record<string, boolean>;
+  permissions: Record<string, boolean>;
   bearerToken: string;
 }
 
@@ -29,18 +29,21 @@ export async function resolveAuthContext(
 
   await client.callTool({ name: 'sync_employee', arguments: {} });
 
-  const capsResult = await client.callTool({ name: 'get_employee_capabilities', arguments: {} });
-  const capsResponse = JSON.parse(extractText(capsResult.content)) as {
-    data?: { capabilities?: Record<string, boolean>; roles?: string[] };
+  const permsResult = await client.callTool({ name: 'get_employee_permissions', arguments: {} });
+  const permsResponse = JSON.parse(extractText(permsResult.content)) as {
+    data?: { permissions?: string[]; roles?: string[] };
   };
-  const capabilities: Record<string, boolean> = capsResponse.data?.capabilities ?? {};
-  const roles: string[] = capsResponse.data?.roles ?? [];
+  const permsArray: string[] = permsResponse.data?.permissions ?? [];
+  const permissions: Record<string, boolean> = Object.fromEntries(
+    permsArray.map(p => [p, true]),
+  );
+  const roles: string[] = permsResponse.data?.roles ?? [];
 
   return {
     tenantId:    tenantCtx.cipTenantId,
     userId:      context.activity.from?.id ?? '',
     employeeId:  aadOid,
-    capabilities,
+    permissions,
     roles,
     bearerToken: keycloakJwt,
     tenantConfig: {

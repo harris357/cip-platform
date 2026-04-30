@@ -11,10 +11,10 @@ type EmployeeRow = typeof employees.$inferSelect
 export function registerListStaff(server: McpServer): void {
   server.tool(
     'list_staff',
-    'List all employees for the tenant (respects capability scope)',
+    'List all employees for the tenant',
     {},
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    { requiredCapability: 'viewTeamCerts' } as any,
+    { requiredPermission: 'employee.list' } as any,
     async (_args, context) => {
       const { tenantId } = extractAuthContext(context.authInfo)
       const db = getDb()

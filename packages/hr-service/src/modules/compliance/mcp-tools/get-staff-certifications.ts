@@ -14,7 +14,7 @@ export function registerGetStaffCertifications(server: McpServer): void {
     'Get all certifications for a specific employee',
     { employeeId: z.string().uuid().describe('The employee UUID') },
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    { requiredCapability: 'viewTeamCerts' } as any,
+    { requiredPermission: 'cert.list_all' } as any,
     async ({ employeeId }, context) => {
       const { tenantId } = extractAuthContext(context.authInfo)
       const db = getDb()

@@ -23,7 +23,7 @@ export function registerResolveHitl(server: McpServer): void {
       notes: z.string().optional().describe('Reviewer notes'),
     },
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    { requiredCapability: 'resolveHitl' } as any,
+    { requiredPermission: 'cert.approve' } as any,
     async ({ submissionId, approved, correctedFields }, context) => {
       const { tenantId, employeeId } = extractAuthContext(context.authInfo)
       const db = getDb()

@@ -12,7 +12,7 @@ export function registerGetComplianceSummary(server: McpServer): void {
     'Get aggregate compliance statistics across all employees in the tenant',
     {},
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    { requiredCapability: 'viewAllCerts' } as any,
+    { requiredPermission: 'compliance.view' } as any,
     async (_args, context) => {
       const { tenantId } = extractAuthContext(context.authInfo)
       const db = getDb()

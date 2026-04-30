@@ -45,10 +45,10 @@ function extractSyncClaims(token: string): {
 export function registerSyncEmployee(server: McpServer): void {
   server.tool(
     'sync_employee',
-    'Upsert the calling user as an employee record from their JWT claims. Call before get_employee_capabilities for first-time users.',
+    'Upsert the calling user as an employee record from their JWT claims. Call before get_employee_permissions for first-time users.',
     {},
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    { requiredCapability: '' } as any,
+    {} as any,
     async (_args, context) => {
       const { tenantId, keycloakId, email, fullName, givenName, surname, aadOid } =
         extractSyncClaims(context.authInfo?.token ?? '')

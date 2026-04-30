@@ -15,7 +15,7 @@ export function registerGetMyCertifications(server: McpServer): void {
     "Get the current employee's certifications and expiry dates",
     {},
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    { requiredCapability: 'viewOwnCerts' } as any,
+    { requiredPermission: 'cert.view_own' } as any,
     async (_args, context) => {
       const { tenantId, employeeId } = extractAuthContext(context.authInfo)
       const db = getDb()

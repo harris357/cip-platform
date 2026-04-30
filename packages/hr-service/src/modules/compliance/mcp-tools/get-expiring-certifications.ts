@@ -14,7 +14,7 @@ export function registerGetExpiringCertifications(server: McpServer): void {
     'Get certifications expiring within the specified number of days',
     { daysAhead: z.number().int().min(1).max(365).default(90).describe('Days ahead to check') },
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    { requiredCapability: 'viewTeamCerts' } as any,
+    { requiredPermission: 'cert.list_all' } as any,
     async ({ daysAhead }, context) => {
       const { tenantId } = extractAuthContext(context.authInfo)
       const db = getDb()
