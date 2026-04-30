@@ -52,7 +52,12 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Build and push (master — sha + latest tags)
+      - name: Compute short SHA
+        if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+        id: short_sha
+        run: echo "value=$(echo ${{ github.sha }} | cut -c1-7)" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push (master — short-sha + long-sha + latest tags)
         if: github.event_name == 'push' && github.ref == 'refs/heads/master'
         uses: docker/build-push-action@v6
         with:
@@ -61,6 +66,7 @@ jobs:
           push: true
           tags: |
             ghcr.io/harris357/${{ matrix.service }}:${{ github.sha }}
+            ghcr.io/harris357/${{ matrix.service }}:${{ steps.short_sha.outputs.value }}
             ghcr.io/harris357/${{ matrix.service }}:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max

@@ -72,9 +72,33 @@ logs:         ## Tail logs from a service. Usage: make logs svc=hr-service
 	@kubectl logs -f -n cip-app -l app=$(svc) --tail=100
 
 TAG ?= $(shell git rev-parse --short HEAD)
+IMAGE_REPO ?= ghcr.io/harris357
 deploy:       ## Deploy a service via helm upgrade (chart + values change). Usage: make deploy svc=hr-service [TAG=<sha>]
 	@[ -n "$(svc)" ] || (echo "Error: svc= is required"; exit 1)
 	@if [ -d "./packages/$(svc)/helm" ]; then \
+		if [ "$(TAG)" != "latest" ] && command -v gh >/dev/null 2>&1; then \
+			echo "→ Checking that a successful CI build exists for commit $(TAG)..."; \
+			LONG_SHA=$$(git rev-parse HEAD 2>/dev/null); \
+			OK=$$(gh run list --commit "$$LONG_SHA" --workflow=build-and-push.yaml --json conclusion --jq '.[] | select(.conclusion == "success") | .conclusion' 2>/dev/null | head -1); \
+			if [ "$$OK" != "success" ]; then \
+				echo ""; \
+				echo "✗ No successful CI build found for commit $$LONG_SHA"; \
+				echo "   (which has short SHA = $(TAG))"; \
+				echo ""; \
+				echo "  Likely causes:"; \
+				echo "    1. The current commit isn't pushed yet:"; \
+				echo "       → git push origin master   (then 'gh run watch')"; \
+				echo "    2. CI is still running — wait, or:"; \
+				echo "       → gh run watch"; \
+				echo "    3. CI failed — investigate:"; \
+				echo "       → gh run list --workflow=build-and-push.yaml --limit 3"; \
+				echo "    4. You want to deploy a different tag than HEAD:"; \
+				echo "       → make deploy svc=$(svc) TAG=latest"; \
+				echo "       → make deploy svc=$(svc) TAG=<known-good-sha>"; \
+				echo ""; \
+				exit 1; \
+			fi; \
+		fi; \
 		echo "→ Deploying app chart packages/$(svc)/helm with image tag $(TAG)"; \
 		helm upgrade --install $(svc) ./packages/$(svc)/helm \
 			--namespace cip-app --create-namespace \
