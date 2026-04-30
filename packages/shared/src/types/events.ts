@@ -39,3 +39,20 @@ export interface EmployeeOnboardedEvent {
   identityType: string;
   onboardedAt:  string;
 }
+
+// Slice 33: published when an employee's identity_type changes (AAD↔field).
+export interface EmployeeIdentityChangedEvent {
+  tenantId:   string;
+  employeeId: string;
+  fromType:   string;   // 'aad_federated' | 'field_employee'
+  toType:     string;
+  changedAt:  string;
+}
+
+// Slice 33: published when an employee is disabled (terminated, deactivated).
+export interface EmployeeDisabledEvent {
+  tenantId:   string;
+  employeeId: string;
+  reason:     string | null;
+  disabledAt: string;
+}

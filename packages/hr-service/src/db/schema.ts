@@ -77,6 +77,7 @@ export const employees = pgTable('employees', {
   dateOfBirth:    date('date_of_birth'),
   createdAt:      timestamp('created_at', { withTimezone: true }).defaultNow(),
   updatedAt:      timestamp('updated_at', { withTimezone: true }).defaultNow(),
+  disabledAt:     timestamp('disabled_at', { withTimezone: true }),  // Slice 33
 })
 
 export const employeeRoles = pgTable('employee_roles', {

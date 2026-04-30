@@ -30,4 +30,9 @@ export const Subjects = {
     buildSubject({ tenantId, domain: 'worker', event: 'onboarded' }),
   employeeOnboarded: (tenantId: string) =>
     buildSubject({ tenantId, domain: 'employee', event: 'onboarded' }),
+  // Slice 33: identity migration + disable lifecycle events.
+  employeeIdentityChanged: (tenantId: string) =>
+    buildSubject({ tenantId, domain: 'employee', event: 'identity_changed' }),
+  employeeDisabled: (tenantId: string) =>
+    buildSubject({ tenantId, domain: 'employee', event: 'disabled' }),
 } as const;
