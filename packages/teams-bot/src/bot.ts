@@ -175,7 +175,11 @@ export class CIPTeamsBot extends TeamsActivityHandler {
     // Slice 39B Stage 1: classify intent. chitchat/meta short-circuit with
     // inline_reply (no Stage-2 LLM call). Anything else falls through to
     // category-filtered tool selection.
-    const { classification, alias: classifierAlias } = await classify(text, ctx);
+    //
+    // Slice 41: pass `tools` so the classifier can derive per-category
+    // availability and the Jinja2 prompt can omit categories the user
+    // can't actually use.
+    const { classification, alias: classifierAlias } = await classify(text, ctx, tools);
     const tClassify = Date.now();
     const classifierFell = classification === null;
 

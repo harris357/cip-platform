@@ -76,3 +76,28 @@ export function filterToolsByCategory(
   if (allowed === null) return tools;
   return tools.filter(t => allowed.includes(t.name));
 }
+
+/**
+ * Slice 41 enrichment: which categories have at least one permitted tool
+ * for this caller? Used to pass per-user flags into the classifier prompt
+ * so the Langfuse-stored Jinja2 template can omit categories the user
+ * can't actually use.
+ *
+ * Single source of truth: derives from the (already-permission-filtered)
+ * tool list + the static TOOLS_FOR_CATEGORY map. Adding a new category
+ * here automatically flows through to the classifier prompt — no separate
+ * permission-to-category mapping to keep in sync.
+ *
+ * `chitchat`, `meta`, `reasoning` are always available (no tool gating).
+ */
+export function availableCategories(tools: McpTool[]): Record<Category, boolean> {
+  const out: Record<Category, boolean> = {
+    chitchat:    true,
+    meta:        true,
+    reasoning:   true,
+    cert_query:  filterToolsByCategory(tools, 'cert_query').length  > 0,
+    cert_action: filterToolsByCategory(tools, 'cert_action').length > 0,
+    hr_admin:    filterToolsByCategory(tools, 'hr_admin').length    > 0,
+  };
+  return out;
+}

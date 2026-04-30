@@ -27,13 +27,29 @@ async function main(): Promise<void> {
   const lf = new Langfuse({ publicKey, secretKey, baseUrl });
 
   for (const [name, text] of Object.entries(FALLBACKS)) {
-    const created = await lf.createPrompt({
-      name,
-      type:   'text',
-      prompt: text,
-      labels: ['production'],
-    });
-    console.log(`[seed] ${name} → version ${created.version}`);
+    // Dedup: fetch latest 'production' version and compare. Langfuse's
+    // createPrompt always creates a new version (no content-hash check),
+    // so without this check, every bootstrap run bloats version history.
+    let needsCreate = true;
+    try {
+      const existing = await lf.getPrompt(name, undefined, { label: 'production' });
+      // existing.prompt is the raw template text for type:'text' prompts.
+      if (existing && typeof existing.prompt === 'string' && existing.prompt === text) {
+        console.log(`[seed] ${name} → unchanged (version ${existing.version})`);
+        needsCreate = false;
+      }
+    } catch {
+      // Prompt doesn't exist yet — fall through to create.
+    }
+    if (needsCreate) {
+      const created = await lf.createPrompt({
+        name,
+        type:   'text',
+        prompt: text,
+        labels: ['production'],
+      });
+      console.log(`[seed] ${name} → version ${created.version} (new)`);
+    }
   }
 
   await lf.shutdownAsync();

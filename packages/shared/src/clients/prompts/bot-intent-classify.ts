@@ -1,26 +1,36 @@
 // Slice 41: fallback for `bot.intent_classify`. Used when Langfuse is
-// unreachable. Byte-identical to packages/teams-bot/src/intent/classifier.ts
-// SYSTEM_PROMPT at slice-introduction time. Operators can edit the live
-// version in Langfuse without touching this file; this is the disaster-
-// recovery floor.
+// unreachable. Mirrors the Jinja2 production version in Langfuse;
+// keep them in lockstep so fallback behaviour matches live behaviour.
 //
-// Templating: Jinja2-compatible. The current text has no Jinja2 syntax
-// (no {% if %} or {% for %}), but the file is parsed as Jinja2 and works
-// the same as a flat string. Future operators can add conditionals here
-// AND in Langfuse to keep parity.
+// Permission-aware: chitchat / meta / reasoning always available.
+// cert_query / cert_action / hr_admin only listed when the caller
+// passes the matching boolean flag. Caller is responsible for
+// computing flags from ctx.permissions / ctx.roles before compile().
+//
+// If Jinja2 vars are absent (caller forgot to pass them, or running
+// against a fallback that wasn't pre-compiled), the {% if %} blocks
+// evaluate to false and those category lines are omitted. Resulting
+// classifier still works — just with fewer categories on offer.
 
 export const BOT_INTENT_CLASSIFY = `
 You are a fast intent classifier for a workplace HR/compliance bot.
-Classify the user's message into exactly one category:
+Classify the user's message into exactly one category from the
+list below. Pick the closest match; do not invent categories.
 
 - "chitchat"    : greetings, thanks, social pleasantries. Emit a brief
                   friendly inline_reply (1 sentence).
 - "meta"        : questions about the bot itself ("what can you do?",
                   "help"). Emit a one-paragraph inline_reply describing
                   the bot's capabilities at a high level.
+{% if hasCertQuery %}
 - "cert_query"  : the user wants to read certification or compliance data.
+{% endif %}
+{% if hasCertSubmit %}
 - "cert_action" : the user wants to upload/submit/approve a certificate.
+{% endif %}
+{% if hasHrAdmin %}
 - "hr_admin"    : the user wants to manage employees, roles, or permissions.
+{% endif %}
 - "reasoning"   : multi-step intents that span categories, or anything
                   unclear. Use sparingly — only when no single category fits.
 
