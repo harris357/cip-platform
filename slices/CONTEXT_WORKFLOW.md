@@ -17,6 +17,9 @@
 | 28 | CI/CD & Image Pipeline | [PROMPTS_DEPLOY.md](./PROMPTS_DEPLOY.md) | COMPLETE |
 | 29 | First Deploy Runbook (operational) | [PROMPTS_DEPLOY.md](./PROMPTS_DEPLOY.md) | PENDING |
 | 30 | Teams App Registration & Sideload (operational) | [PROMPTS_DEPLOY.md](./PROMPTS_DEPLOY.md) | PENDING |
+| 31 | Employee Admin Provisioning Endpoint | [SLICE_31_EMPLOYEE_ADMIN_PROVISIONING.md](./SLICE_31_EMPLOYEE_ADMIN_PROVISIONING.md) | PENDING |
+| 32 | Realm Roles + Auth Context + HR Audit Table | [SLICE_32_REALM_ROLES_AND_AUDIT.md](./SLICE_32_REALM_ROLES_AND_AUDIT.md) | PENDING |
+| 33 | HR MCP Tools + Identity Migration + Disable Workflows | [SLICE_33_HR_MCP_TOOLS_AND_MIGRATION.md](./SLICE_33_HR_MCP_TOOLS_AND_MIGRATION.md) | PENDING |
 
 All slices 01–21 are complete — see [archive/](./archive/).
 
@@ -26,11 +29,24 @@ All slices 01–21 are complete — see [archive/](./archive/).
 
 ```
 22 ──► 23 ──► 24
-              └─► 25
+              └─► 25 ──► 32 ──► 31 ──► 33
 22 ──► 26                      (independent; can run after 22)
 23 ──► 27
 {24, 25, 26, 27} ──► 28 ──► 29 ──► 30
 ```
+
+The HR-management chain (25 → 32 → 31 → 33) is independent of the deploy chain
+and can run in parallel with operational slices (29, 30):
+
+- **Slice 32** depends on Slice 25 (modifies `assign-default-role.activity.ts`).
+  Provides realm roles + audit table + `requireRealmRole` middleware that
+  Slices 31 and 33 consume.
+- **Slice 31** depends on Slice 32 (uses `requireRealmRole`, writes to
+  `hr_actions`). Adds the `/admin/employees` HTTP endpoint and the
+  `oid → BROKER_ID` IDP mapper.
+- **Slice 33** depends on Slices 31 and 32. Adds the seven HR MCP tools, the
+  identity-migration workflow, the disable workflow, and shares the
+  `services/employee-onboarding.ts` extracted in Slice 31.
 
 - Slices 22, 23, 26 may run in parallel sessions.
 - Slices 24, 25, 27 each depend on 23.
