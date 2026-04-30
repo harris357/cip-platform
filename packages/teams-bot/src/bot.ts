@@ -1,10 +1,11 @@
 import { randomUUID } from 'node:crypto';
 import { TurnContext } from '@microsoft/agents-hosting';
-import { Activity } from '@microsoft/agents-activity';
+import { Activity, type Attachment } from '@microsoft/agents-activity';
 import { TeamsActivityHandler } from '@microsoft/agents-hosting-extensions-teams';
 import type { Tool as McpTool } from '@modelcontextprotocol/sdk/types.js';
 import { resolveAuthContext } from './auth/resolve-context.js';
 import { cacheToken, getCachedToken } from './auth/token-store.js';
+import { storePendingMessage, takePendingMessage } from './auth/pending-message-store.js';
 import { updateChannelRegistry } from './teams-protocol/channel-registry.js';
 import { detectFileAttachments, downloadToObjectStore } from './teams-protocol/file-handler.js';
 import { renderResponse } from './teams-protocol/card-renderer.js';
@@ -72,9 +73,15 @@ export class CIPTeamsBot extends TeamsActivityHandler {
       const keycloakJwt = getCachedToken(userId);
 
       if (!keycloakJwt) {
-        // No token — send an OAuthCard with tokenExchangeResource.
-        // Teams intercepts this, silently acquires an AAD token for the app,
-        // and sends signin/tokenExchange back to onSigninInvokeActivity.
+        // No token — stash the user's message so we can replay it after SSO,
+        // then send the OAuthCard. Teams intercepts it, silently acquires an
+        // AAD token, and sends signin/tokenExchange to onSigninInvokeActivity.
+        const text = context.activity.text?.trim() ?? '';
+        const fileAttachments = detectFileAttachments(context);
+        if (text || fileAttachments.length > 0) {
+          storePendingMessage(userId, { text, fileAttachments });
+        }
+
         const resourceUri = `api://botid-${process.env['BOT_APP_ID'] ?? ''}`;
         console.log(`[auth] no cached token for user ${userId} — initiating Teams SSO, resource=${resourceUri}`);
         await context.sendActivity(Activity.fromObject({
@@ -96,36 +103,57 @@ export class CIPTeamsBot extends TeamsActivityHandler {
         return;
       }
 
-      const ctx = await resolveAuthContext(context, keycloakJwt);
-      await updateChannelRegistry(context, ctx.tenantId, ctx.bearerToken);
-
-      const fileAttachments = detectFileAttachments(context);
-
-      if (fileAttachments.length > 0) {
-        for (const file of fileAttachments) {
-          const key = await downloadToObjectStore(file, ctx);
-          const result = await executeTool('process_document', { objectStoreKey: key }, ctx);
-          await renderResponse(context, result);
-        }
-      } else {
-        const text = context.activity.text?.trim() ?? '';
-        if (!text) {
-          await next();
-          return;
-        }
-
-        const tools = await discoverTools(ctx);
-        const selected = await routeIntent(text, tools, ctx);
-
-        if (selected) {
-          const result = await executeTool(selected.name, selected.args, ctx);
-          await renderResponse(context, result);
-        } else {
-          await context.sendActivity(buildNoToolMessage(tools));
-        }
-      }
+      await this.handleAuthenticatedMessage(
+        context,
+        keycloakJwt,
+        context.activity.text?.trim() ?? '',
+        detectFileAttachments(context),
+      );
       await next();
     });
+  }
+
+  // Shared message-handling pipeline. Called from onMessage (normal flow) and
+  // from onSigninInvokeActivity (replaying the message captured before SSO).
+  private async handleAuthenticatedMessage(
+    context: TurnContext,
+    keycloakJwt: string,
+    text: string,
+    fileAttachments: Attachment[],
+  ): Promise<void> {
+    if (!text && fileAttachments.length === 0) return;
+
+    // Tell Teams to render "<bot> is typing..." while we work.
+    await context.sendActivity(Activity.fromObject({ type: 'typing' }));
+
+    const ctx = await resolveAuthContext(context, keycloakJwt);
+    await updateChannelRegistry(context, ctx.tenantId, ctx.bearerToken);
+
+    if (fileAttachments.length > 0) {
+      for (const file of fileAttachments) {
+        const t0 = Date.now();
+        const key = await downloadToObjectStore(file, ctx);
+        const result = await executeTool('process_document', { objectStoreKey: key }, ctx);
+        console.log(`[turn] file=${file.name ?? '?'} executeTool=${Date.now() - t0}ms`);
+        await renderResponse(context, result);
+      }
+      return;
+    }
+
+    const tDiscover = Date.now();
+    const tools = await discoverTools(ctx);
+    const tRoute = Date.now();
+    const selected = await routeIntent(text, tools, ctx);
+    const tExec = Date.now();
+
+    if (selected) {
+      const result = await executeTool(selected.name, selected.args, ctx);
+      console.log(`[turn] discover=${tRoute - tDiscover}ms route=${tExec - tRoute}ms exec=${Date.now() - tExec}ms tool=${selected.name}`);
+      await renderResponse(context, result);
+    } else {
+      console.log(`[turn] discover=${tRoute - tDiscover}ms route=${tExec - tRoute}ms exec=- (no tool match)`);
+      await context.sendActivity(buildNoToolMessage(tools));
+    }
   }
 
   // signin/failure is NOT routed through onSigninInvokeActivity — catch it here first.
@@ -160,21 +188,39 @@ export class CIPTeamsBot extends TeamsActivityHandler {
         console.warn('[sso] could not decode token JWT');
       }
     }
-    if (aadToken) {
-      try {
-        const tenantId: string =
-          (context.activity.channelData as { tenant?: { id?: string } } | undefined)?.tenant
-            ?.id ?? '';
-        const keycloakJwt = await exchangeAadForKeycloak(aadToken, tenantId);
-        cacheToken(context.activity.from?.id ?? '', keycloakJwt);
-        console.log('[sso] token cached for user', context.activity.from?.id);
-        await context.sendActivity("You're signed in. What can I help you with?");
-      } catch (err) {
-        console.error('[CIPTeamsBot] SSO token exchange failed:', err);
-        await context.sendActivity('Sign-in failed. Please try sending a message again.');
-      }
-    } else {
+
+    if (!aadToken) {
       console.warn('[sso] invoke received but no token in value:', JSON.stringify(value));
+      return;
+    }
+
+    const userId = context.activity.from?.id ?? '';
+    let keycloakJwt: string;
+    try {
+      const tenantId: string =
+        (context.activity.channelData as { tenant?: { id?: string } } | undefined)?.tenant
+          ?.id ?? '';
+      keycloakJwt = await exchangeAadForKeycloak(aadToken, tenantId);
+      cacheToken(userId, keycloakJwt);
+      console.log('[sso] token cached for user', userId);
+    } catch (err) {
+      console.error('[CIPTeamsBot] SSO token exchange failed:', err);
+      await context.sendActivity('Sign-in failed. Please try sending a message again.');
+      return;
+    }
+
+    // Replay the message captured before SSO, so the user's first question
+    // gets a real answer instead of a "you're signed in" filler message.
+    const pending = takePendingMessage(userId);
+    if (pending) {
+      await this.handleAuthenticatedMessage(
+        context, keycloakJwt, pending.text, pending.fileAttachments,
+      );
+    } else {
+      // Edge case: SSO completed without a pending message (e.g. token expired
+      // mid-conversation and the message that triggered it didn't get stashed).
+      // Brief, terse acknowledgement.
+      await context.sendActivity('Signed in.');
     }
   }
 }
