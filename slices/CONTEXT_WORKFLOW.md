@@ -15,8 +15,8 @@
 | 26 | Channel Registry on NATS KV (resolves CS-018) | [PROMPTS_DEPLOY.md](./PROMPTS_DEPLOY.md) | COMPLETE |
 | 27 | Platform-Core Tenant Provisioning + Wiring Reconciliation | [PROMPTS_DEPLOY.md](./PROMPTS_DEPLOY.md) | COMPLETE |
 | 28 | CI/CD & Image Pipeline | [PROMPTS_DEPLOY.md](./PROMPTS_DEPLOY.md) | COMPLETE |
-| 29 | First Deploy Runbook (operational) | [PROMPTS_DEPLOY.md](./PROMPTS_DEPLOY.md) | PENDING |
-| 30 | Teams App Registration & Sideload (operational) | [PROMPTS_DEPLOY.md](./PROMPTS_DEPLOY.md) | PENDING |
+| 29 | First Deploy Runbook (operational) | [PROMPTS_DEPLOY.md](./PROMPTS_DEPLOY.md) | COMPLETE |
+| 30 | Teams App Registration & Sideload (operational) | [PROMPTS_DEPLOY.md](./PROMPTS_DEPLOY.md) | COMPLETE |
 | 31 | Employee Admin Provisioning Endpoint | [archive/SLICE_31_EMPLOYEE_ADMIN_PROVISIONING.md](./archive/SLICE_31_EMPLOYEE_ADMIN_PROVISIONING.md) | COMPLETE |
 | 32 | Realm Roles + Auth Context + HR Audit Table | [archive/SLICE_32_REALM_ROLES_AND_AUDIT.md](./archive/SLICE_32_REALM_ROLES_AND_AUDIT.md) | COMPLETE |
 | 33 | HR MCP Tools + Identity Migration + Disable Workflows | [archive/SLICE_33_HR_MCP_TOOLS_AND_MIGRATION.md](./archive/SLICE_33_HR_MCP_TOOLS_AND_MIGRATION.md) | COMPLETE |
@@ -44,7 +44,6 @@ COMPLETE: 22 ──► 23 ──► 24
                   └─► 26          └─► 27       └─► 28
 
 PENDING:                          (independent of each other)
-            29 ──► 30                          (operational; live cluster + Azure)
             38           (permissions; needs 32 only — done)
             37           (per-tenant KC secrets; needs 35 + 36 — both done)
 ```
@@ -62,11 +61,9 @@ PENDING:                          (independent of each other)
    hygiene for multi-tenant deployments. Today's single-realm dev works
    fine via the `KEYCLOAK_CLIENT_SECRET` fallback. Run this when you're
    ready to onboard a second tenant.
-3. **Slices 29, 30** — Operational deploy runbook + Teams app
-   registration. Run last; require live cluster and Azure access.
 
-Slices 37 and 38 can run in either order — they're independent. 38 first
-gives a faster observable win. 37 is more architectural.
+Slices 37 and 38 are the only code-pending slices. 38 first gives a
+faster observable win; 37 is more architectural.
 
 ---
 
