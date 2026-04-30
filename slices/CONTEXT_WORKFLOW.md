@@ -22,6 +22,7 @@
 | 33 | HR MCP Tools + Identity Migration + Disable Workflows | [SLICE_33_HR_MCP_TOOLS_AND_MIGRATION.md](./SLICE_33_HR_MCP_TOOLS_AND_MIGRATION.md) | PENDING |
 | 35 | Tenants + Tenant Identity Providers Tables | [SLICE_35_TENANTS_AND_IDENTITY_PROVIDERS.md](./SLICE_35_TENANTS_AND_IDENTITY_PROVIDERS.md) | PENDING |
 | 36 | Multi-Tenant Teams Bot (in-code routing) | [SLICE_36_MULTI_TENANT_BOT.md](./SLICE_36_MULTI_TENANT_BOT.md) | PENDING |
+| 37 | Per-Tenant KC Client Secrets via K8s Secrets | [SLICE_37_PER_TENANT_KC_SECRETS.md](./SLICE_37_PER_TENANT_KC_SECRETS.md) | PENDING |
 
 All slices 01–21 are complete — see [archive/](./archive/).
 
@@ -32,7 +33,7 @@ All slices 01–21 are complete — see [archive/](./archive/).
 ```
 22 ──► 23 ──► 24
               └─► 25 ──► 32 ──► 31 ──► 33
-                                       └─► 35 ──► 36
+                                       └─► 35 ──► 36 ──► 37
 22 ──► 26                      (independent; can run after 22)
 23 ──► 27
 {24, 25, 26, 27} ──► 28 ──► 29 ──► 30

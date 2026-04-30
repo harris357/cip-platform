@@ -304,6 +304,68 @@ Commit: slice(36): multi-tenant bot — AAD tenant resolution + per-realm KC sec
 
 ---
 
+## PROMPT Slice 37 — Per-Tenant KC Client Secrets via K8s Secrets
+
+```
+You are working on the CIP Platform TypeScript monorepo.
+
+Session: Slice 37 — Per-Tenant KC Client Secrets via K8s Secrets + Bot Dynamic Loading
+Package: @cip/teams-bot, scripts/provision-tenant.sh
+Verify: pnpm --filter @cip/teams-bot typecheck && pnpm -r run typecheck
+
+Prerequisite: Slices 35 and 36 must be complete. This slice consumes
+tenant_identity_providers.secret_ref (Slice 35 schema) and replaces the
+KEYCLOAK_CLIENT_SECRETS JSON-map env (Slice 36 placeholder) with K8s
+secret reads via the bot's ServiceAccount.
+
+Read before writing:
+- CLAUDE.md
+- slices/SLICE_37_PER_TENANT_KC_SECRETS.md   (this slice's full spec)
+- slices/SLICE_36_MULTI_TENANT_BOT.md         § "Per-realm secrets"
+- slices/CROSS_SLICE_NOTES.md
+- docs/identity-and-auth-architecture.md      § "Configuration reference"
+
+Goal: replace the env-var JSON-map for per-tenant KC client secrets with
+real K8s secrets named `tenant-aad-<cipTenantId>`, read by the bot
+dynamically via its ServiceAccount on cache miss (5-minute TTL).
+Keep KEYCLOAK_CLIENT_SECRETS map + KEYCLOAK_CLIENT_SECRET single-value
+env as dev-only fallback paths. provision-tenant.sh now creates the
+K8s secret AND updates tenant_identity_providers.secret_ref so the bot
+picks it up without a pod restart.
+
+Files to create:
+- packages/teams-bot/src/auth/k8s-secret-loader.ts
+- packages/teams-bot/helm/templates/service-account.yaml
+
+Files to modify:
+- packages/teams-bot/src/auth/keycloak-secrets.ts   (resolveKcClientSecret async fn)
+- packages/teams-bot/src/auth/tenant-resolver.ts    (call new resolver, new error variants)
+- packages/teams-bot/helm/values.yaml               (POD_NAMESPACE downward API + SA toggle)
+- packages/teams-bot/helm/templates/deployment.yaml (serviceAccountName)
+- packages/teams-bot/package.json                   (add @kubernetes/client-node)
+- scripts/provision-tenant.sh                       (create K8s secret + update secret_ref)
+
+Hard rules (Seven Non-Negotiables):
+- secret_ref naming convention: tenant-aad-<cipTenantId> (lowercase UUID)
+- Bot ServiceAccount RBAC scoped to namespace cip-app, secrets:get only
+- 5-minute in-memory cache for K8s secret reads
+- Failure modes return typed errors: 'k8s_secret_not_found', 'k8s_secret_read_failed'
+- No @anthropic-ai/sdk imports
+- Stubs forbidden — every function ships with a working body
+- Existing dev path (KEYCLOAK_CLIENT_SECRET fallback) must keep working
+  for the existing dev tenant (no secret_ref set in DB)
+
+Acceptance: see "Acceptance Criteria" in SLICE_37_PER_TENANT_KC_SECRETS.md.
+
+If a finding requires changing earlier slice output: log a cross-slice
+note per slices/CROSS_SLICE_NOTES.md and continue. Do not refactor
+outside this slice.
+
+Commit: slice(37): per-tenant KC client secrets via K8s secrets + bot dynamic loading
+```
+
+---
+
 ## PROMPT CROSS-SLICE
 
 ```
