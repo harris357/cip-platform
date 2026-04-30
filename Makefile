@@ -3,7 +3,7 @@
 
 .DEFAULT_GOAL := help
 
-.PHONY: help start stop bootstrap bootstrap-infra create-secrets status forward logs deploy verify typecheck build lint
+.PHONY: help start stop bootstrap bootstrap-infra create-secrets status forward logs deploy redeploy redeploy-all ship verify typecheck build lint
 
 # ── Daily cycle ──────────────────────────────────────────────────────────────
 
@@ -68,13 +68,60 @@ logs:         ## Tail logs from a service. Usage: make logs svc=hr-service
 	@kubectl logs -f -n cip-app -l app=$(svc) --tail=100
 
 TAG ?= $(shell git rev-parse --short HEAD)
-deploy:       ## Deploy a service. Usage: make deploy svc=hr-service [TAG=<sha>]
+deploy:       ## Deploy a service via helm upgrade (chart + values change). Usage: make deploy svc=hr-service [TAG=<sha>]
 	@[ -n "$(svc)" ] || (echo "Error: svc= is required"; exit 1)
 	@helm upgrade --install $(svc) ./packages/$(svc)/helm \
 		--namespace cip-app --create-namespace \
 		--set image.tag=$(TAG) \
 		--atomic --timeout 5m
 	@echo "Deployed $(svc):$(TAG)"
+
+# Auto-discover internal services that have a Helm chart (used by redeploy-all).
+SERVICES := $(shell ls -1 packages/*/helm/Chart.yaml 2>/dev/null | sed 's|packages/||;s|/helm/Chart.yaml||')
+
+redeploy:     ## Pull latest image and restart pods + tail logs. Usage: make redeploy svc=hr-service
+	@[ -n "$(svc)" ] || (echo "Error: svc= is required (e.g. make redeploy svc=hr-service)"; exit 1)
+	@echo "→ Restarting deploy/$(svc) in cip-app..."
+	@kubectl rollout restart -n cip-app deploy/$(svc)
+	@kubectl rollout status  -n cip-app deploy/$(svc) --timeout=180s
+	@echo ""
+	@echo "→ Recent logs (Ctrl-C to stop tailing):"
+	@kubectl logs -f -n cip-app deploy/$(svc) --tail=40
+
+redeploy-all: ## Pull latest images and restart all internal services in parallel
+	@[ -n "$(SERVICES)" ] || (echo "Error: no helm charts found under packages/*/helm/"; exit 1)
+	@echo "→ Services: $(SERVICES)"
+	@echo "→ Restarting all in parallel..."
+	@for s in $(SERVICES); do \
+		echo "  - kubectl rollout restart deploy/$$s"; \
+		kubectl rollout restart -n cip-app deploy/$$s; \
+	done
+	@echo ""
+	@echo "→ Waiting for each rollout to complete..."
+	@for s in $(SERVICES); do \
+		printf "  %-20s " "$$s"; \
+		kubectl rollout status -n cip-app deploy/$$s --timeout=180s | tail -1; \
+	done
+	@echo ""
+	@echo "→ All restarted. View logs with:  make logs svc=<name>"
+
+ship:         ## Push HEAD, wait for CI image build, then redeploy + tail logs. Usage: make ship svc=hr-service
+	@[ -n "$(svc)" ] || (echo "Error: svc= is required (e.g. make ship svc=teams-bot)"; exit 1)
+	@command -v gh >/dev/null 2>&1 || (echo "Error: gh CLI not found — install GitHub CLI or use 'git push && make redeploy svc=$(svc)' manually"; exit 1)
+	@if [ -n "$$(git status --porcelain)" ]; then \
+		echo "Error: working tree has uncommitted changes. Commit first, then 'make ship svc=$(svc)'."; \
+		git status --short; \
+		exit 1; \
+	fi
+	@SHA=$$(git rev-parse --short HEAD); \
+		echo "→ Pushing HEAD ($$SHA) to origin..."; \
+		git push
+	@echo "→ Waiting for the CI run on this commit to complete..."
+	@sleep 5  # give GitHub a moment to register the workflow run
+	@gh run watch --exit-status \
+		|| (echo "ERROR: CI failed. Fix and 'make ship' again."; exit 1)
+	@echo "→ CI succeeded. Redeploying $(svc)..."
+	@$(MAKE) redeploy svc=$(svc)
 
 verify:       ## End-to-end health check (kubectl, secrets, S3, Temporal, Langfuse, Cloudflare)
 	@bash scripts/verify-readiness.sh
