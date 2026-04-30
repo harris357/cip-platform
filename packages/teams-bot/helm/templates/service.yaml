@@ -1,7 +1,7 @@
 apiVersion: v1
 kind: Service
 metadata:
-  name: {{ .Release.Name }}-teams-bot
+  name: {{ .Chart.Name }}
   namespace: cip-app
 spec:
   type: {{ .Values.service.type }}
