@@ -199,6 +199,9 @@ export const tenants = pgTable('tenants', {
   status:       text('status').notNull().default('active'),
   tier:         text('tier').notNull().default('standard'),
   adminEmail:   text('admin_email').notNull(),
+  // realm: KC realm name. Defaults to id::text in the migration so prod stays
+  // aligned with "tenant.id == realm name". Override for shared-realm dev.
+  realm:        text('realm').notNull(),
   createdAt:    timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt:    timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   suspendedAt:  timestamp('suspended_at', { withTimezone: true }),

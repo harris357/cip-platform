@@ -39,7 +39,7 @@ const TTL_MS = 5 * 60 * 1000;
 const cache = new Map<string, CacheEntry>();
 
 interface LookupResponse {
-  tenant: { id: string; status: string };
+  tenant: { id: string; status: string; realm: string };
   provider: {
     id:           string;
     tenantId:     string;
@@ -73,11 +73,18 @@ export async function resolveTenantContext(aadTenantId: string): Promise<Resolve
   if (data.provider.providerType !== 'aad_oidc') return { error: 'wrong_provider_type' };
   if (!data.provider.enabled)                    return { error: 'provider_disabled' };
 
-  const realm = data.tenant.id;
+  // tenant.realm is the KC realm name (defaults to id::text for prod;
+  // override in DB for dev where one shared realm serves the test tenant).
+  const realm = data.tenant.realm;
   const kcClientSecret = lookupKcSecret(realm);
   if (!kcClientSecret) return { error: 'missing_kc_client_secret' };
 
-  const ctx: TenantContext = { aadTenantId, cipTenantId: realm, realm, kcClientSecret };
+  const ctx: TenantContext = {
+    aadTenantId,
+    cipTenantId: data.tenant.id,
+    realm,
+    kcClientSecret,
+  };
   cache.set(aadTenantId, { ctx, expiresAt: Date.now() + TTL_MS });
   return ctx;
 }

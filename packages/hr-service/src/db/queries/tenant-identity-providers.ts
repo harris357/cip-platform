@@ -44,7 +44,7 @@ export async function listProvidersForTenant(
 }
 
 export interface AadLookupResult {
-  tenant:   { id: string; status: string };
+  tenant:   { id: string; status: string; realm: string };
   provider: TenantIdentityProvider;
 }
 
@@ -55,6 +55,7 @@ export async function findActiveAadTenant(
   const r = await client.query(
     `SELECT t.id     AS "t_id",
             t.status AS "t_status",
+            t.realm  AS "t_realm",
             tip.id, tip.tenant_id AS "tenantId", tip.provider_type AS "providerType",
             tip.alias, tip.enabled, tip.config, tip.secret_ref AS "secretRef",
             tip.created_at AS "createdAt", tip.updated_at AS "updatedAt"
@@ -70,7 +71,11 @@ export async function findActiveAadTenant(
   if (!r.rows[0]) return null;
   const row = r.rows[0] as Record<string, unknown>;
   return {
-    tenant:   { id: row['t_id'] as string, status: row['t_status'] as string },
+    tenant: {
+      id:     row['t_id']     as string,
+      status: row['t_status'] as string,
+      realm:  row['t_realm']  as string,
+    },
     provider: rowToProvider(row),
   };
 }

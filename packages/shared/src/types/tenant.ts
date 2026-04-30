@@ -47,6 +47,7 @@ export const TenantSchema = z.object({
   status:       TenantStatusSchema,
   tier:         TenantTierSchema,
   adminEmail:   z.string().email(),
+  realm:        z.string().min(1),     // KC realm name; defaults to id::text in DB
   createdAt:    z.string(),
   updatedAt:    z.string(),
   suspendedAt:  z.string().nullable(),

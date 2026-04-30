@@ -7,6 +7,7 @@ const TENANT_COLUMNS = `
   status,
   tier,
   admin_email  AS "adminEmail",
+  realm,
   created_at   AS "createdAt",
   updated_at   AS "updatedAt",
   suspended_at AS "suspendedAt",
@@ -21,6 +22,7 @@ function rowToTenant(row: unknown): Tenant {
     status:       r['status'],
     tier:         r['tier'],
     adminEmail:   r['adminEmail'],
+    realm:        r['realm'],
     createdAt:    (r['createdAt'] as Date | string).toString(),
     updatedAt:    (r['updatedAt'] as Date | string).toString(),
     suspendedAt:  r['suspendedAt'] ? (r['suspendedAt'] as Date | string).toString() : null,
@@ -42,13 +44,19 @@ export async function listTenants(client: PoolClient): Promise<Tenant[]> {
 
 export async function insertTenant(
   client: PoolClient,
-  input: { id: string; displayName: string; tier: string; adminEmail: string },
+  input: {
+    id:          string;
+    displayName: string;
+    tier:        string;
+    adminEmail:  string;
+    realm?:      string; // defaults to id when omitted (matches prod architecture)
+  },
 ): Promise<Tenant> {
   const r = await client.query(
-    `INSERT INTO tenants (id, display_name, tier, admin_email)
-     VALUES ($1, $2, $3, $4)
+    `INSERT INTO tenants (id, display_name, tier, admin_email, realm)
+     VALUES ($1, $2, $3, $4, COALESCE($5, $1::text))
      RETURNING ${TENANT_COLUMNS}`,
-    [input.id, input.displayName, input.tier, input.adminEmail],
+    [input.id, input.displayName, input.tier, input.adminEmail, input.realm ?? null],
   );
   return rowToTenant(r.rows[0]);
 }
