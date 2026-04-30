@@ -16,3 +16,4 @@ docs/
 sample/
 .codex
 .claude/
+.claude/settings.local.json
