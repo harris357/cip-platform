@@ -3,7 +3,7 @@
 
 .DEFAULT_GOAL := help
 
-.PHONY: help start stop bootstrap bootstrap-infra create-secrets status forward logs deploy redeploy redeploy-all ship verify typecheck build lint
+.PHONY: help start stop bootstrap bootstrap-infra create-secrets status forward logs deploy redeploy redeploy-all ship provision-tenant verify typecheck build lint
 
 # ── Daily cycle ──────────────────────────────────────────────────────────────
 
@@ -46,6 +46,10 @@ cycle-test-reprovision: ## Full cycle with Terraform reprovision (infra charts d
 
 create-secrets: ## Recreate all K8s secrets from .envrc (after cluster recreation)
 	@bash scripts/create-secrets.sh
+
+provision-tenant: ## Provision a new CIP tenant. Usage: make provision-tenant ARGS='--name "Acme Inc" --admin-email admin@acme.com [--aad-tenant-id <guid>] [--tier <t>]'
+	@[ -n "$(ARGS)" ] || (echo "Error: ARGS= is required. Run: bash scripts/provision-tenant.sh --help"; exit 1)
+	@bash scripts/provision-tenant.sh $(ARGS)
 
 # ── Development ──────────────────────────────────────────────────────────────
 
