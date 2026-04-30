@@ -186,6 +186,124 @@ Commit: slice(31): admin employee provisioning endpoint + AAD oid mapper
 
 ---
 
+## PROMPT Slice 35 — Tenants + Tenant Identity Providers Tables
+
+```
+You are working on the CIP Platform TypeScript monorepo.
+
+Session: Slice 35 — Tenants Table + Tenant Identity Providers
+Package: @cip/shared, @cip/hr-service, @cip/platform-core
+Verify: pnpm --filter @cip/shared typecheck && pnpm --filter @cip/hr-service typecheck && pnpm --filter @cip/platform-core typecheck && pnpm -r run typecheck
+
+Read before writing:
+- CLAUDE.md
+- slices/SLICE_35_TENANTS_AND_IDENTITY_PROVIDERS.md   (this slice's full spec)
+- slices/CROSS_SLICE_NOTES.md                          (check for any open notes)
+- docs/users-roles-auth-normalization-plan.md          (background)
+
+Goal: Add `tenants` and `tenant_identity_providers` tables (cip_hr DB,
+no RLS — platform-level). Drizzle schema, Zod types in @cip/shared,
+queries, four admin endpoints on hr-service guarded by a shared
+PLATFORM_ADMIN_TOKEN header, and a modification to platform-core's
+POST /tenants so it inserts the tenant row BEFORE starting the
+existing TenantProvisioningWorkflow.
+
+Files to create:
+- packages/hr-service/src/db/migrations/004_tenants.sql
+- packages/hr-service/src/db/queries/tenants.ts
+- packages/hr-service/src/db/queries/tenant-identity-providers.ts
+- packages/hr-service/src/routes/admin-tenants.ts
+
+Files to modify:
+- packages/hr-service/src/db/schema.ts
+- packages/hr-service/src/db/index.ts            (export getPool() if not present)
+- packages/hr-service/src/server.ts              (mount adminTenantsRouter)
+- packages/shared/src/types/tenant.ts            (Zod schemas + types)
+- packages/platform-core/src/routes/tenant.ts    (insert via hr-service before workflow)
+- packages/platform-core/helm/values.yaml        (HR_SERVICE_URL, PLATFORM_ADMIN_TOKEN env)
+- packages/hr-service/helm/values.yaml           (PLATFORM_ADMIN_TOKEN env)
+
+Hard rules (Seven Non-Negotiables):
+- tenants.id IS the canonical tenant identifier (= KC realm name)
+- tenants and tenant_identity_providers do NOT have RLS — platform-scope
+- Secrets do NOT live in tenant_identity_providers.config — secret_ref names a K8s secret
+- Zod .parse() on every DB-layer return value
+- No @anthropic-ai/sdk imports
+- Stubs forbidden — every function has a working body
+
+Acceptance: see "Acceptance Criteria" in SLICE_35_TENANTS_AND_IDENTITY_PROVIDERS.md.
+
+If a finding requires changing earlier slice output: log a cross-slice
+note per slices/CROSS_SLICE_NOTES.md and continue. Do not refactor
+outside this slice.
+
+Commit: slice(35): tenants table + tenant_identity_providers + admin endpoints
+```
+
+---
+
+## PROMPT Slice 36 — Multi-Tenant Teams Bot
+
+```
+You are working on the CIP Platform TypeScript monorepo.
+
+Session: Slice 36 — Multi-Tenant Teams Bot (in-code tenant routing)
+Package: @cip/teams-bot
+Verify: pnpm --filter @cip/teams-bot typecheck && pnpm -r run typecheck
+
+Prerequisite: Slice 35 must be complete. This slice consumes its
+GET /admin/tenants/by-aad/:aadTenantId endpoint.
+
+Read before writing:
+- CLAUDE.md
+- slices/SLICE_36_MULTI_TENANT_BOT.md   (this slice's full spec)
+- slices/SLICE_35_TENANTS_AND_IDENTITY_PROVIDERS.md   § "HTTP Endpoints"
+- slices/CROSS_SLICE_NOTES.md
+- docs/users-roles-auth-normalization-plan.md
+
+Goal: Bot resolves the AAD tenant ID on each incoming activity, looks up
+the matching CIP tenant via hr-service, binds a TenantContext for that
+request, and uses per-realm KC client secrets for the JWT-AG exchange.
+Reject messages from unknown or inactive tenants with [security] log
+lines. Six-step pipeline: extract → resolve → validate → bind → exchange
+→ downstream.
+
+Files to create:
+- packages/teams-bot/src/auth/tenant-resolver.ts
+- packages/teams-bot/src/auth/keycloak-secrets.ts
+
+Files to modify:
+- packages/teams-bot/src/bot.ts
+    onMessage: resolve tenant BEFORE token check
+    onSigninInvokeActivity: resolve tenant BEFORE token exchange
+    handleAuthenticatedMessage: take TenantContext as a parameter
+    exchangeAadForKeycloak: signature change, takes TenantContext (no env)
+- packages/teams-bot/src/auth/resolve-context.ts
+    Take TenantContext, use ctx.cipTenantId (NOT channelData.tenant.id)
+- packages/teams-bot/helm/values.yaml
+    Add HR_SERVICE_URL, KEYCLOAK_REALM_FALLBACK; document KEYCLOAK_CLIENT_SECRETS
+    JSON-map secret + PLATFORM_ADMIN_TOKEN secret
+
+Hard rules (Seven Non-Negotiables):
+- AAD tenant ID (from activity.channelData.tenant.id) is NOT the CIP tenant ID
+- Reject every failure mode: missing AAD tenant, no matching CIP tenant,
+  inactive tenant, no enabled aad_oidc provider, no client secret available
+- 5-minute cache TTL on the tenant lookup; key = AAD tenant ID
+- All log lines in the message-handling pipeline include cipTenantId
+- No @anthropic-ai/sdk imports
+- Stubs forbidden — every function has a working body
+
+Acceptance: see "Acceptance Criteria" in SLICE_36_MULTI_TENANT_BOT.md.
+
+If a finding requires changing earlier slice output: log a cross-slice
+note per slices/CROSS_SLICE_NOTES.md and continue. Do not refactor
+outside this slice.
+
+Commit: slice(36): multi-tenant bot — AAD tenant resolution + per-realm KC secrets
+```
+
+---
+
 ## PROMPT CROSS-SLICE
 
 ```
