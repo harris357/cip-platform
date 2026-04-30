@@ -239,6 +239,34 @@ else
           2>/dev/null \
           && echo "      KEYCLOAK_CLIENT_SECRET patched into teams-bot-credentials." \
           || echo "      ACTION REQUIRED: teams-bot-credentials secret not found — add KEYCLOAK_CLIENT_SECRET=$KC_CLIENT_SECRET manually"
+
+        # Slice 37: write the same value into the per-tenant K8s secret the bot's
+        # tenant resolver reads via its ServiceAccount. Naming convention:
+        # tenant-aad-<tenantId>. After this + the secret_ref UPDATE below, the
+        # bot uses the K8s-secret path on the next cache miss; the env-var
+        # fallback in teams-bot-credentials remains as a safety net.
+        _DEV_TENANT_UUID="${CIP_DEV_TENANT_UUID:-00000000-0000-0000-0000-000000000001}"
+        _DEV_TENANT_SECRET_NAME="tenant-aad-${_DEV_TENANT_UUID}"
+        echo "      Writing per-tenant K8s secret ${_DEV_TENANT_SECRET_NAME}..."
+        kubectl create secret generic "$_DEV_TENANT_SECRET_NAME" \
+          --namespace cip-app \
+          --from-literal=KEYCLOAK_CLIENT_SECRET="$KC_CLIENT_SECRET" \
+          --dry-run=client -o yaml | kubectl apply -f - 2>&1 \
+          | sed 's/^/      /'
+
+        # Set secret_ref on the dev tenant's IDP row so the bot finds the secret.
+        if [[ -n "${PG_USER_PASSWORD:-}" ]]; then
+          kubectl exec -i -n cip-infra "$POSTGRES_POD" -- \
+            env PGPASSWORD="$PG_USER_PASSWORD" psql -U cipuser -d cip_hr -v ON_ERROR_STOP=1 <<SQL 2>&1 \
+              | sed 's/^/      /' || true
+UPDATE tenant_identity_providers
+   SET secret_ref = '${_DEV_TENANT_SECRET_NAME}', updated_at = NOW()
+ WHERE tenant_id = '${_DEV_TENANT_UUID}'::uuid
+   AND provider_type = 'aad_oidc';
+SQL
+        else
+          echo "      WARNING: PG_USER_PASSWORD missing — skipping secret_ref UPDATE"
+        fi
       else
         echo "      WARNING: could not retrieve teams-bot client secret"
       fi
