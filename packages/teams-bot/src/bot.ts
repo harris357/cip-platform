@@ -6,6 +6,7 @@ import type { Tool as McpTool } from '@modelcontextprotocol/sdk/types.js';
 import { resolveAuthContext } from './auth/resolve-context.js';
 import { cacheToken, getCachedToken } from './auth/token-store.js';
 import { storePendingMessage, takePendingMessage } from './auth/pending-message-store.js';
+import { resolveTenantContext, type TenantContext } from './auth/tenant-resolver.js';
 import { updateChannelRegistry } from './teams-protocol/channel-registry.js';
 import { detectFileAttachments, downloadToObjectStore } from './teams-protocol/file-handler.js';
 import { renderResponse } from './teams-protocol/card-renderer.js';
@@ -26,20 +27,21 @@ function buildNoToolMessage(tools: McpTool[]): string {
     : "I don't have any tools available for your account. Please contact your administrator.";
 }
 
-async function exchangeAadForKeycloak(aadToken: string, tenantId: string): Promise<string> {
+function getAadTenantId(context: TurnContext): string {
+  return (context.activity.channelData as { tenant?: { id?: string } } | undefined)?.tenant?.id ?? '';
+}
+
+async function exchangeAadForKeycloak(aadToken: string, ctx: TenantContext): Promise<string> {
   const keycloakBase = process.env['KEYCLOAK_URL'] ?? 'http://keycloak:8080';
   const clientId = process.env['KEYCLOAK_CLIENT_ID'] ?? 'teams-bot';
-  const clientSecret = process.env['KEYCLOAK_CLIENT_SECRET'] ?? '';
-  // KEYCLOAK_REALM is the dev override (cip-dev); prod uses the AAD tenant GUID as realm name.
-  const realm = process.env['KEYCLOAK_REALM'] ?? tenantId;
-  const url = `${keycloakBase}/auth/realms/${realm}/protocol/openid-connect/token`;
+  const url = `${keycloakBase}/auth/realms/${ctx.realm}/protocol/openid-connect/token`;
 
   const body = new URLSearchParams({
-    grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
-    assertion: aadToken,
-    client_id: clientId,
-    client_secret: clientSecret,
-    scope: 'openid',
+    grant_type:    'urn:ietf:params:oauth:grant-type:jwt-bearer',
+    assertion:     aadToken,
+    client_id:     clientId,
+    client_secret: ctx.kcClientSecret,
+    scope:         'openid',
   });
 
   const response = await fetch(url, {
@@ -48,7 +50,7 @@ async function exchangeAadForKeycloak(aadToken: string, tenantId: string): Promi
     body: body.toString(),
   });
   if (!response.ok) {
-    throw new Error(`Keycloak token exchange failed: ${response.status} ${await response.text()}`);
+    throw new Error(`Keycloak token exchange failed (realm=${ctx.realm}): ${response.status} ${await response.text()}`);
   }
   const data = (await response.json()) as { access_token?: string };
   if (!data.access_token) throw new Error('Keycloak token exchange returned no access_token');
@@ -70,6 +72,19 @@ export class CIPTeamsBot extends TeamsActivityHandler {
 
     this.onMessage(async (context: TurnContext, next) => {
       const userId = context.activity.from?.id ?? '';
+      const aadTenantId = getAadTenantId(context);
+
+      // Step 1+2 of the multi-tenant pipeline: extract + resolve AAD tenant.
+      // Failures drop the request with a [security] log line.
+      const ctxOrErr = await resolveTenantContext(aadTenantId);
+      if ('error' in ctxOrErr) {
+        console.warn(`[security] tenant resolution failed: ${ctxOrErr.error} aadTenantId="${aadTenantId}" userId="${userId}"`);
+        await context.sendActivity('This bot is not configured for your organization.');
+        await next();
+        return;
+      }
+      const tenantCtx = ctxOrErr;
+
       const keycloakJwt = getCachedToken(userId);
 
       if (!keycloakJwt) {
@@ -83,7 +98,7 @@ export class CIPTeamsBot extends TeamsActivityHandler {
         }
 
         const resourceUri = `api://botid-${process.env['BOT_APP_ID'] ?? ''}`;
-        console.log(`[auth] no cached token for user ${userId} — initiating Teams SSO, resource=${resourceUri}`);
+        console.log(`[auth] no cached token tenantId=${tenantCtx.cipTenantId} userId=${userId} — initiating Teams SSO, resource=${resourceUri}`);
         await context.sendActivity(Activity.fromObject({
           type: 'message',
           attachments: [{
@@ -105,6 +120,7 @@ export class CIPTeamsBot extends TeamsActivityHandler {
 
       await this.handleAuthenticatedMessage(
         context,
+        tenantCtx,
         keycloakJwt,
         context.activity.text?.trim() ?? '',
         detectFileAttachments(context),
@@ -117,6 +133,7 @@ export class CIPTeamsBot extends TeamsActivityHandler {
   // from onSigninInvokeActivity (replaying the message captured before SSO).
   private async handleAuthenticatedMessage(
     context: TurnContext,
+    tenantCtx: TenantContext,
     keycloakJwt: string,
     text: string,
     fileAttachments: Attachment[],
@@ -126,7 +143,7 @@ export class CIPTeamsBot extends TeamsActivityHandler {
     // Tell Teams to render "<bot> is typing..." while we work.
     await context.sendActivity(Activity.fromObject({ type: 'typing' }));
 
-    const ctx = await resolveAuthContext(context, keycloakJwt);
+    const ctx = await resolveAuthContext(context, tenantCtx, keycloakJwt);
     await updateChannelRegistry(context, ctx.tenantId, ctx.bearerToken);
 
     if (fileAttachments.length > 0) {
@@ -134,7 +151,7 @@ export class CIPTeamsBot extends TeamsActivityHandler {
         const t0 = Date.now();
         const key = await downloadToObjectStore(file, ctx);
         const result = await executeTool('process_document', { objectStoreKey: key }, ctx);
-        console.log(`[turn] file=${file.name ?? '?'} executeTool=${Date.now() - t0}ms`);
+        console.log(`[turn] tenantId=${ctx.tenantId} file=${file.name ?? '?'} executeTool=${Date.now() - t0}ms`);
         await renderResponse(context, result);
       }
       return;
@@ -148,10 +165,10 @@ export class CIPTeamsBot extends TeamsActivityHandler {
 
     if (selected) {
       const result = await executeTool(selected.name, selected.args, ctx);
-      console.log(`[turn] discover=${tRoute - tDiscover}ms route=${tExec - tRoute}ms exec=${Date.now() - tExec}ms tool=${selected.name}`);
+      console.log(`[turn] tenantId=${ctx.tenantId} discover=${tRoute - tDiscover}ms route=${tExec - tRoute}ms exec=${Date.now() - tExec}ms tool=${selected.name}`);
       await renderResponse(context, result);
     } else {
-      console.log(`[turn] discover=${tRoute - tDiscover}ms route=${tExec - tRoute}ms exec=- (no tool match)`);
+      console.log(`[turn] tenantId=${ctx.tenantId} discover=${tRoute - tDiscover}ms route=${tExec - tRoute}ms exec=- (no tool match)`);
       await context.sendActivity(buildNoToolMessage(tools));
     }
   }
@@ -195,14 +212,23 @@ export class CIPTeamsBot extends TeamsActivityHandler {
     }
 
     const userId = context.activity.from?.id ?? '';
+    const aadTenantId = getAadTenantId(context);
+
+    // Same step 1+2 gate as onMessage: every signin path resolves the tenant
+    // before touching the JWT.
+    const ctxOrErr = await resolveTenantContext(aadTenantId);
+    if ('error' in ctxOrErr) {
+      console.warn(`[security] signin: tenant resolution failed: ${ctxOrErr.error} aadTenantId="${aadTenantId}" userId="${userId}"`);
+      await context.sendActivity('Sign-in failed: organization not configured.');
+      return;
+    }
+    const tenantCtx = ctxOrErr;
+
     let keycloakJwt: string;
     try {
-      const tenantId: string =
-        (context.activity.channelData as { tenant?: { id?: string } } | undefined)?.tenant
-          ?.id ?? '';
-      keycloakJwt = await exchangeAadForKeycloak(aadToken, tenantId);
+      keycloakJwt = await exchangeAadForKeycloak(aadToken, tenantCtx);
       cacheToken(userId, keycloakJwt);
-      console.log('[sso] token cached for user', userId);
+      console.log(`[sso] token cached tenantId=${tenantCtx.cipTenantId} userId=${userId}`);
     } catch (err) {
       console.error('[CIPTeamsBot] SSO token exchange failed:', err);
       await context.sendActivity('Sign-in failed. Please try sending a message again.');
@@ -214,12 +240,10 @@ export class CIPTeamsBot extends TeamsActivityHandler {
     const pending = takePendingMessage(userId);
     if (pending) {
       await this.handleAuthenticatedMessage(
-        context, keycloakJwt, pending.text, pending.fileAttachments,
+        context, tenantCtx, keycloakJwt, pending.text, pending.fileAttachments,
       );
     } else {
-      // Edge case: SSO completed without a pending message (e.g. token expired
-      // mid-conversation and the message that triggered it didn't get stashed).
-      // Brief, terse acknowledgement.
+      // Edge case: SSO completed without a pending message.
       await context.sendActivity('Signed in.');
     }
   }

@@ -1,5 +1,11 @@
 # Required K8s Secret: teams-bot-credentials
-# Keys: BOT_APP_ID, BOT_APP_PASSWORD, KEYCLOAK_CLIENT_SECRET, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY
+# Keys (legacy/single-realm dev): BOT_APP_ID, BOT_APP_PASSWORD, KEYCLOAK_CLIENT_SECRET,
+#                                 AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY
+# Keys (Slice 36 multi-tenant):   PLATFORM_ADMIN_TOKEN — same value as on hr-service
+#                                 KEYCLOAK_CLIENT_SECRETS — JSON map of {realm: secret}
+#                                   e.g. {"<tenant-uuid>":"abc123","<tenant-uuid-2>":"def456"}
+#                                   The legacy KEYCLOAK_CLIENT_SECRET still works as a
+#                                   fallback for the realm named by KEYCLOAK_REALM_FALLBACK.
 
 replicaCount: 1
 
@@ -18,8 +24,17 @@ env:
   LITELLM_BASE_URL: http://litellm.cip-app.svc.cluster.local:4000
   NATS_URL: nats://nats.cip-infra.svc.cluster.local:4222
   KEYCLOAK_URL: http://keycloak-keycloakx-http.cip-auth.svc.cluster.local
-  # Dev: single shared realm. Prod: realm per tenant = tenantId (set at deploy time).
+  # Slice 36: bot is multi-tenant. KEYCLOAK_REALM is no longer read by the
+  # bot — the realm is resolved per-request via tenant lookup. Kept here for
+  # reference / migration only.
   KEYCLOAK_REALM: cip-dev
+  # Slice 36: per-realm KC client secrets via KEYCLOAK_CLIENT_SECRETS (JSON
+  # map in the credentials secret). KEYCLOAK_CLIENT_SECRET (single value)
+  # still works as a fallback for the realm named by KEYCLOAK_REALM_FALLBACK.
+  KEYCLOAK_REALM_FALLBACK: cip-dev
+  # Slice 36: tenant resolver calls this endpoint with PLATFORM_ADMIN_TOKEN
+  # to map activity.channelData.tenant.id (Entra GUID) → CIP tenant + realm.
+  HR_SERVICE_URL: http://hr-service.cip-app.svc.cluster.local:3000
   # new keys — stubs; override at deploy time or via secret
   MCP_SERVER_URL: http://hr-service.cip-app.svc.cluster.local:4001/mcp
   KEYCLOAK_CLIENT_ID: teams-bot
