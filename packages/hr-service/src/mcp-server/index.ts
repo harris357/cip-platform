@@ -1,10 +1,24 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js'
-import express, { type Request, type Response } from 'express'
+import express, { type Request, type Response, type NextFunction } from 'express'
 import { registerCertificationTools } from '../modules/certifications/mcp-tools/index.js'
 import { registerComplianceTools } from '../modules/compliance/mcp-tools/index.js'
 import { registerEmployeeTools } from '../modules/employees/mcp-tools/index.js'
 import { registerSettingsTools } from '../modules/settings/mcp-tools/index.js'
+
+// Pull the Bearer token off the HTTP request and attach it as req.auth so that
+// the MCP transport surfaces it to each tool handler as authInfo.token.
+// SDK signature: handleRequest(req: IncomingMessage & { auth?: AuthInfo }, ...)
+function attachBearerAuth(req: Request, _res: Response, next: NextFunction): void {
+  const header = req.headers.authorization ?? ''
+  if (header.startsWith('Bearer ')) {
+    const token = header.slice('Bearer '.length).trim()
+    if (token) {
+      (req as Request & { auth?: { token: string } }).auth = { token }
+    }
+  }
+  next()
+}
 
 function createRegisteredServer(): McpServer {
   const s = new McpServer({ name: 'hr-service', version: '1.0.0' })
@@ -23,7 +37,7 @@ export async function startMcpServer(): Promise<void> {
 
   // Stateless: each POST gets its own McpServer + transport instance so
   // Authorization header auth context is isolated per-request.
-  app.post('/mcp', async (req: Request, res: Response) => {
+  app.post('/mcp', attachBearerAuth, async (req: Request, res: Response) => {
     const s = createRegisteredServer()
     // sessionIdGenerator omitted → stateless mode (no session tracking)
     const transport = new StreamableHTTPServerTransport({})
