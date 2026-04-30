@@ -249,7 +249,7 @@ else
       _IDP_UPDATED=$(echo "$_IDP_JSON" | jq '
         .config.jwtAuthorizationGrantEnabled = "true" |
         .config.allowClientIdAsAudience = "true" |
-        .config.allowedClockSkew = "300"
+        .config.jwtAuthorizationGrantMaxAllowedAssertionExpiration = "3600"
       ' 2>/dev/null || echo "{}")
       curl -s -o /dev/null -w "      AAD IDP JWT grant settings: HTTP %{http_code}\n" \
         -X PUT "${KC_LOCAL}/admin/realms/cip-dev/identity-provider/instances/aad" \

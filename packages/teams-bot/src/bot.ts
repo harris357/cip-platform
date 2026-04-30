@@ -151,9 +151,10 @@ export class CIPTeamsBot extends TeamsActivityHandler {
       try {
         const [, payloadB64] = aadToken.split('.');
         const payload = JSON.parse(Buffer.from(payloadB64 ?? '', 'base64url').toString('utf8')) as {
-          aud?: string; iss?: string; tid?: string; ver?: string; scp?: string;
+          aud?: string; iss?: string; tid?: string; ver?: string; scp?: string; iat?: number; exp?: number;
         };
-        console.log(`[sso] token claims: aud="${payload.aud}" iss="${payload.iss}" tid="${payload.tid}" ver="${payload.ver}" scp="${payload.scp}"`);
+        const iatAge = payload.iat ? Math.round(Date.now() / 1000 - payload.iat) : null;
+        console.log(`[sso] token claims: aud="${payload.aud}" iss="${payload.iss}" tid="${payload.tid}" ver="${payload.ver}" scp="${payload.scp}" iat_age=${iatAge}s exp_in=${payload.exp ? payload.exp - Math.round(Date.now() / 1000) : null}s`);
       } catch {
         console.warn('[sso] could not decode token JWT');
       }
