@@ -11,7 +11,7 @@ set -euo pipefail
 echo "=== CIP App Bootstrap ==="
 
 # ── 1. Database migrations ────────────────────────────────────────────────────
-echo "[1/5] Running database migrations..."
+echo "[1/6] Running database migrations..."
 POSTGRES_POD=$(kubectl get pod -n cip-infra -l app.kubernetes.io/name=postgresql \
   -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
 
@@ -79,8 +79,8 @@ else
 fi
 
 # ── 2+3. NATS KV bucket + JetStream streams ───────────────────────────────────
-echo "[2/5] Creating NATS KV bucket for channel registry..."
-echo "[3/5] Creating NATS JetStream streams..."
+echo "[2/6] Creating NATS KV bucket for channel registry..."
+echo "[3/6] Creating NATS JetStream streams..."
 # The nats/nats image does not ship the nats CLI; use nats-box instead.
 kubectl delete pod nats-setup -n cip-infra 2>/dev/null || true
 kubectl run nats-setup --rm -i --restart=Never --image=natsio/nats-box:latest \
@@ -125,7 +125,7 @@ kubectl run nats-setup --rm -i --restart=Never --image=natsio/nats-box:latest \
   ' 2>&1 | sed "s/^/      /"
 
 # ── 4. Keycloak cip-dev realm ─────────────────────────────────────────────────
-echo "[4/5] Creating Keycloak cip-dev realm..."
+echo "[4/6] Creating Keycloak cip-dev realm..."
 KC_SVC=$(kubectl get svc -n cip-auth -l app.kubernetes.io/name=keycloakx \
   --field-selector='spec.clusterIP!=None' \
   -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
@@ -482,7 +482,7 @@ SQL
 fi
 
 # ── 5. LiteLLM dev-tenant virtual key ────────────────────────────────────────
-echo "[5/5] Issuing LiteLLM virtual key for dev tenant..."
+echo "[5/6] Issuing LiteLLM virtual key for dev tenant..."
 LITELLM_SVC=$(kubectl get svc litellm -n cip-app \
   -o jsonpath='{.metadata.name}' 2>/dev/null || echo "")
 
@@ -525,6 +525,26 @@ else
   esac
 
   kill "$LL_PF_PID" 2>/dev/null || true
+fi
+
+# ── 6. Langfuse prompt seed (Slice 41) ───────────────────────────────────────
+# Idempotent uploader for the four CIP prompts (bot.intent_classify,
+# hr-service.vision_extract / employee_match / cert_def_match) into
+# Langfuse Cloud under the 'production' label. Re-running with the same
+# text is a no-op; editing a fallback file and re-running creates a new
+# version. Skipped if LANGFUSE_PUBLIC_KEY isn't in env (services fall
+# back to baked-in copies — still works, just no live tuning).
+echo "[6/6] Seeding Langfuse prompts..."
+if [[ -z "${LANGFUSE_PUBLIC_KEY:-}" || -z "${LANGFUSE_SECRET_KEY:-}" ]]; then
+  echo "      WARNING: LANGFUSE_PUBLIC_KEY/SECRET_KEY missing in env — skipping seed."
+  echo "      App services will fall back to baked-in prompts. To enable live"
+  echo "      tuning: set the keys in .envrc and re-run 'make bootstrap'."
+else
+  if pnpm --filter @cip/shared run seed-prompts 2>&1 | sed 's/^/      /'; then
+    echo "      Prompt seed complete."
+  else
+    echo "      WARNING: prompt seed failed — services will fall back to baked-in copies."
+  fi
 fi
 
 echo ""

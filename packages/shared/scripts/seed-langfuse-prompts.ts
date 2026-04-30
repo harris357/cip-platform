@@ -2,16 +2,17 @@
 // @cip/shared/src/clients/prompts/. Run once after a fresh Langfuse
 // project to populate the `production` label.
 //
-// Usage:
+// Usage (workspace-relative — needs @cip/shared's deps):
 //   LANGFUSE_PUBLIC_KEY=… LANGFUSE_SECRET_KEY=… LANGFUSE_HOST=… \
-//     pnpm tsx scripts/seed-langfuse-prompts.ts
+//     pnpm --filter @cip/shared run seed-prompts
 //
-// Re-running with the same text is a no-op (Langfuse dedupes by content
-// hash). Re-running with edited text creates a new version under the
-// same `production` label.
+// Or via bootstrap.sh — runs automatically on every `make bootstrap` /
+// `make start`. Re-running with the same text is a no-op (Langfuse
+// dedupes by content hash). Re-running with edited text creates a new
+// version under the same `production` label.
 
 import Langfuse from 'langfuse';
-import { FALLBACKS } from '@cip/shared/src/clients/prompts/index.js';
+import { FALLBACKS } from '../src/clients/prompts/index.js';
 
 async function main(): Promise<void> {
   const publicKey = process.env['LANGFUSE_PUBLIC_KEY'];
