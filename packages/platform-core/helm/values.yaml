@@ -15,6 +15,11 @@ env:
   TEMPORAL_TASK_QUEUE: cip-platform-tasks
   KEYCLOAK_URL: http://keycloak-keycloakx.cip-auth.svc.cluster.local
   KEYCLOAK_REALM: cip-dev
+  # Slice 35: platform-core POST /tenants calls hr-service to insert the
+  # canonical tenant row before firing the provisioning workflow.
+  HR_SERVICE_URL: http://hr-service.cip-app.svc.cluster.local:3000
+  # PLATFORM_ADMIN_TOKEN is sourced from platform-core-credentials secret
+  # below; the same value must be set on hr-service.
 
 envFrom:
   - secretRef:

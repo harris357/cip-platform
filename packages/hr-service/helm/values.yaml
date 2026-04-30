@@ -22,6 +22,9 @@ env:
   OBJECT_STORE_BUCKET: cip-uploads
   AWS_ENDPOINT_URL: https://s3.bhs.io.cloud.ovh.net
   AWS_REGION: BHS
+  # Slice 35: PLATFORM_ADMIN_TOKEN is sourced from hr-service-credentials
+  # secret below. Same value must be set on platform-core (and on the bot
+  # for Slice 36 when the lookup endpoint is consumed).
 
 # Secrets injected via K8s secret reference
 envFrom:

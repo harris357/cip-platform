@@ -190,3 +190,29 @@ export const agentRuns = pgTable('agent_runs', {
   startedAt: timestamp('started_at', { withTimezone: true }).notNull(),
   endedAt:   timestamp('ended_at', { withTimezone: true }),
 })
+
+// ── Platform-level tables (Slice 35) — NOT tenant-scoped, NO RLS ──────────
+
+export const tenants = pgTable('tenants', {
+  id:           uuid('id').primaryKey().defaultRandom(),
+  displayName:  text('display_name').notNull(),
+  status:       text('status').notNull().default('active'),
+  tier:         text('tier').notNull().default('standard'),
+  adminEmail:   text('admin_email').notNull(),
+  createdAt:    timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt:    timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  suspendedAt:  timestamp('suspended_at', { withTimezone: true }),
+  deletedAt:    timestamp('deleted_at',   { withTimezone: true }),
+})
+
+export const tenantIdentityProviders = pgTable('tenant_identity_providers', {
+  id:            uuid('id').primaryKey().defaultRandom(),
+  tenantId:      uuid('tenant_id').notNull().references(() => tenants.id, { onDelete: 'cascade' }),
+  providerType:  text('provider_type').notNull(),
+  alias:         text('alias').notNull(),
+  enabled:       boolean('enabled').notNull().default(true),
+  config:        jsonb('config').notNull().default({}),
+  secretRef:     text('secret_ref'),
+  createdAt:     timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt:     timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+})
