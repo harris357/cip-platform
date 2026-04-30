@@ -12,6 +12,17 @@ for ns in cip-app cip-auth cip-infra cert-manager; do
   kubectl get namespace "$ns" &>/dev/null || kubectl create namespace "$ns"
 done
 
+# Recurring footgun fix: .envrc historically has DATABASE_URL_* with literal
+# "PASSWORD" placeholders that were supposed to interpolate $PG_USER_PASSWORD
+# but didn't (single-quote + literal vs double-quote interpolation issue).
+# Substitute server-side here so the secret always lands with the real
+# password from $PG_USER_PASSWORD, regardless of what shape .envrc has.
+if [[ -n "${PG_USER_PASSWORD:-}" ]]; then
+  DATABASE_URL_HR="${DATABASE_URL_HR//PASSWORD/$PG_USER_PASSWORD}"
+  DATABASE_URL_PLATFORM="${DATABASE_URL_PLATFORM//PASSWORD/$PG_USER_PASSWORD}"
+  DATABASE_URL_LITELLM="${DATABASE_URL_LITELLM//PASSWORD/$PG_USER_PASSWORD}"
+fi
+
 # LiteLLM credentials (provider API keys all live here — secrets never reach app pods)
 kubectl create secret generic litellm-credentials \
   --namespace cip-app \
