@@ -53,6 +53,11 @@ env:
   AWS_ENDPOINT_URL: https://s3.bhs.io.cloud.ovh.net
   AWS_REGION: BHS
   CHANNEL_REGISTRY_BUCKET: teams-channel-registry
+  # Slice 39B: when 'true', the bot posts a markdown debug banner after every
+  # reply showing classifier output, Stage 2 alias, and per-stage timing.
+  # Off in production; live-toggleable in dev with:
+  #   kubectl set env -n cip-app deploy/teams-bot BOT_DEBUG_CLASSIFICATION=true
+  BOT_DEBUG_CLASSIFICATION: "false"
 
 envFrom:
   - secretRef:

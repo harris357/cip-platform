@@ -12,6 +12,9 @@ import { detectFileAttachments, downloadToObjectStore } from './teams-protocol/f
 import { renderResponse } from './teams-protocol/card-renderer.js';
 import { discoverTools } from './mcp/tool-discovery.js';
 import { routeIntent } from './intent/router.js';
+import { classify } from './intent/classifier.js';
+import { filterToolsByCategory } from './intent/tool-categories.js';
+import { maybeSendDebugBanner } from './intent/debug-banner.js';
 import { executeTool } from './mcp/tool-executor.js';
 
 export function buildWelcomeMessage(): string {
@@ -167,17 +170,64 @@ export class CIPTeamsBot extends TeamsActivityHandler {
 
     const tools = await discoverTools(ctx);
     const tDiscover = Date.now();
-    const selected = await routeIntent(text, tools, ctx);
+
+    // Slice 39B Stage 1: classify intent. chitchat/meta short-circuit with
+    // inline_reply (no Stage-2 LLM call). Anything else falls through to
+    // category-filtered tool selection.
+    const classification = await classify(text, ctx);
+    const tClassify = Date.now();
+
+    if (classification?.inline_reply) {
+      await context.sendActivity(classification.inline_reply);
+      await maybeSendDebugBanner(context, {
+        classification,
+        alias: null,
+        tool:  null,
+        timings: { classify: tClassify - tDiscover, total: Date.now() - tStart },
+      });
+      console.log(`[turn] tenantId=${ctx.tenantId} mode=inline category=${classification.category} typing=${tTyping - tStart}ms auth=${tAuth - tTyping}ms registry=${tRegistry - tAuth}ms discover=${tDiscover - tRegistry}ms classify=${tClassify - tDiscover}ms total=${Date.now() - tStart}ms`);
+      return;
+    }
+
+    // Slice 39B Stage 2: classifier failed → use full catalog under
+    // 'reasoning' as safety net. Otherwise filter by category.
+    const category = classification?.category ?? 'reasoning';
+    const filteredTools = filterToolsByCategory(tools, category);
+
+    const routeResult = await routeIntent({ message: text, category, tools: filteredTools, ctx });
     const tRoute = Date.now();
+    const selected = routeResult.selected;
+    const stage2Alias = routeResult.alias;
 
     if (selected) {
       const result = await executeTool(selected.name, selected.args, ctx);
       const tExec = Date.now();
       await renderResponse(context, result);
-      console.log(`[turn] tenantId=${ctx.tenantId} mode=tool typing=${tTyping - tStart}ms auth=${tAuth - tTyping}ms registry=${tRegistry - tAuth}ms discover=${tDiscover - tRegistry}ms route=${tRoute - tDiscover}ms exec=${tExec - tRoute}ms render=${Date.now() - tExec}ms total=${Date.now() - tStart}ms tool=${selected.name}`);
+      await maybeSendDebugBanner(context, {
+        classification,
+        alias: stage2Alias,
+        tool:  selected.name,
+        timings: {
+          classify: tClassify - tDiscover,
+          route:    tRoute - tClassify,
+          exec:     tExec - tRoute,
+          total:    Date.now() - tStart,
+        },
+      });
+      console.log(`[turn] tenantId=${ctx.tenantId} mode=tool category=${category} fallback=${classification ? 'no' : 'yes'} typing=${tTyping - tStart}ms auth=${tAuth - tTyping}ms registry=${tRegistry - tAuth}ms discover=${tDiscover - tRegistry}ms classify=${tClassify - tDiscover}ms route=${tRoute - tClassify}ms exec=${tExec - tRoute}ms render=${Date.now() - tExec}ms total=${Date.now() - tStart}ms tool=${selected.name}`);
     } else {
-      await context.sendActivity(buildNoToolMessage(tools));
-      console.log(`[turn] tenantId=${ctx.tenantId} mode=no-tool typing=${tTyping - tStart}ms auth=${tAuth - tTyping}ms registry=${tRegistry - tAuth}ms discover=${tDiscover - tRegistry}ms route=${tRoute - tDiscover}ms reply=${Date.now() - tRoute}ms total=${Date.now() - tStart}ms`);
+      await context.sendActivity(buildNoToolMessage(filteredTools));
+      await maybeSendDebugBanner(context, {
+        classification,
+        alias: stage2Alias,
+        tool:  null,
+        timings: {
+          classify: tClassify - tDiscover,
+          route:    tRoute - tClassify,
+          total:    Date.now() - tStart,
+        },
+      });
+      console.log(`[turn] tenantId=${ctx.tenantId} mode=no-tool category=${category} fallback=${classification ? 'no' : 'yes'} typing=${tTyping - tStart}ms auth=${tAuth - tTyping}ms registry=${tRegistry - tAuth}ms discover=${tDiscover - tRegistry}ms classify=${tClassify - tDiscover}ms route=${tRoute - tClassify}ms reply=${Date.now() - tRoute}ms total=${Date.now() - tStart}ms`);
     }
   }
 

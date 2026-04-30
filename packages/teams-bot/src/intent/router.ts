@@ -1,26 +1,39 @@
 import type { Tool as McpTool } from '@modelcontextprotocol/sdk/types.js';
 import { callLLM, createLiteLLMClient } from '@cip/shared';
-import type { BotAuthContext } from '../auth/resolve-context.js';
 import { resolveAlias } from './alias-resolver.js';
+import { PURPOSE_FOR_CATEGORY, type Category } from './tool-categories.js';
+import type { BotAuthContext } from '../auth/resolve-context.js';
 
-// Slice 39A: the bot still does single-stage routing today — purpose is
-// 'route_simple', resolved through routing_rules. Slice 39B introduces
-// the classifier and route_careful / route_reasoning purposes.
-export async function routeIntent(
-  message: string,
-  tools: McpTool[],
-  ctx: BotAuthContext,
-): Promise<{ name: string; args: Record<string, unknown> } | null> {
-  const alias = await resolveAlias({ purpose: 'route_simple', tenantId: ctx.tenantId });
+export interface RouteResult {
+  selected: { name: string; args: Record<string, unknown> } | null;
+  alias:    string;   // exposed so bot.ts can include in the debug banner
+}
+
+// Slice 39B: Stage-2 tool selection. Caller (bot.ts) has already run
+// the Stage-1 classifier; this picks a tool from a category-filtered
+// catalog using the alias resolved per-category.
+export async function routeIntent(args: {
+  message:  string;
+  category: Category;
+  tools:    McpTool[];   // already filtered by category + permissions
+  ctx:      BotAuthContext;
+}): Promise<RouteResult> {
+  const purpose = PURPOSE_FOR_CATEGORY[args.category];
+  if (!purpose) {
+    // Caller bug — categories with null purpose (chitchat/meta) should
+    // have been handled by the classifier's inline_reply path.
+    throw new Error(`routeIntent called for category=${args.category} which has no Stage-2 purpose`);
+  }
+  const alias = await resolveAlias({ purpose, tenantId: args.ctx.tenantId });
   const client = createLiteLLMClient({
-    tenantId:   ctx.tenantId,
-    virtualKey: ctx.tenantConfig.litellmVirtualKey,
+    tenantId:   args.ctx.tenantId,
+    virtualKey: args.ctx.tenantConfig.litellmVirtualKey,
   });
 
-  const response = await callLLM(client, {
+  const resp = await callLLM(client, {
     model: alias,
-    messages: [{ role: 'user', content: message }],
-    tools: tools.map(t => ({
+    messages: [{ role: 'user', content: args.message }],
+    tools: args.tools.map(t => ({
       type: 'function' as const,
       function: {
         name: t.name,
@@ -29,14 +42,14 @@ export async function routeIntent(
       },
     })),
     tool_choice: 'auto',
-    purpose:  'bot.route_simple',
-    tenantId: ctx.tenantId,
+    purpose:  `bot.${purpose}`,
+    tenantId: args.ctx.tenantId,
   });
 
-  const call = response.choices[0]?.message.tool_calls?.[0];
-  if (!call) return null;
-  return {
+  const call = resp.choices[0]?.message.tool_calls?.[0];
+  const selected = call ? {
     name: call.function.name,
     args: JSON.parse(call.function.arguments) as Record<string, unknown>,
-  };
+  } : null;
+  return { selected, alias };
 }

@@ -12,12 +12,13 @@
     "@aws-sdk/client-s3": "^3.600.0",
     "@cip/shared": "workspace:*",
     "@kubernetes/client-node": "^1.0.0",
-    "@modelcontextprotocol/sdk": "^1.0.0",
     "@microsoft/agents-activity": "^1.4.2",
     "@microsoft/agents-hosting": "^1.4.2",
     "@microsoft/agents-hosting-extensions-teams": "^1.4.2",
+    "@modelcontextprotocol/sdk": "^1.0.0",
     "express": "^4.19.0",
-    "openai": "^4.0.0"
+    "openai": "^4.0.0",
+    "zod": "^3.25.76"
   },
   "devDependencies": {
     "@types/express": "^4.17.0",
