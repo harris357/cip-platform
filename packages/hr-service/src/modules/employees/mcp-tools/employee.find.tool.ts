@@ -10,8 +10,6 @@ export function registerEmployeeFind(server: McpServer): void {
     'employee_find',
     'Look up an employee by email (HR only).',
     { email: z.string().email() },
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    {} as any,
     async (args, context) => {
       const ctx = extractAuthContext(context.authInfo);
       if (!ctx.roles.includes('hr')) {

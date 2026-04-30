@@ -20,8 +20,6 @@ export function registerGetEmployeePermissions(server: McpServer): void {
     'get_employee_permissions',
     'Returns the calling employee\'s permission codes and role codes',
     {},
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    {} as any,
     async (_args, context) => {
       const ctx = extractAuthContext(context.authInfo)
       const pool = getPool()
