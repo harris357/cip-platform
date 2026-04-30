@@ -2,6 +2,7 @@ import express, { type Express } from 'express';
 import { tenantAuthMiddleware } from '@cip/shared/src/utils/tenant-context.js';
 import { healthRouter } from './routes/health.js';
 import { adminTenantsRouter } from './routes/admin-tenants.js';
+import { adminEmployeesRouter } from './routes/admin-employees.js';
 
 export function createApp(): Express {
   const app = express();
@@ -17,6 +18,10 @@ export function createApp(): Express {
 
   // All other routes require a valid tenant JWT
   app.use(tenantAuthMiddleware);
+
+  // Slice 31: tenant-scoped admin employee provisioning. Goes after the
+  // tenant JWT middleware so requireRealmRole('hr') can read req.tenantContext.roles.
+  app.use(adminEmployeesRouter);
 
   return app;
 }
