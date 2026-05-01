@@ -20,9 +20,12 @@ export async function routeIntent(args: {
 }): Promise<RouteResult> {
   const purpose = PURPOSE_FOR_CATEGORY[args.category];
   if (!purpose) {
-    // Caller bug — categories with null purpose (chitchat/meta) should
-    // have been handled by the classifier's inline_reply path.
-    throw new Error(`routeIntent called for category=${args.category} which has no Stage-2 purpose`);
+    // Inline-only categories (chitchat/meta) should have been handled by
+    // the bot's inline-reply path before reaching here. If we got here,
+    // upstream logic missed an inline-only category — log and degrade
+    // gracefully (no-tool reply) rather than crash the turn.
+    console.warn(`[router] routeIntent called with inline-only category=${args.category}; upstream path should have handled this. Returning no tool selected.`);
+    return { selected: null, alias: 'inline-only' };
   }
   const alias = await resolveAlias({ purpose, tenantId: args.ctx.tenantId });
   const client = createLiteLLMClient({

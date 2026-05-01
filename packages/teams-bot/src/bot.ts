@@ -13,7 +13,7 @@ import { renderResponse } from './teams-protocol/card-renderer.js';
 import { discoverTools } from './mcp/tool-discovery.js';
 import { routeIntent } from './intent/router.js';
 import { classify } from './intent/classifier.js';
-import { filterToolsByCategory, buildMetaResponse } from './intent/tool-categories.js';
+import { filterToolsByCategory, buildMetaResponse, PURPOSE_FOR_CATEGORY } from './intent/tool-categories.js';
 import { maybeSendDebugBanner, sendResponseTime } from './intent/debug-banner.js';
 import { executeTool } from './mcp/tool-executor.js';
 
@@ -193,33 +193,36 @@ export class CIPTeamsBot extends TeamsActivityHandler {
     const tClassify = Date.now();
     const classifierFell = classification === null;
 
-    // Meta replies are composed deterministically from the available-tools
-    // catalog rather than trusting the LLM's free-form inline_reply. The
-    // model kept producing partial responses ("Here are the tools you can
-    // use:" with nothing after) or enumerating tools verbatim despite the
-    // prompt forbidding it. Chitchat keeps the LLM-authored inline_reply
-    // (free-form social pleasantries — variance is fine there).
-    if (classification) {
-      const reply = classification.category === 'meta'
-        ? buildMetaResponse(tools)
-        : classification.inline_reply;
-
-      if (reply) {
-        await context.sendActivity(reply);
-        await sendResponseTime(context, Date.now() - tStart, {
-          classifierAlias,
-          category:   classification.category,
-          classifyMs: tClassify - tDiscover,
-        });
-        await maybeSendDebugBanner(context, {
-          classification,
-          alias: null,
-          tool:  null,
-          timings: { classify: tClassify - tDiscover, total: Date.now() - tStart },
-        });
-        console.log(`[turn] tenantId=${ctx.tenantId} mode=inline category=${classification.category} typing=${tTyping - tStart}ms auth=${tAuth - tTyping}ms registry=${tRegistry - tAuth}ms discover=${tDiscover - tRegistry}ms classify=${tClassify - tDiscover}ms total=${Date.now() - tStart}ms`);
-        return;
+    // Inline-only categories (chitchat, meta) skip Stage 2 entirely — they
+    // carry no PURPOSE_FOR_CATEGORY mapping, so falling through to routeIntent
+    // would crash. Compose the reply deterministically when we own it (meta:
+    // the available-tools menu); use the LLM's inline_reply when the model
+    // produced one (chitchat: free-form social pleasantries, variance is fine);
+    // fall back to a generic acknowledgement when neither is available
+    // (chitchat with the inline_reply field omitted — observed crash mode).
+    if (classification && PURPOSE_FOR_CATEGORY[classification.category] === null) {
+      let reply: string;
+      if (classification.category === 'meta') {
+        reply = buildMetaResponse(tools);
+      } else if (classification.inline_reply) {
+        reply = classification.inline_reply;
+      } else {
+        reply = 'Hi — how can I help?';
       }
+      await context.sendActivity(reply);
+      await sendResponseTime(context, Date.now() - tStart, {
+        classifierAlias,
+        category:   classification.category,
+        classifyMs: tClassify - tDiscover,
+      });
+      await maybeSendDebugBanner(context, {
+        classification,
+        alias: null,
+        tool:  null,
+        timings: { classify: tClassify - tDiscover, total: Date.now() - tStart },
+      });
+      console.log(`[turn] tenantId=${ctx.tenantId} mode=inline category=${classification.category} typing=${tTyping - tStart}ms auth=${tAuth - tTyping}ms registry=${tRegistry - tAuth}ms discover=${tDiscover - tRegistry}ms classify=${tClassify - tDiscover}ms total=${Date.now() - tStart}ms`);
+      return;
     }
 
     // Slice 39B Stage 2: classifier failed → use full catalog under
