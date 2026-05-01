@@ -131,9 +131,37 @@ function bumpPatchVersion(manifestPath: string): string {
   return next;
 }
 
-function buildAppPackage(cfg: Record<string, string>): Buffer {
+/**
+ * Slice 47: generate the manifest's commandLists from the bot's
+ * REGISTRY at build time. REGISTRY is the runtime source of truth for
+ * slash commands; this keeps the manifest in lockstep without
+ * hand-syncing. Only the universal subset (requires === null) lands in
+ * the manifest — admin commands surface only via the role-filtered
+ * /help and never appear in the static "..." overflow menu.
+ */
+async function generateUniversalCommands(): Promise<Array<{ title: string; description: string }>> {
+  const registryUrl = new URL('../../src/slash-commands/registry.ts', import.meta.url);
+  const mod = await import(registryUrl.href) as { REGISTRY: Array<{ command: string; description: string; requires: unknown }> };
+  return mod.REGISTRY
+    .filter(c => c.requires === null)
+    .map(c => ({ title: c.command, description: c.description }));
+}
+
+async function buildAppPackage(cfg: Record<string, string>): Promise<Buffer> {
   const appPkg = path.join(APP_DIR, 'appPackage');
-  let manifest = fs.readFileSync(path.join(appPkg, 'manifest.json'), 'utf8');
+  const raw = fs.readFileSync(path.join(appPkg, 'manifest.json'), 'utf8');
+
+  // Inject the universal command list from REGISTRY before substitution.
+  const manifestObj = JSON.parse(raw) as {
+    bots?: Array<{ commandLists?: Array<{ scopes: string[]; commands: unknown[] }> }>;
+  };
+  const universalCommands = await generateUniversalCommands();
+  if (manifestObj.bots?.[0]?.commandLists?.[0]) {
+    manifestObj.bots[0].commandLists[0].commands = universalCommands;
+    console.log(`   Injected ${universalCommands.length} universal slash commands from REGISTRY`);
+  }
+
+  let manifest = JSON.stringify(manifestObj, null, 2);
   manifest = manifest.replaceAll('${{BOT_APP_ID}}', cfg['BOT_APP_ID'] ?? '');
   manifest = manifest.replaceAll('${{BOT_DOMAIN}}',  cfg['BOT_DOMAIN']  ?? '');
   return buildZip([
@@ -321,7 +349,7 @@ async function main(): Promise<void> {
   const manifestPath = path.join(APP_DIR, 'appPackage', 'manifest.json');
   const version = bumpPatchVersion(manifestPath);
   console.log(`   Bumped manifest version → ${version}`);
-  const zip     = buildAppPackage(cfg);
+  const zip     = await buildAppPackage(cfg);
   const outDir  = path.join(APP_DIR, 'appPackage', 'build');
   const outFile = path.join(outDir, `appPackage.${env}.zip`);
   fs.mkdirSync(outDir, { recursive: true });
