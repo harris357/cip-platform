@@ -55,8 +55,10 @@ adminToolRetrievalRouter.post(
     const pool = getPool();
     const client = await pool.connect();
     try {
-      // Resolve `bot.embed` alias (defaults to mistral-embed via migration 015).
-      const alias = (await getRoutingRule(client, 'bot', 'embed')) ?? 'mistral-embed';
+      // Resolve `bot.embed` alias (defaults to cip-embed → mistral/mistral-embed
+      // via migration 016 + LiteLLM model_list). Hardcoded fallback uses the
+      // gateway alias, not the raw provider name — passing the raw name 400s.
+      const alias = (await getRoutingRule(client, 'bot', 'embed')) ?? 'cip-embed';
 
       // tenantId here is purely for Langfuse observability — tools and
       // their embeddings are global (not tenant-scoped), but tagging the

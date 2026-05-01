@@ -1,5 +1,5 @@
 # LiteLLM proxy config — mounted as ConfigMap on the LiteLLM pod.
-# Secrets (ANTHROPIC_API_KEY, LANGFUSE_*, LITELLM_MASTER_KEY) are injected
+# Secrets (MISTRAL_API_KEY, LANGFUSE_*, LITELLM_MASTER_KEY) are injected
 # from the litellm-credentials K8s Secret via environmentSecrets in Helm values.
 # They are referenced here using the os.environ/ prefix — never hardcoded.
 apiVersion: v1
@@ -10,29 +10,117 @@ metadata:
 data:
   config.yaml: |
     model_list:
-      - model_name: cip-vision
+      # ─── Bot: classification + routing ───────────────────────────────────────
+      - model_name: cip-classifier
         litellm_params:
-          model: anthropic/claude-sonnet-4-6
-          api_key: os.environ/ANTHROPIC_API_KEY
+          model: mistral/open-mistral-nemo
+          api_key: os.environ/MISTRAL_API_KEY
+        model_info:
+          description: "Stage-1 intent classifier. Tiny structured JSON out. Cheapest viable."
+          use_for: ["intent_classify", "meta_compose"]
 
       - model_name: cip-chat
         litellm_params:
-          model: anthropic/claude-sonnet-4-6
-          api_key: os.environ/ANTHROPIC_API_KEY
+          model: mistral/mistral-small-latest
+          api_key: os.environ/MISTRAL_API_KEY
+        model_info:
+          description: "Legacy bot routing — single-stage tool selection. Slice 43 superseded by cip-router-careful."
+          use_for: ["route_simple (legacy)"]
 
-      - model_name: cip-lightweight
+      - model_name: cip-router-fast
         litellm_params:
-          model: anthropic/claude-haiku-4-5-20251001
-          api_key: os.environ/ANTHROPIC_API_KEY
+          model: mistral/open-mistral-nemo
+          api_key: os.environ/MISTRAL_API_KEY
+        model_info:
+          description: "Stage-2 tool selection for low-stakes intents (cert_query, cert_action). Pre-Slice-43 era."
+          use_for: ["route_simple"]
+
+      - model_name: cip-router-careful
+        litellm_params:
+          model: mistral/mistral-small-latest
+          api_key: os.environ/MISTRAL_API_KEY
+        model_info:
+          description: "Function calling over the full permitted catalog (Slice 43 default route alias). Better function-calling accuracy."
+          use_for: ["route", "route_careful"]
 
       - model_name: cip-reasoning
         litellm_params:
-          model: anthropic/claude-opus-4-7
-          api_key: os.environ/ANTHROPIC_API_KEY
+          model: mistral/mistral-large-latest
+          api_key: os.environ/MISTRAL_API_KEY
+        model_info:
+          description: "Multi-step reasoning. Reserved for the few intents that need it."
+          use_for: ["route_reasoning"]
+
+      - model_name: cip-embed
+        litellm_params:
+          model: mistral/mistral-embed
+          api_key: os.environ/MISTRAL_API_KEY
+        model_info:
+          description: "Embeddings for tool catalog vector retrieval (Slice 44). 1024-dim."
+          use_for: ["embed", "tool_retrieval", "tool_embed"]
+
+      # ─── HR-service: matchers ────────────────────────────────────────────────
+      - model_name: cip-lightweight
+        litellm_params:
+          model: mistral/open-mistral-nemo
+          api_key: os.environ/MISTRAL_API_KEY
+        model_info:
+          description: "Text-only matchers (employee, cert_def). Cheapest non-vision option."
+          use_for: ["employee_match", "cert_def_match"]
+
+      - model_name: cip-document
+        litellm_params:
+          model: mistral/open-mistral-nemo
+          api_key: os.environ/MISTRAL_API_KEY
+        model_info:
+          description: "Text-only document understanding (no OCR)."
+          use_for: ["document_understand"]
+
+      # ─── HR-service: vision / OCR ────────────────────────────────────────────
+      - model_name: cip-vision
+        litellm_params:
+          model: mistral/pixtral-12b-2409
+          api_key: os.environ/MISTRAL_API_KEY
+        model_info:
+          description: "Legacy vision-agent extraction. Cheapest pixtral option."
+          use_for: ["vision_extract"]
+
+      - model_name: cip-ocr-document
+        litellm_params:
+          model: mistral/pixtral-large-latest
+          api_key: os.environ/MISTRAL_API_KEY
+        model_info:
+          description: "Full document OCR — quality-critical compliance docs."
+          use_for: ["ocr_document"]
+
+      - model_name: cip-ocr-document-small
+        litellm_params:
+          model: mistral/pixtral-12b-2409
+          api_key: os.environ/MISTRAL_API_KEY
+        model_info:
+          description: "Draft / preview document OCR. Cheap path."
+          use_for: ["ocr_document_small"]
+
+      - model_name: cip-ocr-image
+        litellm_params:
+          model: mistral/pixtral-large-latest
+          api_key: os.environ/MISTRAL_API_KEY
+        model_info:
+          description: "Photo of physical certificate — needs OCR + reasoning."
+          use_for: ["ocr_image"]
+
+      - model_name: cip-ocr-image-small
+        litellm_params:
+          model: mistral/pixtral-12b-2409
+          api_key: os.environ/MISTRAL_API_KEY
+        model_info:
+          description: "Thumbnail / quick triage image OCR."
+          use_for: ["ocr_image_small"]
 
     general_settings:
       master_key: os.environ/LITELLM_MASTER_KEY
       database_url: os.environ/LITELLM_DATABASE_URL
+      store_model_in_db: true   # Slice 39A: enables runtime alias additions via /model/new
 
     litellm_settings:
       success_callback: ["langfuse"]

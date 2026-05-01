@@ -25,7 +25,11 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { callEmbed, createLiteLLMClient } from '@cip/shared';
 
 const SERVICE = 'hr-service';
-const EMBED_MODEL = 'mistral-embed';
+// Slice 44: route through the LiteLLM gateway alias, not raw provider name.
+// `cip-embed` resolves to mistral/mistral-embed via the LiteLLM model_list
+// (see infra/k8s/litellm-config.yaml). Using the raw model name produces
+// a 400 because the gateway doesn't auto-pass-through unknown model names.
+const EMBED_MODEL = 'cip-embed';
 // The seed runs at pod startup, before any user request — no caller
 // tenant exists. This sentinel UUID is used solely for Langfuse
 // observability tagging so seed-time embedding traces are recognisable
