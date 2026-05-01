@@ -24,7 +24,7 @@ export type Category = (typeof CATEGORIES)[number];
  */
 export const CATEGORY_DESCRIPTIONS: Record<Category, string> = {
   chitchat:    'greetings, thanks, social pleasantries. Emit a brief friendly inline_reply (1 sentence).',
-  meta:        'questions about the bot itself ("what can you do?", "help"). Emit an inline_reply listing each AVAILABLE category from above (except chitchat/meta themselves) as a markdown bullet, with a short example user query for that category. Format: "- **<Category name>**: <description>. Example: \\"<example query>\\"". Keep it under 6 bullets.',
+  meta:        'questions about the bot itself ("what can you do?", "help", "list tools"). Emit a SHORT inline_reply listing each AVAILABLE category from above (excluding chitchat and meta themselves) as a markdown bullet. DO NOT enumerate individual tools. Maximum 6 bullets, maximum 200 words total. Format each bullet as: "- **<friendly category name>**: <one-line description>. Example: \\"<short example query>\\""',
   cert_query:  'the user wants to read certification or compliance data.',
   cert_action: 'the user wants to upload/submit/approve a certificate.',
   hr_admin:    'the user wants to manage employees, roles, or permissions.',
