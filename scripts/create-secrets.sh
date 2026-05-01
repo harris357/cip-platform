@@ -43,8 +43,9 @@ kubectl create secret generic litellm-credentials \
 
 # HR Service credentials (virtual key only — NOT the real Anthropic key)
 # Slice 41: LANGFUSE_* added so getPrompt() can fetch from Langfuse Cloud.
-# Without these, getPrompt() falls back to baked-in defaults (still works,
-# just no live tuning).
+# Without these, getPrompt() falls back to baked-in defaults.
+# Slice 42B: PLATFORM_ADMIN_EMAIL drives auto-elevation in sync_employee.
+# Empty = no auto-elevation (manual only).
 kubectl create secret generic hr-service-credentials \
   --namespace cip-app \
   --from-literal=LITELLM_VIRTUAL_KEY="${LITELLM_VIRTUAL_KEY}" \
@@ -53,6 +54,7 @@ kubectl create secret generic hr-service-credentials \
   --from-literal=TEMPORAL_NAMESPACE="${TEMPORAL_NAMESPACE}" \
   --from-literal=DATABASE_URL_HR="${DATABASE_URL_HR}" \
   --from-literal=PLATFORM_ADMIN_TOKEN="${PLATFORM_ADMIN_TOKEN:-}" \
+  --from-literal=PLATFORM_ADMIN_EMAIL="${PLATFORM_ADMIN_EMAIL:-}" \
   --from-literal=AWS_ACCESS_KEY_ID="${AWS_ACCESS_KEY_ID:-}" \
   --from-literal=AWS_SECRET_ACCESS_KEY="${AWS_SECRET_ACCESS_KEY:-}" \
   --from-literal=LANGFUSE_PUBLIC_KEY="${LANGFUSE_PUBLIC_KEY:-}" \

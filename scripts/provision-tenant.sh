@@ -444,6 +444,72 @@ else
   fi
 fi
 
+# ── 7a. Admin user elevation (Slice 42B) ─────────────────────────────────────
+# Per-tenant precedence: --admin-email (the customer's admin) wins;
+# PLATFORM_ADMIN_EMAIL is a fallback if --admin-email isn't supplied.
+# Both halves of defense-in-depth fire:
+#   - CIP role: INSERT into employee_role_assignments → hr-service-admin
+#   - KC role:  POST /role-mappings/realm with `hr` (idempotent)
+# Idempotent — ON CONFLICT DO NOTHING + KC's natural idempotence.
+echo "[7a/7] Elevating admin email to hr-service-admin role for tenant $TENANT_ID..."
+ADMIN_EMAIL_FOR_TENANT="${ADMIN_EMAIL:-${PLATFORM_ADMIN_EMAIL:-}}"
+if [[ -z "$ADMIN_EMAIL_FOR_TENANT" ]]; then
+  echo "      WARNING: neither --admin-email nor PLATFORM_ADMIN_EMAIL — skipping admin elevation."
+else
+  POSTGRES_POD=$(kubectl get pod -n cip-infra -l app.kubernetes.io/name=postgresql \
+    -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
+  if [[ -z "$POSTGRES_POD" || -z "${PG_USER_PASSWORD:-}" ]]; then
+    echo "      WARNING: postgres pod or PG_USER_PASSWORD missing — skipping admin elevation."
+  else
+    # Step 1: DB-side
+    kubectl exec -i -n cip-infra "$POSTGRES_POD" -- \
+      env PGPASSWORD="$PG_USER_PASSWORD" psql -U cipuser -d cip_hr -v ON_ERROR_STOP=1 <<SQL 2>&1 \
+        | sed 's/^/      /' || true
+DO \$\$
+DECLARE
+  v_tenant_id   UUID := '${TENANT_ID}';
+  v_email       TEXT := '${ADMIN_EMAIL_FOR_TENANT}';
+  v_employee_id UUID;
+  v_role_id     UUID;
+BEGIN
+  SELECT id INTO v_role_id
+    FROM roles WHERE tenant_id = v_tenant_id AND code = 'hr-service-admin';
+  IF v_role_id IS NULL THEN
+    RAISE NOTICE 'hr-service-admin role not seeded for tenant — re-run init-tenant-database';
+    RETURN;
+  END IF;
+  SELECT id INTO v_employee_id
+    FROM employees WHERE tenant_id = v_tenant_id AND lower(email) = lower(v_email);
+  IF v_employee_id IS NULL THEN
+    INSERT INTO employees (tenant_id, email, full_name, identity_type, employment_type)
+    VALUES (v_tenant_id, v_email, v_email, 'aad_federated', 'employee')
+    RETURNING id INTO v_employee_id;
+    RAISE NOTICE 'Created admin employee row id=%', v_employee_id;
+  END IF;
+  INSERT INTO employee_role_assignments (employee_id, role_id, granted_by)
+  VALUES (v_employee_id, v_role_id, NULL)
+  ON CONFLICT DO NOTHING;
+  RAISE NOTICE 'CIP role assigned: email=% tenant=% role=hr-service-admin', v_email, v_tenant_id;
+END \$\$;
+SQL
+
+    # Step 2: KC realm role grant in the tenant's own realm.
+    KC_USER_ID=$(curl -s "${KC_LOCAL}/admin/realms/${REALM}/users?email=${ADMIN_EMAIL_FOR_TENANT}" \
+      -H "Authorization: Bearer $KC_ADMIN_TOKEN" 2>/dev/null | jq -r '.[0].id // empty')
+    if [[ -z "$KC_USER_ID" ]]; then
+      echo "      KC user with email=${ADMIN_EMAIL_FOR_TENANT} not found yet — sync_employee will grant `hr` on first login."
+    else
+      HR_ROLE_REP=$(curl -s "${KC_LOCAL}/admin/realms/${REALM}/roles/hr" \
+        -H "Authorization: Bearer $KC_ADMIN_TOKEN" 2>/dev/null)
+      curl -s -o /dev/null -w "      KC hr realm role grant: HTTP %{http_code}\n" \
+        -X POST "${KC_LOCAL}/admin/realms/${REALM}/users/${KC_USER_ID}/role-mappings/realm" \
+        -H "Authorization: Bearer $KC_ADMIN_TOKEN" \
+        -H "Content-Type: application/json" \
+        -d "[$HR_ROLE_REP]"
+    fi
+  fi
+fi
+
 # ── 8. Print summary ─────────────────────────────────────────────────────────
 cat <<EOF
 

@@ -2,9 +2,11 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { randomUUID } from 'crypto'
 import { eq, and } from 'drizzle-orm'
 import type { McpModuleResponse } from '@cip/shared'
-import { getDb } from '../../../db/index.js'
+import { getDb, getPool } from '../../../db/index.js'
 import { withTenantRLS } from '../../../db/rls.js'
 import { employees } from '../../../db/schema.js'
+import { assignRoleToEmployee } from '../../../db/queries/roles.js'
+import { getKcAdmin, kcAdminRequest } from '../../../services/keycloak-admin.js'
 
 function extractSyncClaims(token: string): {
   tenantId: string
@@ -42,6 +44,61 @@ function extractSyncClaims(token: string): {
   }
 }
 
+// Slice 42B: auto-elevate the platform admin email on FIRST sync only.
+// Both halves of defense-in-depth fire here:
+//   1. CIP role → INSERT into employee_role_assignments for hr-service-admin
+//   2. KC realm role → POST /role-mappings/realm with `hr` (idempotent)
+// Failures in step 2 are logged but non-fatal (next turn will retry).
+async function maybeAutoElevateAdmin(
+  tenantId: string,
+  employeeId: string,
+  keycloakId: string,
+  email: string,
+): Promise<void> {
+  const adminEmail = process.env['PLATFORM_ADMIN_EMAIL']?.toLowerCase().trim()
+  if (!adminEmail) return
+  if (email.toLowerCase().trim() !== adminEmail) return
+
+  // Step 1: CIP role assignment.
+  const pool = getPool()
+  const client = await pool.connect()
+  try {
+    await client.query('BEGIN')
+    await client.query(`SELECT set_config('app.current_tenant_id', $1, true)`, [tenantId])
+    await assignRoleToEmployee(client, tenantId, employeeId, 'hr-service-admin', null)
+    await client.query('COMMIT')
+    console.log(`[sync_employee] auto-elevated CIP admin role: email=${email} tenantId=${tenantId}`)
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => undefined)
+    console.warn(`[sync_employee] CIP role auto-elevate failed: ${err instanceof Error ? err.message : String(err)}`)
+    return
+  } finally {
+    client.release()
+  }
+
+  // Step 2: KC realm role grant. Use the tenant's KC admin client.
+  try {
+    const admin = await getKcAdmin(tenantId)
+    const roleResp = await kcAdminRequest(admin, 'GET', `/roles/hr`)
+    if (!roleResp.ok) {
+      console.warn(`[sync_employee] KC role 'hr' lookup failed: HTTP ${roleResp.status}`)
+      return
+    }
+    const roleRep = await roleResp.json()
+    const grantResp = await kcAdminRequest(
+      admin, 'POST', `/users/${keycloakId}/role-mappings/realm`, [roleRep],
+    )
+    if (grantResp.ok || grantResp.status === 204) {
+      console.log(`[sync_employee] auto-elevated KC realm role hr: email=${email} tenantId=${tenantId}`)
+    } else {
+      console.warn(`[sync_employee] KC realm role grant failed: HTTP ${grantResp.status}`)
+    }
+  } catch (err) {
+    console.warn(`[sync_employee] KC realm role auto-elevate failed: ${err instanceof Error ? err.message : String(err)}`)
+    // Non-fatal — the next sync_employee will retry idempotently.
+  }
+}
+
 export function registerSyncEmployee(server: McpServer): void {
   server.tool(
     'sync_employee',
@@ -53,7 +110,11 @@ export function registerSyncEmployee(server: McpServer): void {
 
       const db = getDb()
 
-      const employeeId = await withTenantRLS(db, tenantId, async (tx) => {
+      // isNewlyCreated tells us whether this turn's INSERT actually fired
+      // (vs hitting the existing-row branch). Auto-elevation only fires on
+      // first sync — re-syncs don't re-elevate (so a manual revoke isn't
+      // undone by the user signing in again).
+      const { employeeId, isNewlyCreated } = await withTenantRLS(db, tenantId, async (tx) => {
         const existing = await tx
           .select({ id: employees.id })
           .from(employees)
@@ -65,7 +126,7 @@ export function registerSyncEmployee(server: McpServer): void {
             .update(employees)
             .set({ email, fullName, givenName, surname, aadOid, updatedAt: new Date() })
             .where(and(eq(employees.tenantId, tenantId), eq(employees.keycloakId, keycloakId)))
-          return existing[0]!.id
+          return { employeeId: existing[0]!.id, isNewlyCreated: false }
         }
 
         const id = randomUUID()
@@ -81,8 +142,13 @@ export function registerSyncEmployee(server: McpServer): void {
           identityType: 'aad_federated',
           employmentType: 'employee',
         })
-        return id
+        return { employeeId: id, isNewlyCreated: true }
       })
+
+      // Slice 42B: fire admin auto-elevation on FIRST sync only.
+      if (isNewlyCreated) {
+        await maybeAutoElevateAdmin(tenantId, employeeId, keycloakId, email)
+      }
 
       const response: McpModuleResponse<{ employeeId: string }> = {
         data: { employeeId },

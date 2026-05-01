@@ -11,7 +11,7 @@ set -euo pipefail
 echo "=== CIP App Bootstrap ==="
 
 # ── 1. Database migrations ────────────────────────────────────────────────────
-echo "[1/6] Running database migrations..."
+echo "[1/7] Running database migrations..."
 POSTGRES_POD=$(kubectl get pod -n cip-infra -l app.kubernetes.io/name=postgresql \
   -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
 
@@ -79,8 +79,8 @@ else
 fi
 
 # ── 2+3. NATS KV bucket + JetStream streams ───────────────────────────────────
-echo "[2/6] Creating NATS KV bucket for channel registry..."
-echo "[3/6] Creating NATS JetStream streams..."
+echo "[2/7] Creating NATS KV bucket for channel registry..."
+echo "[3/7] Creating NATS JetStream streams..."
 # The nats/nats image does not ship the nats CLI; use nats-box instead.
 kubectl delete pod nats-setup -n cip-infra 2>/dev/null || true
 kubectl run nats-setup --rm -i --restart=Never --image=natsio/nats-box:latest \
@@ -125,7 +125,7 @@ kubectl run nats-setup --rm -i --restart=Never --image=natsio/nats-box:latest \
   ' 2>&1 | sed "s/^/      /"
 
 # ── 4. Keycloak cip-dev realm ─────────────────────────────────────────────────
-echo "[4/6] Creating Keycloak cip-dev realm..."
+echo "[4/7] Creating Keycloak cip-dev realm..."
 KC_SVC=$(kubectl get svc -n cip-auth -l app.kubernetes.io/name=keycloakx \
   --field-selector='spec.clusterIP!=None' \
   -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
@@ -482,7 +482,7 @@ SQL
 fi
 
 # ── 5. LiteLLM dev-tenant virtual key ────────────────────────────────────────
-echo "[5/6] Issuing LiteLLM virtual key for dev tenant..."
+echo "[5/7] Issuing LiteLLM virtual key for dev tenant..."
 LITELLM_SVC=$(kubectl get svc litellm -n cip-app \
   -o jsonpath='{.metadata.name}' 2>/dev/null || echo "")
 
@@ -534,7 +534,7 @@ fi
 # text is a no-op; editing a fallback file and re-running creates a new
 # version. Skipped if LANGFUSE_PUBLIC_KEY isn't in env (services fall
 # back to baked-in copies — still works, just no live tuning).
-echo "[6/6] Seeding Langfuse prompts..."
+echo "[6/7] Seeding Langfuse prompts..."
 if [[ -z "${LANGFUSE_PUBLIC_KEY:-}" || -z "${LANGFUSE_SECRET_KEY:-}" ]]; then
   echo "      WARNING: LANGFUSE_PUBLIC_KEY/SECRET_KEY missing in env — skipping seed."
   echo "      App services will fall back to baked-in prompts. To enable live"
@@ -544,6 +544,101 @@ else
     echo "      Prompt seed complete."
   else
     echo "      WARNING: prompt seed failed — services will fall back to baked-in copies."
+  fi
+fi
+
+# ── 7. Admin user elevation (Slice 42B) ──────────────────────────────────────
+# When PLATFORM_ADMIN_EMAIL is set in .envrc, ensure that user exists as
+# an employee in the dev tenant + holds the hr-service-admin CIP role +
+# has the `hr` Keycloak realm role. Both layers required:
+#   - CIP role  → assertPermission() in MCP tool handlers passes
+#   - KC role   → bot's coarse `if (!ctx.roles.includes('hr'))` gate passes
+# All idempotent — re-running is a no-op.
+echo "[7/7] Elevating PLATFORM_ADMIN_EMAIL to hr-service-admin role..."
+if [[ -z "${PLATFORM_ADMIN_EMAIL:-}" ]]; then
+  echo "      WARNING: PLATFORM_ADMIN_EMAIL not in env — skipping admin elevation."
+  echo "      Set it in .envrc to auto-elevate the dev admin user."
+elif [[ -z "$POSTGRES_POD" || -z "${PG_USER_PASSWORD:-}" ]]; then
+  echo "      WARNING: postgres pod or PG_USER_PASSWORD missing — skipping admin elevation"
+else
+  # Step 1: DB-side — ensure employee row + assign hr-service-admin role.
+  kubectl exec -i -n cip-infra "$POSTGRES_POD" -- \
+    env PGPASSWORD="$PG_USER_PASSWORD" psql -U cipuser -d cip_hr -v ON_ERROR_STOP=1 <<SQL 2>&1 \
+      | sed 's/^/      /' || true
+DO \$\$
+DECLARE
+  v_tenant_id   UUID := '00000000-0000-0000-0000-000000000001';
+  v_email       TEXT := '${PLATFORM_ADMIN_EMAIL}';
+  v_employee_id UUID;
+  v_role_id     UUID;
+BEGIN
+  SELECT id INTO v_role_id
+    FROM roles WHERE tenant_id = v_tenant_id AND code = 'hr-service-admin';
+
+  IF v_role_id IS NULL THEN
+    RAISE NOTICE 'hr-service-admin role not seeded for dev tenant — re-run migrations';
+    RETURN;
+  END IF;
+
+  SELECT id INTO v_employee_id
+    FROM employees WHERE tenant_id = v_tenant_id AND lower(email) = lower(v_email);
+
+  IF v_employee_id IS NULL THEN
+    INSERT INTO employees (tenant_id, email, full_name, identity_type, employment_type)
+    VALUES (v_tenant_id, v_email, v_email, 'aad_federated', 'employee')
+    RETURNING id INTO v_employee_id;
+    RAISE NOTICE 'Created admin employee row id=%', v_employee_id;
+  END IF;
+
+  INSERT INTO employee_role_assignments (employee_id, role_id, granted_by)
+  VALUES (v_employee_id, v_role_id, NULL)
+  ON CONFLICT DO NOTHING;
+
+  RAISE NOTICE 'CIP role assigned: email=% tenant=% role=hr-service-admin', v_email, v_tenant_id;
+END \$\$;
+SQL
+
+  # Step 2: KC-side — grant the `hr` realm role to the matching KC user.
+  # Open a fresh KC port-forward; the one from step 4 was killed.
+  KC_SVC=$(kubectl get svc -n cip-auth -l app.kubernetes.io/name=keycloakx \
+    --field-selector='spec.clusterIP!=None' \
+    -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
+  if [[ -z "$KC_SVC" ]]; then
+    echo "      WARNING: Keycloak service not found — skipping KC realm role grant."
+    echo "      sync_employee will retry the grant on the admin's first login."
+  else
+    KC_LOCAL="http://localhost:18080/auth"
+    kubectl port-forward -n cip-auth "svc/$KC_SVC" 18080:80 &>/dev/null &
+    _KC2_PID=$!
+    sleep 3
+    _KC_ADMIN_PASS="${KEYCLOAK_ADMIN_PASSWORD:-}"
+    KC_TOKEN_RESP=$(curl -s -X POST \
+      "${KC_LOCAL}/realms/master/protocol/openid-connect/token" \
+      --data-urlencode "client_id=admin-cli" \
+      --data-urlencode "username=admin" \
+      --data-urlencode "password=${_KC_ADMIN_PASS}" \
+      --data-urlencode "grant_type=password" 2>/dev/null || echo "")
+    KC_ADMIN_TOKEN=$(echo "$KC_TOKEN_RESP" | jq -r '.access_token' 2>/dev/null || echo "")
+
+    if [[ -z "$KC_ADMIN_TOKEN" || "$KC_ADMIN_TOKEN" == "null" ]]; then
+      echo "      WARNING: could not obtain KC admin token — sync_employee will retry."
+    else
+      KC_USER_ID=$(curl -s "${KC_LOCAL}/admin/realms/cip-dev/users?email=${PLATFORM_ADMIN_EMAIL}" \
+        -H "Authorization: Bearer $KC_ADMIN_TOKEN" 2>/dev/null \
+        | jq -r '.[0].id // empty')
+      if [[ -z "$KC_USER_ID" ]]; then
+        echo "      KC user with email=${PLATFORM_ADMIN_EMAIL} not found yet — sync_employee will grant `hr` on first login."
+      else
+        HR_ROLE_REP=$(curl -s "${KC_LOCAL}/admin/realms/cip-dev/roles/hr" \
+          -H "Authorization: Bearer $KC_ADMIN_TOKEN" 2>/dev/null)
+        curl -s -o /dev/null -w "      KC hr realm role grant: HTTP %{http_code}\n" \
+          -X POST "${KC_LOCAL}/admin/realms/cip-dev/users/${KC_USER_ID}/role-mappings/realm" \
+          -H "Authorization: Bearer $KC_ADMIN_TOKEN" \
+          -H "Content-Type: application/json" \
+          -d "[$HR_ROLE_REP]"
+      fi
+    fi
+    kill "$_KC2_PID" 2>/dev/null || true
   fi
 fi
 

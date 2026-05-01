@@ -25,6 +25,11 @@ env:
   # Slice 35: PLATFORM_ADMIN_TOKEN is sourced from hr-service-credentials
   # secret below. Same value must be set on platform-core (and on the bot
   # for Slice 36 when the lookup endpoint is consumed).
+  #
+  # Slice 42B: PLATFORM_ADMIN_EMAIL is also in the secret (set via
+  # create-secrets.sh from .envrc). When set, sync_employee auto-elevates
+  # the matching email to the hr-service-admin CIP role + grants the
+  # `hr` Keycloak realm role on first sync. Empty = feature off.
 
 # Secrets injected via K8s secret reference
 envFrom:
