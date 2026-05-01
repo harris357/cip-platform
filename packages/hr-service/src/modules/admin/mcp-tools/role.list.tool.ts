@@ -24,6 +24,8 @@ export function registerRoleList(server: McpServer): void {
     'Use for audits, role-selection UIs, "what roles exist". ' +
     'Differs from get_employee_permissions (the caller\'s OWN roles only) and employee_get (one specific employee\'s assigned roles).',
     {},
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    { requiredPermission: 'employee.list' } as any,
     async (_args, context) => {
       const ctx = extractAuthContext(context.authInfo);
       try {

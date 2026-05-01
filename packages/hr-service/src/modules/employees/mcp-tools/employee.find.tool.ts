@@ -15,6 +15,8 @@ export function registerEmployeeFind(server: McpServer): void {
     'Required arg: email (exact, case-insensitive). ' +
     'Differs from employee_list (paginated tenant-wide list with filters) and employee_get (returns full detail including roles + permissions).',
     { email: z.string().email() },
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    { requiredPermission: 'employee.find' } as any,
     async (args, context) => {
       const ctx = extractAuthContext(context.authInfo);
       if (!ctx.roles.includes('hr')) {

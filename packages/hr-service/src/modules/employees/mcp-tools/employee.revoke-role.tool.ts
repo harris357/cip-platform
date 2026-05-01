@@ -22,6 +22,8 @@ export function registerEmployeeRevokeRole(server: McpServer): void {
       employeeId: z.string().uuid(),
       role:       z.enum(['hr', 'employee']),
     },
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    { requiredPermission: 'employee.revoke_role' } as any,
     async (args, context) => {
       const ctx = extractAuthContext(context.authInfo);
       if (!ctx.roles.includes('hr')) {

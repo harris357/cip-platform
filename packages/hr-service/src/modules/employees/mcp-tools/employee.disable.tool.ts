@@ -19,6 +19,8 @@ export function registerEmployeeDisable(server: McpServer): void {
       employeeId: z.string().uuid(),
       reason:     z.string().optional(),
     },
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    { requiredPermission: 'employee.disable' } as any,
     async (args, context) => {
       const ctx = extractAuthContext(context.authInfo);
       if (!ctx.roles.includes('hr')) {

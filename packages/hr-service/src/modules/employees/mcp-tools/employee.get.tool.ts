@@ -29,6 +29,8 @@ export function registerEmployeeGet(server: McpServer): void {
     'Required arg: employeeId (UUID). ' +
     'Differs from get_employee_permissions (caller\'s own roles, no admin gate), employee_find (lookup by email, identity row only), employee_list (tenant-wide list).',
     { employeeId: z.string().uuid() },
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    { requiredPermission: 'employee.find' } as any,
     async ({ employeeId }, context) => {
       const ctx = extractAuthContext(context.authInfo);
       try {

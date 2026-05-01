@@ -21,6 +21,8 @@ export function registerEmployeeList(server: McpServer): void {
       status:       z.enum(['active', 'disabled']).optional(),
       limit:        z.number().int().min(1).max(200).default(50),
     },
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    { requiredPermission: 'employee.list' } as any,
     async (args, context) => {
       const ctx = extractAuthContext(context.authInfo);
       if (!ctx.roles.includes('hr')) {

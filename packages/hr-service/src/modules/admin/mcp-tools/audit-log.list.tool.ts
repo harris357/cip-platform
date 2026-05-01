@@ -33,6 +33,8 @@ export function registerAuditLogList(server: McpServer): void {
       sinceIso:         z.string().datetime().optional(),
       limit:            z.number().int().min(1).max(500).optional(),
     },
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    { requiredPermission: 'employee.list' } as any,
     async (args, context) => {
       const ctx = extractAuthContext(context.authInfo);
       try {

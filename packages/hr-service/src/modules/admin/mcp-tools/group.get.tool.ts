@@ -31,6 +31,8 @@ export function registerGroupGet(server: McpServer): void {
       module: z.string().min(1),
       code:   z.string().min(1),
     },
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    { requiredPermission: 'employee.list' } as any,
     async ({ module, code }, context) => {
       const ctx = extractAuthContext(context.authInfo);
       try {

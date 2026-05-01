@@ -25,6 +25,8 @@ export function registerPermissionCatalogList(server: McpServer): void {
       service: z.string().min(1).optional(),
       module:  z.string().min(1).optional(),
     },
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    { requiredPermission: null } as any,
     async (args, context) => {
       // Extract auth so the call is at least authenticated; no permission gate.
       extractAuthContext(context.authInfo);

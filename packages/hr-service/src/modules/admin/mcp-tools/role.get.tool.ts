@@ -28,6 +28,8 @@ export function registerRoleGet(server: McpServer): void {
     'Required arg: code (role code, e.g. "hr_standard"). ' +
     'Differs from role_list (every role overview, no group/permission detail) and role_members (which employees hold this role).',
     { code: z.string().min(1) },
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    { requiredPermission: 'employee.list' } as any,
     async ({ code }, context) => {
       const ctx = extractAuthContext(context.authInfo);
       try {

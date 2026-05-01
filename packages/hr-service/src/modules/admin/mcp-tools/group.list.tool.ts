@@ -23,6 +23,8 @@ export function registerGroupList(server: McpServer): void {
     'Optional arg: module (e.g. "cert", "employee") to filter. ' +
     'Differs from role_list (lists ROLES, which compose groups) and permission_catalog_list (lists individual permissions, the atoms inside groups).',
     { module: z.string().min(1).optional() },
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    { requiredPermission: 'employee.list' } as any,
     async ({ module }, context) => {
       const ctx = extractAuthContext(context.authInfo);
       try {

@@ -15,7 +15,7 @@ export function registerGetTenantChannelConfig(server: McpServer): void {
     'Used internally by the bot\'s channel registry on every turn; rarely invoked directly by an LLM.',
     {},
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    { requiredPermission: '' } as any,
+    { requiredPermission: null } as any,
     async (_args, context) => {
       const { tenantId } = extractAuthContext(context.authInfo)
       const db = getDb()

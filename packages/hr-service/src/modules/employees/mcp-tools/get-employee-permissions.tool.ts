@@ -25,6 +25,8 @@ export function registerGetEmployeePermissions(server: McpServer): void {
     'Output: {roles[], permissions[]} (permissions are glob-expanded). ' +
     'Differs from employee_get (returns ANOTHER specific employee\'s detail, HR-only) and role_list (returns every role in the tenant, not the caller\'s assignments).',
     {},
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    { requiredPermission: null } as any,
     async (_args, context) => {
       const ctx = extractAuthContext(context.authInfo)
       const pool = getPool()

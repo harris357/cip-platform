@@ -21,6 +21,8 @@ export function registerEmployeeMigrateIdentity(server: McpServer): void {
       aadOid:             z.string().min(8).optional(),
       phone:              z.string().min(7).optional(),
     },
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    { requiredPermission: 'employee.migrate_identity' } as any,
     async (args, context) => {
       const ctx = extractAuthContext(context.authInfo);
       if (!ctx.roles.includes('hr')) {

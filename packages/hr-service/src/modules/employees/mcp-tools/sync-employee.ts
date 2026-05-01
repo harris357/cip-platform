@@ -109,6 +109,8 @@ export function registerSyncEmployee(server: McpServer): void {
     'Used internally by the bot on every turn before get_employee_permissions; rarely called directly by an LLM. ' +
     'No sibling overlap.',
     {},
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    { requiredPermission: null } as any,
     async (_args, context) => {
       const { tenantId, keycloakId, email, fullName, givenName, surname, aadOid } =
         extractSyncClaims(context.authInfo?.token ?? '')

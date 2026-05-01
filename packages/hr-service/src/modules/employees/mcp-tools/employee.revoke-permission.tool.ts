@@ -37,6 +37,8 @@ export function registerEmployeeRevokePermission(server: McpServer): void {
       employeeId: z.string().uuid(),
       role:       z.string().min(1),
     },
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    { requiredPermission: 'employee.revoke_permission' } as any,
     async (args, context) => {
       const ctx = extractAuthContext(context.authInfo)
       if (!ctx.roles.includes('hr')) {

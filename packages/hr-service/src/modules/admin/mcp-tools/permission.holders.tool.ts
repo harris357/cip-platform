@@ -26,6 +26,8 @@ export function registerPermissionHolders(server: McpServer): void {
     'Required arg: permission (full code, e.g. "cert.approve"). ' +
     'Differs from role_members (members of a specific ROLE, not a permission).',
     { permission: z.string().min(1) },
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    { requiredPermission: 'employee.list' } as any,
     async ({ permission }, context) => {
       const ctx = extractAuthContext(context.authInfo);
       try {

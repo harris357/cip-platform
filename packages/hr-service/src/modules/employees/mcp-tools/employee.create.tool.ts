@@ -23,6 +23,8 @@ export function registerEmployeeCreate(server: McpServer): void {
       phone:          z.string().min(7).optional(),
       employmentType: z.enum(['employee', 'contractor']).optional(),
     },
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    { requiredPermission: 'employee.create' } as any,
     async (args, context) => {
       const ctx = extractAuthContext(context.authInfo);
       if (!ctx.roles.includes('hr')) {
