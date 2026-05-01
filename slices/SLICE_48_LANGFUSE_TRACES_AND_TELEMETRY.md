@@ -1,6 +1,7 @@
 # Slice 48 — Langfuse graph traces + structured-log telemetry
 
-> **Prerequisite:** Slice 47b deployed (`turnId` plumbed through state + footer + `[turn]` log + `callLLM` metadata). Slice 46 NOT a hard prerequisite, but the order 46 → 48 makes sense because debugging a state-persistence bug is much easier with full graph traces.
+> **Prerequisite:** Slice 47b deployed (`turnId` plumbed through state + footer + `[turn]` log + `callLLM` metadata). Slice 45c deployed (1.x runtime). Slice 46 NOT a hard prerequisite, but the order 46 → 48 makes sense because debugging a state-persistence bug is much easier with full graph traces.
+> **Includes:** the LangGraph 1.x improvement #2 (Langfuse `CallbackHandler`) — Part 1 of this slice IS that improvement.
 > **Package:** `@cip/teams-bot`, `@cip/shared` (callback wrapper if shared across services).
 > **Verify:** A single Teams turn produces ONE Langfuse trace whose ID == the `turnId` shown in the response footer; the trace tree shows every graph node entry/exit + every LLM call as nested spans; the structured `[turn]` log lines flow into a queryable surface.
 

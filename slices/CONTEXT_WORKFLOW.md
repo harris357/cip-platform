@@ -101,37 +101,56 @@ PENDING:    42A ──► 42C ──► 42B
   permission count. Pod ~30% smaller. `lg.default_engine` tunable
   retained as no-op (unused; bot always runs LangGraph).
 
-### Drafted, not yet shipped
+### Shipped (recent)
 
-All four below have full slice docs and are ready to implement. Hard
-order: **45c → 46 → 48 → 49**. (Original Slices 49 and 50 have been
-merged into the new Slice 49 — see archive note below.)
-
-- **Slice 45c** — LangChain/LangGraph 1.x + openai 6.x upgrade.
-  Pure dependency bump + breakage fixes. Installs
-  `@langchain/langgraph-checkpoint-postgres@^1.0.1` (used by 46 + 49).
-  Bumps `@langchain/langgraph` 0.2 → 1.2, `@langchain/core` 0.3 → 1.x,
-  `@langchain/openai` 0.4 → 1.x, `openai` 4 → 6. No new graph nodes,
-  no new tunables, no new tables. Verifies Langfuse generations still
-  appear after the major-version jumps.
+- **Slice 45c** — LangChain/LangGraph 1.x + openai 6.x upgrade
+  (shipped 2026-05-01 in commit `fbf957b`). Bumped LangGraph 0.2 → 1.2,
+  core 0.3 → 1.1, openai 4 → 6. Installed
+  `@langchain/langgraph-checkpoint-postgres@^1.0.1` (reused in 46 + 49).
   See `slices/SLICE_45C_DEPENDENCY_UPGRADE.md`.
 
-- **Slice 46** — Durable LangGraph state + LLM summarization.
-  `MemorySaver` → `PostgresSaver` (multi-replica, restart-safe).
-  `summarize` node compresses older messages once `messages.length >
-  lg.summarize_at` (default 12). Three new tunables seeded.
+- **Slice 46** — Durable LangGraph state + LLM summarization
+  (shipped 2026-05-01 in commit `fbf957b`). `PostgresSaver` replaces
+  `MemorySaver`; `summarize` node compresses older messages once
+  `messages.length > lg.summarize_at` (default 12). Three new tunables
+  seeded. `DATABASE_URL_HR` wired into `teams-bot-credentials`.
   See `slices/SLICE_46_DURABLE_LANGGRAPH_STATE.md`.
+
+### Drafted, not yet shipped
+
+All seven below have full slice docs and are ready to implement.
+Recommended order: **45d → 46b → 46c → 48 → 49 → 51 → 52**.
+
+- **Slice 45d** — Temporal SDK 1.16 → 1.17 routine bump.
+  Standalone bump because workflow code is replay-sensitive — must land
+  in isolation. Four `@temporalio/*` packages move together; verify
+  with end-to-end smoke test of the disable-employee flow.
+  See `slices/SLICE_45D_TEMPORAL_BUMP.md`.
+
+- **Slice 46b** — Native `interrupt()` for write-action confirmation.
+  Replaces the hand-rolled `pendingWriteCall` + ingest-resume pattern
+  with LangGraph 1.x's first-class `interrupt()` + `Command({resume})`.
+  Removes ~80 lines, kills a confusing dual-path through `ingest`,
+  puts affirm/cancel logic inside `confirm` where it belongs.
+  No state-shape additions; pure simplification.
+  See `slices/SLICE_46B_NATIVE_INTERRUPT.md`.
+
+- **Slice 46c** — Checkpoint hygiene: ephemeral `candidateTools` +
+  retention cron. Custom serde dumps `candidateTools` as `null` so
+  mid-turn checkpoints stay small. Nightly `CronJob` keeps the latest
+  checkpoint per thread plus 24h history; everything else cleared.
+  Prevents `checkpoint_blobs` from growing without bound.
+  See `slices/SLICE_46C_CHECKPOINT_HYGIENE.md`.
 
 - **Slice 48** — Langfuse graph traces + structured-log telemetry.
   Two parts that share the `turnId` join key:
   1. Wire `@langfuse/langchain` `CallbackHandler` into the LangGraph
      runner so every node + every LLM call shows up as nested spans in
-     a single per-turn trace tree. Pasting `turn=<id>` from a Teams
-     footer jumps straight to the trace.
+     a single per-turn trace tree.
   2. Aggregate `[turn]` log lines into a `bot_turn_metrics` Postgres
-     table + Grafana dashboard. Wrong-tool rate, clarification rate,
-     confirmation rate, step-count distribution, p50/p95 latency.
+     table + Grafana dashboard.
 
+  Telemetry from this slice is the gating signal for Slice 52.
   See `slices/SLICE_48_LANGFUSE_TRACES_AND_TELEMETRY.md`.
 
 - **Slice 49 (merged)** — Bot memory (factual + semantic) via LangGraph
@@ -139,14 +158,25 @@ merged into the new Slice 49 — see archive note below.)
   `[tenantId, employeeId, "facts"]` for keyed prefs/notes, and
   `[tenantId, employeeId, "convo"]` for embedded conversation snippets.
   `loadMemory` node hydrates both before `triage`. `extractMemory` runs
-  AFTER `respond` (off the user-facing critical path) — single nemo LLM
-  call produces both keyed facts and embedded snippets. `set_user_preference`
+  AFTER `respond` (off the user-facing critical path). `set_user_preference`
   MCP tool for explicit user intent. Convo retrieval is OFF by default
   (`lg.memory_convo_enabled = false`) until Slice 48 telemetry justifies
-  it. Tenant isolation via namespace prefixing (no DB-level RLS — see
-  hard rules). Replaces the original Slice 49 (factual) + Slice 50
-  (vector) — those drafts are archived as superseded.
+  it. Replaces the original Slice 49 + Slice 50 drafts (archived).
   See `slices/SLICE_49_BOT_MEMORY.md`.
+
+- **Slice 51** — LangGraph Studio for local dev visualization.
+  Dev-only tooling. `langgraph.json` + `studio-entry.ts` stub +
+  `pnpm studio` script. No production behavior change. Studio
+  connects to a separate `cip_hr_studio` local DB; never points at
+  production.
+  See `slices/SLICE_51_LANGGRAPH_STUDIO.md`.
+
+- **Slice 52** — Streaming partial responses to Teams. **GATED on
+  Slice 48 telemetry** — only ship if p95 turn latency proves to
+  warrant the perceived-latency win. Default mode `typing` (just the
+  indicator); optional `progress` mode for tool-loop turns. Per-tenant
+  kill switch via `lg.streaming_mode = 'none'`.
+  See `slices/SLICE_52_TEAMS_STREAMING.md`.
 
 ### Proposed (not yet drafted)
 
