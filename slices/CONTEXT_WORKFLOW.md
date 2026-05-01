@@ -103,56 +103,55 @@ PENDING:    42A ──► 42C ──► 42B
 
 ### Drafted, not yet shipped
 
-- **Slice 46** — Durable LangGraph state. Replaces in-process
-  MemorySaver with PostgresSaver (multi-replica, restart-safe). Adds
-  LLM-driven `summarize` node (compresses older messages once
-  `messages.length > lg.summarize_at`, default 12). Persists per-thread
-  engine override in a new `bot_engine_overrides` table so `/lg on`
-  survives pod restarts. Three new tunables seeded.
-  See `slices/SLICE_46_DURABLE_LANGGRAPH_STATE.md`.
+All four below have full slice docs and are ready to implement. Suggested
+order is the numbering: 46 → 48 → 49 → 50, but only 49 → 50 has a hard
+prerequisite (Slice 50's extractor reuses Slice 49's pattern).
+
+- **Slice 46** — Durable LangGraph state + LLM summarization.
+  `MemorySaver` → `PostgresSaver` (multi-replica, restart-safe).
+  `summarize` node compresses older messages once `messages.length >
+  lg.summarize_at` (default 12). Three new tunables seeded. **Revised
+  2026-05-01:** the previous draft included a persisted-engine-override
+  component; Slice 47b removed the toggle entirely so that piece is
+  dropped. See `slices/SLICE_46_DURABLE_LANGGRAPH_STATE.md`.
+
+- **Slice 48** — Langfuse graph traces + structured-log telemetry.
+  Two parts that share the `turnId` join key:
+  1. Wire `@langfuse/langchain` `CallbackHandler` into the LangGraph
+     runner so every node + every LLM call shows up as nested spans in
+     a single per-turn trace tree. Pasting `turn=<id>` from a Teams
+     footer jumps straight to the trace.
+  2. Aggregate `[turn]` log lines into a `bot_turn_metrics` Postgres
+     table + Grafana dashboard. Wrong-tool rate, clarification rate,
+     confirmation rate, step-count distribution, p50/p95 latency.
+
+  See `slices/SLICE_48_LANGFUSE_TRACES_AND_TELEMETRY.md`.
+
+- **Slice 49** — Long-term factual memory across threads. New
+  `bot_memory` table keyed `(tenant_id, employee_id, key)`. Hydrated
+  into a new `state.memory` field via a `loadMemory` node before
+  `triage`. Two write paths: a post-turn `extractMemory` LLM call (cheap
+  nemo) producing keyed facts at confidence ≥ 0.7, and a `set_user_preference`
+  MCP tool for explicit user intent. Planner prompt gains a "What we
+  know about you" markdown block. Three new tunables, kill-switch,
+  per-user opt-out. Keyed lookup only — semantic recall is Slice 50.
+  See `slices/SLICE_49_LONG_TERM_FACTUAL_MEMORY.md`.
+
+- **Slice 50** — Vector retrieval over past conversations. New
+  `bot_conversation_memory` pgvector table (1024-dim, mistral-embed,
+  no HNSW per Slice 44 lesson). Post-turn extractor produces narrative
+  summaries; per-turn `loadConversationMemory` node embeds the latest
+  user message and pgvector-searches scoped to the calling user. Top-K
+  injected as "Relevant from past conversations" block in the planner
+  prompt. Off by default (`lg.conversation_memory_enabled = false`)
+  until production data justifies enabling. Heavy lift — should ship
+  LAST and only after telemetry shows users actually ask cross-thread
+  semantic recall questions.
+  See `slices/SLICE_50_VECTOR_CONVERSATION_MEMORY.md`.
 
 ### Proposed (not yet drafted)
 
-- **Slice 48** — Telemetry: Langfuse graph traces + dashboard.
-  Two parts:
-  1. **Wire LangChain's Langfuse callback handler into the LangGraph
-     runner** so every node entry/exit shows up as a span in the
-     Langfuse trace tree alongside our LLM calls. Each turn becomes
-     ONE Langfuse trace with the per-turn `turnId` (already plumbed
-     in Slice 47b) as the trace_id. Pasting `turn=<id>` from the
-     footer jumps straight to the full graph trace.
-     — Implementation: ~50 lines. Add `@langfuse/langchain` package,
-     instantiate the `CallbackHandler`, pass via `config.callbacks`
-     in `graph.invoke`. The handler picks up the `turn=<id>` from
-     metadata we already pass to `callLLM`.
-  2. **Aggregate structured `[turn]` log lines** (engine, intent,
-     tools attempted, blocked, refused, step count, clarification
-     rate, confirmation rate, per-stage latency) into a queryable
-     surface for tuning + regression detection. Likely Grafana over
-     Loki/Postgres.
-
-  Together these give us: (a) per-turn drill-down via Langfuse for
-  individual debug sessions, (b) aggregate views for tuning. Both
-  driven by the same `turnId`. (See `slices/LANGGRAPH_ARCHITECTURE.md`
-  for the trace-correlation plan.)
-- **Slice 49** — Long-term factual memory across threads. New
-  `bot_memory` table keyed `(tenant_id, employee_id, key)` for
-  user-specific facts (preferences, last actions, durable state).
-  Loaded into LangGraph state at turn start; populated by tools or a
-  post-turn extractor. No vector — keyed lookups only.
-- **Slice 50** — Vector retrieval over past conversations. Post-turn
-  extraction pipeline distills durable facts from each thread, embeds
-  via `cip-embed`, stores in a new `bot_conversation_memory` table or
-  reuses `agent_memory_vectors`. Per-turn semantic search injects
-  relevant memories into the planner prompt. Heavy lift — wait until
-  we see actual usage demand.
-
-### Removing the legacy pipeline
-
-Gated on 2+ weeks of LangGraph toggle traffic with no regressions vs
-legacy. After Slice 46 ships and we have at least one tenant defaulted
-to `langgraph` in `bot_tunables`, we'll have data. Until then, both
-runtimes coexist.
+(None currently — all proposed slices have draft docs.)
 
 #### Earlier upcoming slices (legacy, may already be obsolete)
 
