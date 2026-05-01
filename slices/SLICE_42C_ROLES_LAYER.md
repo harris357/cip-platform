@@ -91,7 +91,11 @@ packages/hr-service/src/
   modules/admin/mcp-tools/
     role.list.tool.ts                         ← NEW: list roles in calling user's tenant
     role.get.tool.ts                          ← NEW: details for a role (groups + flattened permissions)
+    role.members.tool.ts                      ← NEW: who has this role?
     group.list.tool.ts                        ← NEW: list permission_groups in tenant (advanced)
+    group.get.tool.ts                         ← NEW: group detail (which roles use it + permissions granted)
+    permission.holders.tool.ts                ← NEW: who can do X? (cuts across layers + globs)
+    audit-log.list.tool.ts                    ← NEW: query hr_actions for compliance / history
 
 packages/platform-core/src/
   activities/
@@ -458,9 +462,104 @@ server.tool(
 );
 ```
 
+### `role_members` (admin module)
+
+Reverse query: who has this role?
+
+```typescript
+server.tool(
+  'role_members',
+  'List employees assigned a given role.',
+  { code: z.string().min(1) },
+  { requiredPermission: 'employee.list' } as any,
+  async ({ code }, context) => {
+    const ctx = extractAuthContext(context.authInfo);
+    const role = await findRoleByCode(client, ctx.tenantId, code);
+    if (!role) return refused('not_found', `role '${code}' not found`);
+    const members = await listEmployeesForRole(client, role.id);
+    return ok({ role: role.code, members, total: members.length });
+  },
+);
+```
+
+### `group_get` (admin module)
+
+Drill into a group — its permissions and which roles include it (impact analysis):
+
+```typescript
+server.tool(
+  'group_get',
+  'Get a permission group\'s detail: permissions + which roles include it.',
+  { code: z.string().min(1), module: z.string().min(1) },
+  { requiredPermission: 'employee.list' } as any,
+  async ({ code, module }, context) => {
+    const ctx = extractAuthContext(context.authInfo);
+    const group = await findGroupByCode(client, ctx.tenantId, module, code);
+    if (!group) return refused('not_found', `group '${code}' in module '${module}' not found`);
+    const expanded = await expandGroupPermissions(client, group);  // glob-expand against catalog
+    const usedByRoles = await listRolesContainingGroup(client, group.id);
+    return ok({ group, permissions: expanded, usedByRoles });
+  },
+);
+```
+
+### `permission_holders` (admin module)
+
+Compliance question: who can do this specific thing?
+
+```typescript
+server.tool(
+  'permission_holders',
+  'List employees holding a specific permission (literal match + glob expansion).',
+  { permission: z.string().min(1) },     // e.g., 'cert.approve'
+  { requiredPermission: 'employee.list' } as any,
+  async ({ permission }, context) => {
+    const ctx = extractAuthContext(context.authInfo);
+    // Find every employee whose role chain yields this permission. Match
+    // literals OR globs that cover it: 'cert.approve' is held by anyone
+    // with 'cert.approve' OR 'cert.*' OR '*' in their group's permissions.
+    const holders = await listEmployeesWithPermission(client, ctx.tenantId, permission);
+    return ok({ permission, holders, total: holders.length });
+  },
+);
+```
+
+The matching SQL (sketch): expand each role's groups' permissions JSONB into rows,
+match literals + glob patterns covering the queried permission. ~15-line query.
+
+### `audit_log_list` (admin module)
+
+Query `hr_actions` (Slice 32) for compliance / history:
+
+```typescript
+server.tool(
+  'audit_log_list',
+  'List recent HR audit events. Filter by actor, target, action type, time range.',
+  {
+    actorEmployeeId:  z.string().uuid().optional(),
+    targetEmployeeId: z.string().uuid().optional(),
+    actionType:       z.string().optional(),    // 'employee.assign_role', 'employee.grant_permission', etc.
+    sinceIso:         z.string().datetime().optional(),
+    limit:            z.number().int().min(1).max(500).default(100),
+  },
+  { requiredPermission: 'employee.list' } as any,
+  async (args, context) => {
+    const ctx = extractAuthContext(context.authInfo);
+    const rows = await listHrActions(client, ctx.tenantId, args);
+    return ok({ events: rows, total: rows.length, filters: args });
+  },
+);
+```
+
+Today the `hr_actions` table is write-only (every grant/revoke/assign writes a row via `recordHrAction`); this surfaces the read side. Critical for compliance ("show every admin grant in the last 30 days"), incident response ("who revoked Bob's access?"), and verification post-Slice-42B ("did the auto-elevation actually fire?").
+
+---
+
 Together with the existing `employee.list`, `employee.find`, `employee.create`,
 `employee.disable`, `employee.grant_permission`, and `employee.revoke_permission`
-tools, an admin can now manage users end-to-end via natural-language commands.
+tools, an admin can now manage users end-to-end via natural-language commands —
+plus the four reverse-query / audit tools above answer compliance questions
+without anyone hand-writing SQL.
 
 ### `employee.grant-permission.tool.ts`
 
@@ -537,9 +636,13 @@ The activity now creates tenant-scoped roles + module groups for new tenants. Th
 - [ ] **Admin management MCP tools work end-to-end** for an HR-permitted user:
   - `role_list` returns every role in the tenant with `groupCount` populated
   - `role_get { code: 'hr_standard' }` returns its groups (split per module from 42A migration) and flattened permissions
+  - `role_members { code: 'hr_standard' }` returns the employees assigned that role
   - `group_list { module: 'cert' }` returns only cert-module groups
+  - `group_get { code, module }` returns a group's permissions + which roles include it
   - `employee_get { employeeId }` returns the target employee's roles + flattened permissions
-- [ ] All four management tools refuse callers without `employee.list` (or `employee.find` for `employee_get`) permission.
+  - `permission_holders { permission: 'cert.approve' }` returns employees holding that permission, including those who only get it via a `cert.*` or `*` glob (not just literal `cert.approve`)
+  - `audit_log_list` returns recent hr_actions, filterable by actor / target / action type / since
+- [ ] All eight management tools refuse callers without the appropriate permission gate (`employee.list` for most, `employee.find` for `employee_get`).
 - [ ] `pnpm -r run typecheck` passes.
 
 ---
