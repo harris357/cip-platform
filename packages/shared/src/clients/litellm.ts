@@ -51,10 +51,30 @@ export async function callLLM(
       Object.entries(extraMeta ?? {}).map(([k, v]) => [k, String(v)]),
     ),
   };
-  return client.chat.completions.create({
+  const resp = await client.chat.completions.create({
     ...rest,
     metadata,
   });
+
+  // Slice 46c part 5: prompt-cache visibility. Mistral's automatic prompt
+  // caching surfaces `prompt_tokens_details.cached_tokens` in the response
+  // when the prefix matched a recent call (typical TTL ~5 min). Log when
+  // a hit fires so we can grep cache effectiveness, and so Langfuse's
+  // built-in usage view shows the savings.
+  // Verification path noted in slice doc — if LiteLLM doesn't surface
+  // this for Mistral, we'll see no [llm-cache] lines and adapt.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const usage = resp.usage as any;
+  const cachedTokens = usage?.prompt_tokens_details?.cached_tokens ?? 0;
+  if (cachedTokens > 0) {
+    const totalPrompt = usage?.prompt_tokens ?? 0;
+    const ratio = totalPrompt > 0 ? (cachedTokens / totalPrompt).toFixed(2) : '0.00';
+    console.log(
+      `[llm-cache] purpose=${purpose} cached_tokens=${cachedTokens} ` +
+      `total_prompt_tokens=${totalPrompt} hit_ratio=${ratio}`,
+    );
+  }
+  return resp;
 }
 
 /**

@@ -116,6 +116,14 @@ export function buildGraph(ctx: BotAuthContext) {
 
   return graph.compile({
     checkpointer,
+    // Slice 46c part 4: async checkpoint writes are the LG 1.x default
+    // (PregelOptions.durability = "async") — we get the ~100ms-per-turn
+    // win for free post-Slice-45c. The confirm-resume safety is
+    // preserved because interrupt() (Slice 46b) forces a synchronous
+    // write at the suspension point regardless of the runtime flag.
+    // No durability override needed; if a future LG version flips the
+    // default, set it explicitly on graph.invoke() in runner.ts.
+    //
     // Slice 46b: confirmNode calls interrupt() to suspend at the confirm
     // gate. The checkpoint captures the suspension point automatically.
     // runner detects the suspension via getState().tasks[*].interrupts

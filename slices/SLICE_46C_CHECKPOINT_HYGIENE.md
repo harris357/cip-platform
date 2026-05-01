@@ -1,5 +1,6 @@
 # Slice 46c — LangGraph 1.x performance + checkpoint hygiene
 
+> **Implementation status (2026-05-01):** Parts 3, 4, 5 shipped together as the "perf core" of this slice. Parts 1 (ephemeral `candidateTools`) and 2 (retention cron) deferred to **Slice 46d** because (a) Annotation.Root in LG 1.x doesn't expose serde overrides — the proper `UntrackedValue` primitive lives in the new state-schema system and requires a non-trivial migration, and (b) the cron is a separate build path (helm CronJob + container script). Both are still wanted; both are tracked.
 > **Prerequisite:** Slice 46 deployed (PostgresSaver in production). **Slice 46b is now a HARD prerequisite** — Part 4 (async checkpointer durability) is unsafe without native `interrupt()`. Recommended order is 46 → 46b → 46c.
 > **Package:** `@cip/teams-bot`, `@cip/hr-service` (cron CronJob).
 > **Verify:** `checkpoint_blobs` row count + size growth tracked over a week. Mid-turn checkpoints no longer carry the candidateTools array. Retention cron deletes stale checkpoints without affecting any active thread. Per-turn p50 graph time drops by ~500-900ms (parallel tool exec + async durability) without regressing correctness; Langfuse spans show prompt-cache hits on iteration ≥ 2 of `plan`.
@@ -194,18 +195,13 @@ Hard rules:
 
 ## Part 4: Async checkpointer durability
 
-```ts
-// packages/teams-bot/src/langgraph/graph.ts (one-line change)
-return graph.compile({
-  checkpointer,
-  durability: 'async',
-});
-```
+**Discovery during implementation:** `durability` is a `PregelOptions` (i.e., an `invoke()` option), NOT a `compile()` option. **And the default in LG 1.x is already `"async"`** (`PregelOptions.durability` defaults to `"async"`). So we got this win for free post-Slice-45c — no code change required.
 
-Hard rules:
-- **Slice 46b MUST be live first.** Native `interrupt()` issues a synchronous checkpoint at the suspension point regardless of the graph-level `durability` setting; without it, our hand-rolled `pendingWriteCall` pattern races with async writes and can lose the confirm state on pod death.
+Confirmed at impl time by attempting `graph.compile({ durability: "async" })` and seeing the typecheck reject the unknown property. Reverted; documented the inheritance in graph.ts so a future LG version flipping the default would be a known-deliberate change.
+
+Hard rules (still apply, just no code to write):
+- **Slice 46b MUST be live first.** Native `interrupt()` issues a synchronous checkpoint at the suspension point regardless of the runtime `durability` flag; without it, our hand-rolled `pendingWriteCall` pattern would race with async writes and could lose the confirm state on pod death. (46b is shipped before this slice.)
 - **Verify against pod-restart smoke test.** Same tests as 46b — start a confirm, restart the pod, reply "yes" — must still work end-to-end.
-- **Document the failure mode** in the graph.ts comment: "async durability — last-checkpoint loss on pod death is acceptable for non-suspend transitions because the next user message will reset to ingest with the persisted thread state from before the lost write."
 
 ## Part 5: Prompt-cache visibility
 
