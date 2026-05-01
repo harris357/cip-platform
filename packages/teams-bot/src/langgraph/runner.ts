@@ -5,11 +5,21 @@
 // thread_id as the checkpointer key, and sends the resulting AIMessage
 // to Teams.
 
+import { randomUUID } from 'node:crypto';
 import { TurnContext } from '@microsoft/agents-hosting';
 import { AIMessage } from '@langchain/core/messages';
 import { buildGraph } from './graph.js';
 import { sendResponseTime } from '../intent/debug-banner.js';
 import type { BotAuthContext } from '../auth/resolve-context.js';
+
+/**
+ * Short turn identifier for log/footer correlation. 8-char hex slice of
+ * a UUID — enough entropy to be unique within a window, short enough to
+ * paste back when reporting an issue.
+ */
+function newTurnId(): string {
+  return randomUUID().replace(/-/g, '').slice(0, 8);
+}
 
 export async function runLangGraph(args: {
   context:  TurnContext;
@@ -19,6 +29,7 @@ export async function runLangGraph(args: {
   tStart:   number;
 }): Promise<void> {
   const { context, ctx, threadId, text, tStart } = args;
+  const turnId = newTurnId();
 
   const graph = buildGraph(ctx);
 
@@ -31,6 +42,7 @@ export async function runLangGraph(args: {
       permissions:     ctx.permissions,
       roles:           ctx.roles ?? [],
       latestUserText:  text,
+      turnId,
       // candidateTools intentionally NOT passed — discover node hydrates
       // it. Same for messages — checkpointer carries them from prior turns.
     },
@@ -74,11 +86,13 @@ export async function runLangGraph(args: {
     classifierFell:  false,
     intent:          `langgraph:${intent}`,
     routeMs:         tDone - tInvoke,
+    turnId,
   });
 
-  // Structured turn log.
+  // Structured turn log — turn= prefix lets a user paste the ID back
+  // and we can grep/locate the exact turn + correlated Langfuse traces.
   console.log(
-    `[turn] engine=langgraph tenantId=${ctx.tenantId} threadId=${threadId} ` +
+    `[turn] turn=${turnId} engine=langgraph tenantId=${ctx.tenantId} threadId=${threadId} ` +
     `intent=${intent} ` +
     `toolsAttempted=[${tools.join(',')}] ` +
     `stepCount=${result.stepCount ?? 0} ` +

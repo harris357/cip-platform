@@ -110,6 +110,18 @@ export const StateAnnotation = Annotation.Root({
     reducer: (_prev, next) => next,
     default: () => '',
   }),
+
+  /**
+   * Per-turn unique identifier. Generated at runner entry, threaded
+   * into every LLM call's Langfuse metadata as `trace_id`, surfaced
+   * in the response footer + [turn] log line. Lets a user reference
+   * a specific turn in support / debugging — they can paste the ID
+   * and we can find the corresponding trace + log lines.
+   */
+  turnId:          Annotation<string>({
+    reducer: (_prev, next) => next,
+    default: () => '',
+  }),
 });
 
 export type State = typeof StateAnnotation.State;

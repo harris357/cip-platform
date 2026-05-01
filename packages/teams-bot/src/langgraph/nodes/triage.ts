@@ -50,14 +50,20 @@ export function makeTriageNode(ctx: BotAuthContext) {
 
       const resp = await callLLM(client, {
         model: alias,
-        messages: [{
-          role: 'system',
-          content: prompt.compile({
-            recent,
-            summary: state.summary,
-            latest:  state.latestUserText,
-          }),
-        }],
+        // Mistral rejects single-message (system-only) conversations with
+        // 400 "Conversation must have at least one message". Always include
+        // the user's latest text as a user turn alongside the system prompt.
+        messages: [
+          {
+            role: 'system',
+            content: prompt.compile({
+              recent,
+              summary: state.summary,
+              latest:  state.latestUserText,
+            }),
+          },
+          { role: 'user', content: state.latestUserText },
+        ],
         response_format: { type: 'json_object' },
         temperature:     0,
         max_tokens:      512,

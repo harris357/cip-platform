@@ -22,6 +22,10 @@ export interface ResponseTimeDetail {
   classifyMs?:      number;
   routeMs?:         number;
   execMs?:          number;
+  /** Slice 47c: per-turn correlation ID. Surfaced in footer so users can paste
+   *  it back when reporting an issue; we then grep [turn] log lines for
+   *  `turn=<id>` and find correlated Langfuse traces by the same trace_id. */
+  turnId?:          string;
 }
 
 const fmtSeconds = (ms?: number): string => ms === undefined ? '?' : `${(ms / 1000).toFixed(2)}s`;
@@ -71,6 +75,8 @@ export async function sendResponseTime(
   }
   const pipeline = pipelineParts.length > 0 ? ` · ${pipelineParts.join(' → ')}` : '';
 
-  await context.sendActivity(`_⏱ ${seconds}s${timings}${intent}${pipeline}_`);
+  const turn = detail?.turnId ? ` · turn=\`${detail.turnId}\`` : '';
+
+  await context.sendActivity(`_⏱ ${seconds}s${timings}${intent}${pipeline}${turn}_`);
 }
 

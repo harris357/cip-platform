@@ -77,44 +77,51 @@ data:
           use_for: ["document_understand"]
 
       # ─── HR-service: vision / OCR ────────────────────────────────────────────
+      # Pixtral migration (2026-05-01): pixtral-12b-2409 retires 2025-12-31,
+      # pixtral-large-latest retires 2026-05-31. Migrated per docs guidance:
+      #   pixtral-12b-2409   → ministral-14b-latest (multimodal, mid-tier)
+      #   pixtral-large-2411 → mistral-large-latest (multimodal, top-tier)
+      # Mistral also publishes a dedicated `mistral-ocr-latest` model that
+      # may be cheaper / more focused for OCR-only paths — worth A/Bing
+      # against mistral-large-latest in a future tuning slice.
       - model_name: cip-vision
         litellm_params:
-          model: mistral/pixtral-12b-2409
+          model: mistral/ministral-14b-latest
           api_key: os.environ/MISTRAL_API_KEY
         model_info:
-          description: "Legacy vision-agent extraction. Cheapest pixtral option."
+          description: "Legacy vision-agent extraction (post-pixtral migration). Multimodal, mid-tier."
           use_for: ["vision_extract"]
 
       - model_name: cip-ocr-document
         litellm_params:
-          model: mistral/pixtral-large-latest
+          model: mistral/mistral-large-latest
           api_key: os.environ/MISTRAL_API_KEY
         model_info:
-          description: "Full document OCR — quality-critical compliance docs."
+          description: "Full document OCR — quality-critical compliance docs. Mistral Large 3 multimodal."
           use_for: ["ocr_document"]
 
       - model_name: cip-ocr-document-small
         litellm_params:
-          model: mistral/pixtral-12b-2409
+          model: mistral/ministral-14b-latest
           api_key: os.environ/MISTRAL_API_KEY
         model_info:
-          description: "Draft / preview document OCR. Cheap path."
+          description: "Draft / preview document OCR. Cheap path. Ministral 3 14B multimodal."
           use_for: ["ocr_document_small"]
 
       - model_name: cip-ocr-image
         litellm_params:
-          model: mistral/pixtral-large-latest
+          model: mistral/mistral-large-latest
           api_key: os.environ/MISTRAL_API_KEY
         model_info:
-          description: "Photo of physical certificate — needs OCR + reasoning."
+          description: "Photo of physical certificate — needs OCR + reasoning. Mistral Large 3 multimodal."
           use_for: ["ocr_image"]
 
       - model_name: cip-ocr-image-small
         litellm_params:
-          model: mistral/pixtral-12b-2409
+          model: mistral/ministral-14b-latest
           api_key: os.environ/MISTRAL_API_KEY
         model_info:
-          description: "Thumbnail / quick triage image OCR."
+          description: "Thumbnail / quick triage image OCR. Ministral 3 14B multimodal."
           use_for: ["ocr_image_small"]
 
     general_settings:
