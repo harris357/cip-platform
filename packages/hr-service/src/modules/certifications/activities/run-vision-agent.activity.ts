@@ -15,6 +15,11 @@ export async function runVisionAgentActivity(
   input: RunVisionAgentInput,
 ): Promise<ExtractionResult> {
   const info = activityInfo();
+  // Temporal SDK 1.17 typed workflowExecution as optional; in practice an
+  // activity always runs inside a workflow, so missing it is a runtime bug.
+  if (!info.workflowExecution) {
+    throw new Error('runVisionAgentActivity: missing workflowExecution context');
+  }
 
   const raw = await runVisionAgent({
     tenantId:        input.tenantId,
