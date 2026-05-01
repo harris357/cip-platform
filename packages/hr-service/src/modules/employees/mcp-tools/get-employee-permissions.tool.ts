@@ -46,9 +46,22 @@ export function registerGetEmployeePermissions(server: McpServer): void {
           getRoleCodesForEmployee(client, employee.id),
         ])
         await client.query('COMMIT')
+        // Render a user-facing message that lists the actual roles + permissions,
+        // not just counts. The bot's card-renderer sends `message` directly to
+        // Teams without LLM post-processing, so the summary needs to BE the
+        // useful answer, not a stat.
+        const rolesLine = roles.length > 0
+          ? roles.map(r => `\`${r}\``).join(', ')
+          : '_(none)_'
+        const permsList = permissions.length > 0
+          ? permissions.map(p => `\`${p}\``).join(', ')
+          : '_(none)_'
+        const userMessage =
+          `You have **${roles.length}** role(s): ${rolesLine}\n\n` +
+          `**${permissions.length}** permission(s): ${permsList}`
         const response: McpModuleResponse<{ permissions: string[]; roles: string[] }> = {
           data: { permissions, roles },
-          message: `${roles.length} role(s), ${permissions.length} permission(s).`,
+          message: userMessage,
         }
         return { content: [{ type: 'text' as const, text: JSON.stringify(response) }] }
       } catch (err) {
