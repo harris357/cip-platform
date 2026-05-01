@@ -1438,3 +1438,155 @@ outside this slice.
 Commit: slice(36): multi-tenant bot — AAD tenant resolution + per-realm KC secrets
 ```
 
+---
+
+## PROMPT Slice 43 — Remove the hardcoded category layer
+
+```
+You are working on the CIP Platform TypeScript monorepo.
+
+Session: Slice 43 — Remove the hardcoded category layer
+Package: @cip/teams-bot, @cip/shared, @cip/hr-service
+Verify: pnpm --filter @cip/teams-bot typecheck
+        pnpm --filter @cip/shared typecheck
+        pnpm --filter @cip/hr-service typecheck
+
+Prerequisite: Slice 39B + 41 deployed. Bot is on b240cb8 (post-crash-fix).
+
+Read before writing:
+- CLAUDE.md
+- slices/SLICE_43_REMOVE_CATEGORY_LAYER.md   (this slice's full spec)
+- slices/CROSS_SLICE_NOTES.md
+- packages/teams-bot/src/intent/tool-categories.ts  (heavy delete)
+- packages/teams-bot/src/intent/classifier.ts
+- packages/teams-bot/src/intent/router.ts
+- packages/teams-bot/src/bot.ts
+- packages/shared/src/clients/prompts/bot-intent-classify.ts
+- packages/shared/src/clients/prompts/index.ts
+- packages/teams-bot/src/mcp/tool-discovery.ts
+- One sample MCP tool registration per module (cert/employee/admin/compliance) to inform the description sweep
+
+Goal: collapse the six-label intent enum to three (chitchat/meta/proceed),
+delete the per-category Stage-2 tool maps and aliases, restore an
+LLM-composed meta reply via a dedicated meta_compose call, sweep every
+hr-service tool description to the scope/audience/output shape with
+requiredPermission annotations, and fix the discoverTools cache key
+bug (was tenant-keyed → must be tenant+user).
+
+Files to create:
+- packages/teams-bot/src/intent/meta-compose.ts
+- packages/shared/src/clients/prompts/bot-meta-compose.ts
+- packages/hr-service/src/db/migrations/014_routing_rules_collapse.sql
+
+Files to modify:
+- packages/teams-bot/src/intent/tool-categories.ts  (delete most; keep 3-intent enum + availableIntents helper)
+- packages/teams-bot/src/intent/classifier.ts       (3-label schema; resilient parse)
+- packages/teams-bot/src/intent/router.ts           (single alias=route, full permitted catalog)
+- packages/teams-bot/src/intent/debug-banner.ts     (rename category → intent)
+- packages/teams-bot/src/intent/alias-resolver.ts   (purpose name updates)
+- packages/teams-bot/src/bot.ts                     (drop filter; meta calls meta_compose)
+- packages/teams-bot/src/mcp/tool-discovery.ts      (cache key includes employeeId)
+- packages/shared/src/clients/prompts/bot-intent-classify.ts  (3-label prompt)
+- packages/shared/src/clients/prompts/index.ts                (register meta-compose)
+- packages/hr-service/src/modules/**/mcp-tools/*.ts  (~30 tools — description + requiredPermission annotation)
+
+Hard rules (Seven Non-Negotiables):
+- tenantId: string (not optional) on every domain interface — unchanged
+- No hand-curated tool registries. Routing decisions derive from MCP
+  tool metadata at runtime
+- Every server.tool() carries requiredPermission annotation (use null
+  explicitly when unrestricted)
+- No @anthropic-ai/sdk imports
+- Stubs forbidden — every function ships with a working body
+- Re-seed Langfuse as part of deploy (bot.intent_classify and the new
+  bot.meta_compose); the seed script is idempotent on no-change
+
+Tool description shape (mandatory): scope + audience + output +
+sibling-disambiguation. Phrasing examples are tiebreakers, not the
+primary lever. See SLICE_43 doc for the role_list reference example.
+
+Acceptance: see "Verification" in SLICE_43_REMOVE_CATEGORY_LAYER.md
+(canonical query smoke tests + cost regression check).
+
+If a finding requires changing earlier slice output: log a cross-slice
+note per slices/CROSS_SLICE_NOTES.md and continue. Do not refactor
+outside this slice.
+
+Commit: slice(43): remove hardcoded category layer; full-catalog function calling
+```
+
+---
+
+## PROMPT Slice 44 — Tool catalog embeddings (vector retrieval pre-filter)
+
+```
+You are working on the CIP Platform TypeScript monorepo.
+
+Session: Slice 44 — Tool catalog embeddings (vector retrieval pre-filter)
+Package: @cip/hr-service, @cip/teams-bot, @cip/shared
+Verify: pnpm --filter @cip/hr-service typecheck
+        pnpm --filter @cip/teams-bot typecheck
+        pnpm --filter @cip/shared typecheck
+
+Prerequisite: Slice 43 complete. Tool descriptions follow the
+scope/audience/output shape; requiredPermission annotations on every
+tool; intent pipeline is chitchat|meta|proceed with single `route` alias.
+
+Read before writing:
+- CLAUDE.md
+- slices/SLICE_44_TOOL_EMBEDDINGS.md           (this slice's full spec)
+- slices/CROSS_SLICE_NOTES.md
+- packages/hr-service/src/db/migrations/003_ai_memory.sql  (pgvector pattern reference — agent_memory_vectors)
+- packages/hr-service/src/services/permission-catalog-seed.ts  (idempotent seed pattern reference)
+- packages/hr-service/src/main.ts             (add seed call)
+- packages/teams-bot/src/mcp/tool-discovery.ts (insert retrieval step)
+- packages/teams-bot/src/bot.ts                (pass message into discoverTools)
+- packages/shared/src/clients/litellm.ts       (add embedding helper if missing)
+
+Goal: add a tool_embeddings table (pgvector, HNSW cosine), an idempotent
+indexer that runs on hr-service startup (re-embeds only on
+description_hash change — zero API calls on no-op restart), and a
+top-K retrieval step in discoverTools (between permission filter and
+router LLM). Embedding via cip-embed alias → mistral-embed.
+
+Files to create:
+- packages/hr-service/src/db/migrations/015_tool_embeddings.sql
+- packages/hr-service/src/services/tool-embeddings-seed.ts
+- packages/teams-bot/src/intent/embed-cache.ts  (LRU 256/60s)
+
+Files to modify:
+- packages/hr-service/src/main.ts                  (call seedToolEmbeddings after seedPermissionCatalog)
+- packages/teams-bot/src/mcp/tool-discovery.ts     (retrieval step + cache stores permission-filtered list, not retrieval result)
+- packages/teams-bot/src/bot.ts                    (pass user message text into discoverTools)
+- packages/shared/src/clients/litellm.ts           (embedding helper if missing)
+
+Hard rules (Seven Non-Negotiables):
+- tool_embeddings is the ONLY table that's not tenant-scoped — tools
+  are defined by service code, not data. Document this in the migration.
+- description_hash MUST be deterministic: sha256(name + ' ' + description
+  + ' ' + JSON.stringify(paramSchema)). Stable across pod restarts.
+- Indexer MUST be idempotent. Re-runs without description changes do
+  zero embedding API calls (verify via the [tool-embeddings] log line).
+- Indexer MUST clean up orphans (tools removed from code) in the same
+  transaction as the upsert pass — partial registry never wipes embeddings.
+- Multi-replica safe: ON CONFLICT (service, tool_name) DO UPDATE
+  WHERE EXCLUDED.description_hash <> tool_embeddings.description_hash
+- discoverTools MUST handle empty tool_embeddings (first deploy before
+  the indexer runs) — fall back to full permission-filtered list silently
+- discoverTools MUST handle empty intersection (no permitted tool ranks
+  in top K) — fall back to full permission-filtered list silently
+- No @anthropic-ai/sdk imports
+- Stubs forbidden — every function ships with a working body
+
+Acceptance: see "Verification" in SLICE_44_TOOL_EMBEDDINGS.md
+(indexer smoke test + retrieval correctness query table + cost/latency
+regression check).
+
+If a finding requires changing earlier slice output: log a cross-slice
+note per slices/CROSS_SLICE_NOTES.md and continue. Do not refactor
+outside this slice.
+
+Commit: slice(44): tool embeddings + vector retrieval pre-filter
+```
+
+---

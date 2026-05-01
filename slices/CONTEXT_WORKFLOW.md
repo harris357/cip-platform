@@ -56,60 +56,35 @@ PENDING:    42A ──► 42C ──► 42B
                        ──► (admin bootstrap via PLATFORM_ADMIN_EMAIL)
 ```
 
+### Shipped
+
+- **Slice 42A / 42B / 42C** — RBAC hierarchy: permission catalog +
+  permission groups (single-module) → roles (cross-module composition)
+  → admin user auto-bootstrap. Eight admin read tools shipped (role_*,
+  group_*, permission_holders, audit_log_list, employee_get).
+  See `slices/archive/SLICE_42A_*.md`, `42B_*.md`, `42C_*.md`.
+- **Slice 43** — Removed the hardcoded category layer. Three intents
+  (chitchat/meta/proceed). Single `route` alias over the full permitted
+  catalog. LLM-composed meta replies via `meta_compose`. Tool
+  descriptions rewritten to scope/audience/output/sibling shape.
+  `discoverTools` cache keyed by tenant+user. See
+  `slices/archive/SLICE_43_REMOVE_CATEGORY_LAYER.md`.
+- **Slice 44** — Tool catalog embeddings + vector retrieval pre-filter
+  via `/admin/tool-retrieval` endpoint. pgvector HNSW + idempotent
+  startup indexer (zero embedding calls on no-op restart). Bot caches
+  retrieval responses by message-text hash. See
+  `slices/archive/SLICE_44_TOOL_EMBEDDINGS.md`.
+
 ### Recommended next order
 
-1. **Slice 42A** — Permission Groups (rename + module + catalog + globs).
-   Renames `roles` → `permission_groups`, adds module column, builds
-   permission catalog, teaches resolver to expand globs. Multi-module
-   rows get `module='general'` as a TRANSITIONAL marker that 42C
-   eliminates. No user-visible behaviour change. ~1 day of work.
-2. **Slice 42C** — Role Layer. Adds `roles` + `role_groups` +
-   `employee_role_assignments` tables. Splits 42A's transitional
-   'general' rows into per-module groups + a composing role each.
-   Migrates employee assignments from groups → roles. Moves
-   `keycloak_role` column from groups to roles. Resolver chains
-   employee → role → groups → permissions. After 42C, every
-   permission_group is single-module. **Admin management MCP tools
-   ship here** — eight read-only tools for discoverability,
-   compliance, and audit: `role_list`, `role_get`, `role_members`,
-   `group_list`, `group_get`, `permission_holders`, `employee_get`,
-   `audit_log_list`. Admins manage users + answer compliance
-   questions without hand-writing SQL. ~1.5–2 days of work.
-3. **Slice 42B** — Admin User Bootstrap. Migration 013 seeds an
-   `hr-service-admin` role per tenant (with 4 glob-permission module-
-   admin groups). Bootstrap.sh + provision-tenant.sh + sync_employee
-   all auto-elevate the email matching `PLATFORM_ADMIN_EMAIL` to the
-   admin role AND grant the `hr` Keycloak realm role. Per-tenant
-   scope, per-tenant trigger. ~1 day of work.
-2. **Slice 39B** — LLM-as-Classifier in the Bot. Adds Stage-1 Mistral Nemo
-   classifier with chitchat/meta inline-reply short-circuit. Stage-2 tool
-   selection on a category-filtered catalog routed through `routing_rules`.
-   Falls back to legacy single-stage routing if the classifier returns
-   malformed JSON. Includes a `BOT_DEBUG_CLASSIFICATION` env-flag debug
-   banner for live visibility. **Superseded by Slice 43** — the category
-   layer is being removed in favour of full-catalog function calling.
+(Open slices live here — none currently. Add the next slice's summary
+when you write its doc.)
 
-3. **Slice 43** — Remove the hardcoded category layer. Collapses the
-   six-label intent enum to three (`chitchat`/`meta`/`proceed`), deletes
-   `TOOLS_FOR_CATEGORY` and the per-category Stage-2 aliases, sweeps
-   every hr-service tool description (scope/audience/output format) and
-   adds `requiredPermission` annotations across the catalog. Single
-   `route` alias (mistral-small-latest) handles function calling over
-   the full permitted tool list. Restores LLM-composed meta replies via
-   a dedicated `meta_compose` alias (open-mistral-nemo). Fixes the
-   `discoverTools` cache key bug (was tenant-keyed, now tenant+user).
-   ~2–3 days of work including the description sweep.
+#### Earlier upcoming slices (legacy, may already be obsolete)
 
-4. **Slice 44** — Tool catalog embeddings (vector retrieval pre-filter).
-   Adds `tool_embeddings` table (pgvector, HNSW cosine), an idempotent
-   indexer that runs on hr-service startup (re-embeds only on
-   `description_hash` change — zero API calls on no-op restart), and a
-   top-K retrieval step in `discoverTools` (between the permission filter
-   and the router LLM). Embedding via `cip-embed` alias → `mistral-embed`.
-   Pre-builds vector retrieval before the catalog hits the ~80-tool
-   threshold where wrong-sibling picks degrade. Doesn't replace
-   permission filtering — adds a candidate-narrowing step. ~1–1.5 days
-   of work (most infra is already in place from agent_memory_vectors).
+- **Slice 39B** — LLM-as-Classifier in the Bot. **Superseded by
+  Slice 43** — the category layer it introduced has been removed in
+  favour of full-catalog function calling.
 
 ---
 
