@@ -70,15 +70,62 @@ PENDING:    42A ──► 42C ──► 42B
   `discoverTools` cache keyed by tenant+user. See
   `slices/archive/SLICE_43_REMOVE_CATEGORY_LAYER.md`.
 - **Slice 44** — Tool catalog embeddings + vector retrieval pre-filter
-  via `/admin/tool-retrieval` endpoint. pgvector HNSW + idempotent
-  startup indexer (zero embedding calls on no-op restart). Bot caches
-  retrieval responses by message-text hash. See
-  `slices/archive/SLICE_44_TOOL_EMBEDDINGS.md`.
+  via `/admin/tool-retrieval` endpoint. pgvector (HNSW dropped — Zen 3
+  doesn't support AVX-512; sequential scan over ~30 rows is sub-ms) +
+  idempotent startup indexer. Bot caches retrieval responses by
+  message-text hash. See `slices/archive/SLICE_44_TOOL_EMBEDDINGS.md`.
+- **Slice 45** — Parallel LangGraph runtime alongside the legacy
+  classifier+router pipeline. Per-thread toggle via `/lg on`. Triage
+  node (cip-classifier) → plan node (cip-router-careful) → tool loop
+  with write-action confirmation gate. `bot_tunables` table with seven
+  seeded global defaults. Capability metadata sweep (~29 tools): added
+  `sideEffectLevel`, `whenToUse[]`, `whenNotToUse[]`,
+  `commonNextTools[]`, `outputSchema` to every tool annotation.
+  In-process MemorySaver checkpointer. Default engine: `legacy`.
+  See `slices/archive/SLICE_45_LANGGRAPH_PARALLEL_RUNTIME.md`.
 
-### Recommended next order
+### Drafted, not yet shipped
 
-(Open slices live here — none currently. Add the next slice's summary
-when you write its doc.)
+- **Slice 46** — Durable LangGraph state. Replaces in-process
+  MemorySaver with PostgresSaver (multi-replica, restart-safe). Adds
+  LLM-driven `summarize` node (compresses older messages once
+  `messages.length > lg.summarize_at`, default 12). Persists per-thread
+  engine override in a new `bot_engine_overrides` table so `/lg on`
+  survives pod restarts. Three new tunables seeded.
+  See `slices/SLICE_46_DURABLE_LANGGRAPH_STATE.md`.
+- **Slice 47** — Role-aware slash commands + `suggestedActions` chips.
+  Slash command registry replaces inline `/lg` handling. `/help` filters
+  the registry by caller permissions and renders a markdown menu.
+  Welcome message gains permission-filtered chips. Manifest
+  `commandLists` updated with universal slashes only; admin commands
+  surface only via role-filtered `/help`.
+  See `slices/SLICE_47_SLASH_COMMANDS_AND_SUGGESTED_ACTIONS.md`.
+
+### Proposed (not yet drafted)
+
+- **Slice 48** — Telemetry dashboard for both runtimes. Aggregates the
+  structured `[turn]` log lines (engine, intent, tools attempted,
+  blocked, refused, step count, clarification rate, confirmation rate,
+  per-stage latency) into a queryable surface for tuning + regression
+  detection. Likely Grafana over Loki/Postgres.
+- **Slice 49** — Long-term factual memory across threads. New
+  `bot_memory` table keyed `(tenant_id, employee_id, key)` for
+  user-specific facts (preferences, last actions, durable state).
+  Loaded into LangGraph state at turn start; populated by tools or a
+  post-turn extractor. No vector — keyed lookups only.
+- **Slice 50** — Vector retrieval over past conversations. Post-turn
+  extraction pipeline distills durable facts from each thread, embeds
+  via `cip-embed`, stores in a new `bot_conversation_memory` table or
+  reuses `agent_memory_vectors`. Per-turn semantic search injects
+  relevant memories into the planner prompt. Heavy lift — wait until
+  we see actual usage demand.
+
+### Removing the legacy pipeline
+
+Gated on 2+ weeks of LangGraph toggle traffic with no regressions vs
+legacy. After Slice 46 ships and we have at least one tenant defaulted
+to `langgraph` in `bot_tunables`, we'll have data. Until then, both
+runtimes coexist.
 
 #### Earlier upcoming slices (legacy, may already be obsolete)
 
