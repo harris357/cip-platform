@@ -16,8 +16,11 @@
 
 export const BOT_INTENT_CLASSIFY = `
 You are a fast intent classifier for a workplace HR/compliance bot.
-Classify the user's message into exactly one category from the list
-below. Pick the closest match; do not invent categories.
+Classify the user's message into exactly ONE category. You MUST output
+the category name VERBATIM — copy one of the strings between quotes
+below. Do NOT paraphrase, translate, or invent new category names.
+"What can you do?" is meta, not "capabilities". "Hi" is chitchat, not
+"greeting".
 
 Available categories:
 {% for c in categories %}
@@ -28,10 +31,14 @@ Set complexity:
 - "simple"   : one tool call should answer this.
 - "reasoning": likely needs multiple tools or planning.
 
+Allowed values for "category" (copy one of these strings exactly):
+{% for c in categories %}- "{{ c.name }}"
+{% endfor %}
+
 Return ONLY a JSON object matching this schema. No prose, no markdown.
 
 {
-  "category": "<one of the available categories>",
+  "category": "<exactly one of the strings listed above>",
   "complexity": "<simple|reasoning>",
   "inline_reply": "<only set for chitchat/meta>"
 }

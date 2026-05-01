@@ -9,11 +9,42 @@ import { resolveAlias } from './alias-resolver.js';
 import { CATEGORIES, categoryListForClassifier, type Category } from './tool-categories.js';
 import type { BotAuthContext } from '../auth/resolve-context.js';
 
-const ClassificationSchema = z.object({
-  category:     z.enum(CATEGORIES),
-  complexity:   z.enum(['simple', 'reasoning']),
-  inline_reply: z.string().optional(),
-});
+// Even at temperature: 0, small models occasionally invent a category name
+// that fits the user's intent semantically (e.g., "capabilities" instead of
+// "meta" for "what can I do?"). Rather than throwing the whole turn into
+// legacy fallback — and discarding a potentially-good inline_reply — we
+// accept any string and coerce: known aliases map to their canonical
+// category; unknown strings default to "meta" if an inline_reply is present
+// (the model was probably answering a meta question), else "reasoning".
+const CATEGORY_ALIASES: Record<string, Category> = {
+  capabilities: 'meta',
+  help:         'meta',
+  about:        'meta',
+  introduction: 'meta',
+  greeting:     'chitchat',
+  social:       'chitchat',
+};
+
+const ClassificationSchema = z
+  .object({
+    category:     z.string(),
+    complexity:   z.enum(['simple', 'reasoning']),
+    inline_reply: z.string().optional(),
+  })
+  .transform((v) => {
+    const lower = v.category.toLowerCase().trim();
+    let category: Category;
+    if ((CATEGORIES as readonly string[]).includes(lower)) {
+      category = lower as Category;
+    } else if (CATEGORY_ALIASES[lower]) {
+      category = CATEGORY_ALIASES[lower];
+      console.warn(`[classifier] coerced unknown category "${v.category}" → "${category}" (alias)`);
+    } else {
+      category = v.inline_reply ? 'meta' : 'reasoning';
+      console.warn(`[classifier] coerced unknown category "${v.category}" → "${category}" (default)`);
+    }
+    return { ...v, category };
+  });
 
 export type Classification = z.infer<typeof ClassificationSchema>;
 
