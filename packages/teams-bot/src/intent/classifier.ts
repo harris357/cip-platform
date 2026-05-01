@@ -34,11 +34,16 @@ const INTENT_ALIASES: Record<string, Intent> = {
 
 const ClassificationSchema = z
   .object({
-    intent:       z.string(),
-    inline_reply: z.string().optional(),
+    intent: z.string(),
+    // Models inconsistently return undefined / null / "" / a string. Accept
+    // any of those — null and "" are both treated as "no inline reply"
+    // downstream. nullable() handles the literal `null` JSON value the
+    // classifier emits even when the prompt says to omit the field.
+    inline_reply: z.string().nullable().optional(),
   })
   .transform((v) => {
     const lower = v.intent.toLowerCase().trim();
+    const reply = v.inline_reply == null || v.inline_reply === '' ? undefined : v.inline_reply;
     let intent: Intent;
     if ((INTENTS as readonly string[]).includes(lower)) {
       intent = lower as Intent;
@@ -46,10 +51,10 @@ const ClassificationSchema = z
       intent = INTENT_ALIASES[lower];
       console.warn(`[classifier] coerced unknown intent "${v.intent}" → "${intent}" (alias)`);
     } else {
-      intent = v.inline_reply ? 'meta' : 'proceed';
+      intent = reply ? 'meta' : 'proceed';
       console.warn(`[classifier] coerced unknown intent "${v.intent}" → "${intent}" (default)`);
     }
-    return { intent, inline_reply: v.inline_reply };
+    return { intent, inline_reply: reply };
   });
 
 export type Classification = z.infer<typeof ClassificationSchema>;

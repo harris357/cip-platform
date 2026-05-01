@@ -68,6 +68,11 @@ export async function composeMetaReply(
       model:    alias,
       messages: [
         { role: 'system', content: prompt.compile({ tools: toolList }) },
+        // Mistral rejects single-message (system-only) conversations with
+        // 400 "Conversation must have at least one message". Add a minimal
+        // user turn that mirrors the prompt's framing — it doesn't change
+        // the model's output but satisfies the chat-completion contract.
+        { role: 'user',   content: 'Show me the menu of what you can help with.' },
       ],
       temperature: 0.3,
       // Bounded: a short markdown menu (~5 bullets, ~150 words). 1024

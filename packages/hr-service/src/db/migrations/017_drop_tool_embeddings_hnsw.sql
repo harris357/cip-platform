@@ -1,0 +1,24 @@
+-- Slice 44 follow-up: drop the HNSW index on tool_embeddings.
+--
+-- Symptom: postgres backend SIGILL (signal 4, Illegal instruction) on every
+-- INSERT into tool_embeddings, putting the whole DB into recovery mode.
+--
+-- Cause: pgvector 0.8.2's HNSW index uses AVX-512 SIMD instructions for
+-- distance calculations during index maintenance. Our K8s nodes run on
+-- AMD EPYC-Milan (Zen 3), which supports AVX/AVX2/FMA but NOT AVX-512.
+-- Every INSERT triggered an index update, which executed AVX-512, which
+-- crashed the backend.
+--
+-- Fix: drop the HNSW index. Sequential scan over 30 tools is fast (sub-ms)
+-- and avoids the AVX-512 path entirely. We'd revisit this only if the
+-- catalog grows past several hundred tools, at which point the right
+-- move is either:
+--   a. IVFFlat index (different SIMD path, works on AVX2)
+--   b. CPU-feature-limited pgvector build
+--   c. Move retrieval to a dedicated vector DB
+--
+-- agent_memory_vectors (also HNSW) hasn't been hit because we haven't
+-- INSERTed into it yet. It'll need the same treatment when we wire that
+-- pipeline up; for now leave it alone (out of scope for this fix).
+
+DROP INDEX IF EXISTS idx_tool_embeddings_cosine;
