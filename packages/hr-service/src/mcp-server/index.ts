@@ -1,10 +1,13 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js'
 import express, { type Request, type Response, type NextFunction } from 'express'
+import { registerAdminTools } from '../modules/admin/mcp-tools/index.js'
 import { registerCertificationTools } from '../modules/certifications/mcp-tools/index.js'
 import { registerComplianceTools } from '../modules/compliance/mcp-tools/index.js'
 import { registerEmployeeTools } from '../modules/employees/mcp-tools/index.js'
 import { registerSettingsTools } from '../modules/settings/mcp-tools/index.js'
+import { getPool } from '../db/index.js'
+import { seedPermissionCatalog } from '../services/permission-catalog-seed.js'
 
 // Pull the Bearer token off the HTTP request and attach it as req.auth so that
 // the MCP transport surfaces it to each tool handler as authInfo.token.
@@ -22,6 +25,7 @@ function attachBearerAuth(req: Request, _res: Response, next: NextFunction): voi
 
 function createRegisteredServer(): McpServer {
   const s = new McpServer({ name: 'hr-service', version: '1.0.0' })
+  registerAdminTools(s)
   registerCertificationTools(s)
   registerComplianceTools(s)
   registerEmployeeTools(s)
@@ -32,6 +36,16 @@ function createRegisteredServer(): McpServer {
 export const server = createRegisteredServer()
 
 export async function startMcpServer(): Promise<void> {
+  // Slice 42A: seed the permission_catalog from the code-resident list before
+  // the proxy starts taking traffic. Idempotent ON CONFLICT — safe on every
+  // pod start. Resolver depends on this for glob expansion.
+  try {
+    await seedPermissionCatalog(getPool())
+  } catch (err) {
+    console.warn(`[catalog] seed failed: ${err instanceof Error ? err.message : String(err)}`)
+    // Non-fatal: glob expansion will skip unknown catalog entries; literals still work.
+  }
+
   const app = express()
   app.use(express.json())
 

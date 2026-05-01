@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { eq, and } from 'drizzle-orm';
 import { getDb } from '../../../db/index.js';
 import { withTenantRLS } from '../../../db/rls.js';
-import { roles, employeeRoles } from '../../../db/schema.js';
+import { permissionGroups, employeeGroupAssignments } from '../../../db/schema.js';
 
 type IdentityType = 'aad_federated' | 'field_employee';
 
@@ -24,6 +24,11 @@ const AssignDefaultRoleOutputSchema = z.object({
 // regardless of identityType. identity_type is HOW you authenticate, not WHAT
 // you can do. HR reps additionally get the 'hr' realm role via a separate
 // assignment (Slice 33's employee.assign_role tool); 'employee' is baseline.
+//
+// Slice 42A: targets the renamed permission_groups + employee_group_assignments
+// tables. The activity finds the first permission_group whose keycloak_role
+// matches the desired realm role and assigns it. Function name kept stable
+// (Slice 42C reconciles when the role layer makes naming accurate again).
 const DEFAULT_ROLE: Record<IdentityType, string> = {
   aad_federated:  'employee',
   field_employee: 'employee',
@@ -36,26 +41,26 @@ export async function assignDefaultRoleActivity(
   const db = getDb();
 
   return withTenantRLS(db, input.tenantId, async (tx) => {
-    const [role] = await tx
-      .select({ id: roles.id })
-      .from(roles)
+    const [group] = await tx
+      .select({ id: permissionGroups.id })
+      .from(permissionGroups)
       .where(and(
-        eq(roles.tenantId,     input.tenantId),
-        eq(roles.keycloakRole, roleCode),
+        eq(permissionGroups.tenantId,     input.tenantId),
+        eq(permissionGroups.keycloakRole, roleCode),
       ))
       .limit(1);
 
-    if (!role) {
+    if (!group) {
       throw new Error(
-        `assignDefaultRoleActivity: role '${roleCode}' not found for tenant ${input.tenantId}`,
+        `assignDefaultRoleActivity: permission group with keycloak_role='${roleCode}' not found for tenant ${input.tenantId}`,
       );
     }
 
-    await tx.insert(employeeRoles).values({
+    await tx.insert(employeeGroupAssignments).values({
       employeeId: input.employeeId,
-      roleId:     role.id,
+      groupId:    group.id,
     }).onConflictDoNothing();
 
-    return AssignDefaultRoleOutputSchema.parse({ roleId: role.id });
+    return AssignDefaultRoleOutputSchema.parse({ roleId: group.id });
   });
 }

@@ -1,17 +1,18 @@
 import { createPool, withTenantRLS } from '@cip/shared/src/clients/postgres.js';
 
-// Slice 38 — system role catalog for newly provisioned tenants.
-// Each role pairs:
-//   - `code`: stable role identifier, unique within tenant (DB key)
-//   - `keycloak_role`: realm role this maps to. Slice 32 only defines two
-//     realm roles (`hr`, `employee`), so the coarse gate is binary.
-//   - `permissions`: fine-grained capability set, dot-style codes from the
-//     Slice 38 catalog (cert.*, employee.*, compliance.*).
+// Slice 38 + 42A — system permission groups for newly provisioned tenants.
+// Slice 42A renamed `roles` → `permission_groups` and added explicit
+// `service` + `module` columns. These five system definitions all span
+// multiple modules (employee + cert + compliance) and so use the
+// transitional `module = 'general'` marker. Slice 42C will split them
+// into per-module groups + a composing role.
 //
-// Roles that grant any HR-tier permission (employee management, cert.approve,
-// cert.list_all, compliance.view) map to realm role `hr`. The pure
-// self-service role (`field_employee`) maps to `employee`.
-const SYSTEM_ROLES = [
+// Each entry pairs:
+//   - `code`: stable identifier, unique within tenant per (service, module, code)
+//   - `keycloak_role`: which realm role this implies (`hr` or `employee`)
+//   - `permissions`: fine-grained codes from the catalog. Slice 42A's
+//     resolver expands glob entries (cert.*, *) at lookup time.
+const SYSTEM_GROUPS = [
   {
     code: 'hr_admin',
     keycloak_role: 'hr',
@@ -59,20 +60,23 @@ export async function initTenantDatabase(input: { tenantId: string }): Promise<v
   const client = await pool.connect();
   try {
     await withTenantRLS(client, input.tenantId, async (c) => {
-      for (const role of SYSTEM_ROLES) {
+      for (const group of SYSTEM_GROUPS) {
+        // service='hr-service', module='general' (transitional). Slice 42C
+        // splits each into per-module groups + a composing role.
         await c.query(
-          `INSERT INTO roles (tenant_id, code, keycloak_role, label, permissions, is_system_role)
-           VALUES ($1, $2, $3, $4, $5::jsonb, true)
-           ON CONFLICT (tenant_id, code) DO UPDATE
+          `INSERT INTO permission_groups
+             (tenant_id, service, module, code, keycloak_role, label, permissions, is_system_role)
+           VALUES ($1, 'hr-service', 'general', $2, $3, $4, $5::jsonb, true)
+           ON CONFLICT (tenant_id, service, module, code) DO UPDATE
              SET permissions   = EXCLUDED.permissions,
                  label         = EXCLUDED.label,
                  keycloak_role = EXCLUDED.keycloak_role`,
           [
             input.tenantId,
-            role.code,
-            role.keycloak_role,
-            role.label,
-            JSON.stringify(role.permissions),
+            group.code,
+            group.keycloak_role,
+            group.label,
+            JSON.stringify(group.permissions),
           ],
         );
       }

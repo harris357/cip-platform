@@ -51,18 +51,40 @@ export const tenantSettings = pgTable('tenant_settings', {
   updatedAt:         timestamp('updated_at', { withTimezone: true }).defaultNow(),
 })
 
-export const roles = pgTable('roles', {
+// Slice 42A: renamed from `roles` → `permission_groups`. Added `service` +
+// `module` columns to formalize the namespace dimension. Helper function
+// names in queries/permissions.ts (grantRoleByCode etc.) are kept stable;
+// 42C reconciles when the role layer makes them semantically accurate again.
+//
+// `module = 'general'` is a TRANSITIONAL marker for legacy multi-module rows
+// (hr_standard, field_worker, etc.). Slice 42C splits them into per-module
+// groups + a composing role.
+export const permissionGroups = pgTable('permission_groups', {
   id:           uuid('id').primaryKey().defaultRandom(),
   tenantId:     uuid('tenant_id').notNull(),
-  code:         text('code').notNull(),                      // Slice 38: short role identifier
-  keycloakRole: text('keycloak_role').notNull(),
+  service:      text('service').notNull(),                   // Slice 42A: 'hr-service'
+  module:       text('module').notNull(),                    // Slice 42A: 'cert' | 'employee' | 'compliance' | 'tenant' | 'general' (transitional)
+  code:         text('code').notNull(),
+  keycloakRole: text('keycloak_role').notNull(),             // moved to roles in Slice 42C
   label:        text('label').notNull(),
   description:  text('description'),
-  capabilities: jsonb('capabilities').notNull().default({}), // legacy — read by old get_employee_capabilities tool (removed in Slice 38)
-  permissions:  jsonb('permissions').notNull().default([]),  // Slice 38: array of permission codes
+  capabilities: jsonb('capabilities').notNull().default({}), // legacy
+  permissions:  jsonb('permissions').notNull().default([]),  // permission code strings; literals + globs (cert.*, *)
   isSystemRole: boolean('is_system_role').notNull().default(false),
   createdAt:    timestamp('created_at', { withTimezone: true }).defaultNow(),
 })
+
+// Slice 42A: registry of every known permission code. Read by the resolver
+// to expand glob entries (cert.*) at lookup time. Seeded at hr-service
+// startup from a code-resident list.
+export const permissionCatalog = pgTable('permission_catalog', {
+  service:     text('service').notNull(),
+  module:      text('module').notNull(),
+  permission:  text('permission').notNull(),
+  description: text('description'),
+}, (table) => ({
+  pk: primaryKey({ columns: [table.service, table.module, table.permission] }),
+}))
 
 export const employees = pgTable('employees', {
   id:             uuid('id').primaryKey().defaultRandom(),
@@ -82,13 +104,16 @@ export const employees = pgTable('employees', {
   disabledAt:     timestamp('disabled_at', { withTimezone: true }),  // Slice 33
 })
 
-export const employeeRoles = pgTable('employee_roles', {
+// Slice 42A: renamed from `employee_roles` → `employee_group_assignments`.
+// 42C drops this table and replaces it with `employee_role_assignments`
+// pointing at the new `roles` (composing) table.
+export const employeeGroupAssignments = pgTable('employee_group_assignments', {
   employeeId: uuid('employee_id').notNull().references(() => employees.id, { onDelete: 'cascade' }),
-  roleId:     uuid('role_id').notNull().references(() => roles.id, { onDelete: 'cascade' }),
+  groupId:    uuid('group_id').notNull().references(() => permissionGroups.id, { onDelete: 'cascade' }),
   grantedAt:  timestamp('granted_at', { withTimezone: true }).defaultNow(),
   grantedBy:  uuid('granted_by').references(() => employees.id),
 }, (table) => ({
-  pk: primaryKey({ columns: [table.employeeId, table.roleId] }),
+  pk: primaryKey({ columns: [table.employeeId, table.groupId] }),
 }))
 
 export const certificateTypes = pgTable('certificate_types', {
