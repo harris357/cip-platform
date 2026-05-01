@@ -1,6 +1,7 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { registerListStaff } from './list-staff.js';
 import { registerGetEmployeePermissions } from './get-employee-permissions.tool.js';
+import { registerEmployeeGet } from './employee.get.tool.js';
 import { registerSyncEmployee } from './sync-employee.js';
 
 // Slice 33: HR management tools — all gated on the 'hr' realm role.
@@ -31,6 +32,9 @@ export function registerEmployeeTools(server: McpServer): void {
   registerEmployeeRevokeRole(server);
   registerEmployeeMigrateIdentity(server);
   registerEmployeeDisable(server);
+
+  // Slice 42C: admin read of another employee's full state
+  registerEmployeeGet(server);
 
   // Slice 38 (HR-gated + permission-gated)
   registerEmployeeGrantPermission(server);

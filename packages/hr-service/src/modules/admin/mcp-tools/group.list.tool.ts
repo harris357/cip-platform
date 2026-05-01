@@ -1,0 +1,46 @@
+import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { z } from 'zod';
+import { getPool } from '../../../db/index.js';
+import { listGroupsByTenant } from '../../../db/queries/roles.js';
+import {
+  assertPermission,
+  extractAuthContext,
+  PermissionDeniedError,
+} from '../../../mcp-server/auth.js';
+import { ok, refused } from '../../employees/mcp-tools/_envelope.js';
+
+/**
+ * Slice 42C: list permission groups in the tenant. Optional `module`
+ * filter. Gated on `employee.list`.
+ */
+export function registerGroupList(server: McpServer): void {
+  server.tool(
+    'group_list',
+    'List permission groups in the calling user\'s tenant. Filter by module.',
+    { module: z.string().min(1).optional() },
+    async ({ module }, context) => {
+      const ctx = extractAuthContext(context.authInfo);
+      try {
+        await assertPermission(context.authInfo, 'employee.list');
+      } catch (err) {
+        if (err instanceof PermissionDeniedError) return refused('permission_denied', err.message);
+        throw err;
+      }
+
+      const pool = getPool();
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+        await client.query(`SELECT set_config('app.current_tenant_id', $1, true)`, [ctx.tenantId]);
+        const groups = await listGroupsByTenant(client, ctx.tenantId, module);
+        await client.query('COMMIT');
+        return ok({ groups, total: groups.length, filter: { module: module ?? null } });
+      } catch (err) {
+        await client.query('ROLLBACK').catch(() => undefined);
+        return refused('internal', err instanceof Error ? err.message : String(err));
+      } finally {
+        client.release();
+      }
+    },
+  );
+}

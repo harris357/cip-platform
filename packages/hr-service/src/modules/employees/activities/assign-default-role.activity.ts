@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { eq, and } from 'drizzle-orm';
 import { getDb } from '../../../db/index.js';
 import { withTenantRLS } from '../../../db/rls.js';
-import { permissionGroups, employeeGroupAssignments } from '../../../db/schema.js';
+import { roles, employeeRoleAssignments } from '../../../db/schema.js';
 
 type IdentityType = 'aad_federated' | 'field_employee';
 
@@ -20,16 +20,16 @@ const AssignDefaultRoleOutputSchema = z.object({
   roleId: z.string().uuid(),
 });
 
-// Slice 32: every new employee gets the 'employee' realm role by default,
-// regardless of identityType. identity_type is HOW you authenticate, not WHAT
-// you can do. HR reps additionally get the 'hr' realm role via a separate
-// assignment (Slice 33's employee.assign_role tool); 'employee' is baseline.
+// Slice 32 + 42C: every new employee gets a default CIP role on first
+// provisioning. Role choice is keyed off identityType, mapping to the
+// role whose `keycloak_role` column matches. After 42C the role layer
+// is the canonical assignment surface; this activity inserts into
+// employee_role_assignments.
 //
-// Slice 42A: targets the renamed permission_groups + employee_group_assignments
-// tables. The activity finds the first permission_group whose keycloak_role
-// matches the desired realm role and assigns it. Function name kept stable
-// (Slice 42C reconciles when the role layer makes naming accurate again).
-const DEFAULT_ROLE: Record<IdentityType, string> = {
+// 'employee' realm role is the baseline that every authenticated user
+// gets. HR users additionally get the 'hr' realm role via Slice 33's
+// employee.assign_role tool (which calls Keycloak Admin API).
+const DEFAULT_REALM_ROLE: Record<IdentityType, string> = {
   aad_federated:  'employee',
   field_employee: 'employee',
 };
@@ -37,30 +37,35 @@ const DEFAULT_ROLE: Record<IdentityType, string> = {
 export async function assignDefaultRoleActivity(
   input: AssignDefaultRoleInput,
 ): Promise<AssignDefaultRoleOutput> {
-  const roleCode = DEFAULT_ROLE[input.identityType];
+  const realmRoleCode = DEFAULT_REALM_ROLE[input.identityType];
   const db = getDb();
 
   return withTenantRLS(db, input.tenantId, async (tx) => {
-    const [group] = await tx
-      .select({ id: permissionGroups.id })
-      .from(permissionGroups)
+    // Find the first CIP role whose keycloak_role matches the desired realm
+    // role. Multiple may exist (e.g., field_worker + hr_standard both have
+    // keycloak_role='employee' / 'hr'); LIMIT 1 picks one deterministically
+    // (alphabetical order via the ORDER BY in the underlying SQL).
+    const [role] = await tx
+      .select({ id: roles.id })
+      .from(roles)
       .where(and(
-        eq(permissionGroups.tenantId,     input.tenantId),
-        eq(permissionGroups.keycloakRole, roleCode),
+        eq(roles.tenantId,     input.tenantId),
+        eq(roles.keycloakRole, realmRoleCode),
       ))
       .limit(1);
 
-    if (!group) {
+    if (!role) {
       throw new Error(
-        `assignDefaultRoleActivity: permission group with keycloak_role='${roleCode}' not found for tenant ${input.tenantId}`,
+        `assignDefaultRoleActivity: no CIP role with keycloak_role='${realmRoleCode}' found for tenant ${input.tenantId}. ` +
+        `Run 'init-tenant-database' or migration 012 to seed roles.`,
       );
     }
 
-    await tx.insert(employeeGroupAssignments).values({
+    await tx.insert(employeeRoleAssignments).values({
       employeeId: input.employeeId,
-      groupId:    group.id,
+      roleId:     role.id,
     }).onConflictDoNothing();
 
-    return AssignDefaultRoleOutputSchema.parse({ roleId: group.id });
+    return AssignDefaultRoleOutputSchema.parse({ roleId: role.id });
   });
 }

@@ -51,21 +51,16 @@ export const tenantSettings = pgTable('tenant_settings', {
   updatedAt:         timestamp('updated_at', { withTimezone: true }).defaultNow(),
 })
 
-// Slice 42A: renamed from `roles` → `permission_groups`. Added `service` +
-// `module` columns to formalize the namespace dimension. Helper function
-// names in queries/permissions.ts (grantRoleByCode etc.) are kept stable;
-// 42C reconciles when the role layer makes them semantically accurate again.
-//
-// `module = 'general'` is a TRANSITIONAL marker for legacy multi-module rows
-// (hr_standard, field_worker, etc.). Slice 42C splits them into per-module
-// groups + a composing role.
+// Slice 42A → 42C: permission_groups are module-scoped reusable bundles.
+// After 42C, every group has module IN ('cert', 'employee', 'compliance',
+// 'tenant') — no more 'general'. Cross-module bundling lives in `roles`.
+// keycloak_role moved to `roles` in 42C.
 export const permissionGroups = pgTable('permission_groups', {
   id:           uuid('id').primaryKey().defaultRandom(),
   tenantId:     uuid('tenant_id').notNull(),
-  service:      text('service').notNull(),                   // Slice 42A: 'hr-service'
-  module:       text('module').notNull(),                    // Slice 42A: 'cert' | 'employee' | 'compliance' | 'tenant' | 'general' (transitional)
+  service:      text('service').notNull(),
+  module:       text('module').notNull(),                    // 'cert' | 'employee' | 'compliance' | 'tenant'
   code:         text('code').notNull(),
-  keycloakRole: text('keycloak_role').notNull(),             // moved to roles in Slice 42C
   label:        text('label').notNull(),
   description:  text('description'),
   capabilities: jsonb('capabilities').notNull().default({}), // legacy
@@ -73,6 +68,40 @@ export const permissionGroups = pgTable('permission_groups', {
   isSystemRole: boolean('is_system_role').notNull().default(false),
   createdAt:    timestamp('created_at', { withTimezone: true }).defaultNow(),
 })
+
+// Slice 42C: business-concept role. Composes N module-scoped groups via
+// role_groups. Employees are assigned to roles, not groups directly. The
+// keycloak_role column documents which KC realm role this CIP role implies
+// (operators ensure both are granted in 42B's bootstrap flow).
+export const roles = pgTable('roles', {
+  id:            uuid('id').primaryKey().defaultRandom(),
+  tenantId:      uuid('tenant_id').notNull(),
+  code:          text('code').notNull(),
+  label:         text('label').notNull(),
+  description:   text('description'),
+  keycloakRole:  text('keycloak_role').notNull(),
+  isSystemRole:  boolean('is_system_role').notNull().default(false),
+  createdAt:     timestamp('created_at', { withTimezone: true }).defaultNow(),
+})
+
+// Slice 42C: many-to-many between roles and groups.
+export const roleGroups = pgTable('role_groups', {
+  roleId:  uuid('role_id').notNull().references(() => roles.id, { onDelete: 'cascade' }),
+  groupId: uuid('group_id').notNull().references(() => permissionGroups.id, { onDelete: 'cascade' }),
+}, (table) => ({
+  pk: primaryKey({ columns: [table.roleId, table.groupId] }),
+}))
+
+// Slice 42C: replaces 42A's employee_group_assignments. Employees are now
+// assigned to roles (which compose groups via role_groups).
+export const employeeRoleAssignments = pgTable('employee_role_assignments', {
+  employeeId: uuid('employee_id').notNull(),
+  roleId:     uuid('role_id').notNull().references(() => roles.id, { onDelete: 'cascade' }),
+  grantedBy:  uuid('granted_by'),
+  grantedAt:  timestamp('granted_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => ({
+  pk: primaryKey({ columns: [table.employeeId, table.roleId] }),
+}))
 
 // Slice 42A: registry of every known permission code. Read by the resolver
 // to expand glob entries (cert.*) at lookup time. Seeded at hr-service
@@ -104,17 +133,9 @@ export const employees = pgTable('employees', {
   disabledAt:     timestamp('disabled_at', { withTimezone: true }),  // Slice 33
 })
 
-// Slice 42A: renamed from `employee_roles` → `employee_group_assignments`.
-// 42C drops this table and replaces it with `employee_role_assignments`
-// pointing at the new `roles` (composing) table.
-export const employeeGroupAssignments = pgTable('employee_group_assignments', {
-  employeeId: uuid('employee_id').notNull().references(() => employees.id, { onDelete: 'cascade' }),
-  groupId:    uuid('group_id').notNull().references(() => permissionGroups.id, { onDelete: 'cascade' }),
-  grantedAt:  timestamp('granted_at', { withTimezone: true }).defaultNow(),
-  grantedBy:  uuid('granted_by').references(() => employees.id),
-}, (table) => ({
-  pk: primaryKey({ columns: [table.employeeId, table.groupId] }),
-}))
+// employeeGroupAssignments was used in 42A (transitional) and dropped by
+// Slice 42C's migration. Employees are now assigned to roles via
+// employeeRoleAssignments above.
 
 export const certificateTypes = pgTable('certificate_types', {
   id:       uuid('id').primaryKey().defaultRandom(),

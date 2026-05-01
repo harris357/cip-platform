@@ -37,12 +37,12 @@ export class PermissionDeniedError extends Error {
 }
 
 /**
- * Slice 38: defense-in-depth permission check used by HR MCP tool handlers.
- * Resolves the calling employee row by keycloak_id (= JWT sub) within the
- * caller's tenant, joins through employee_group_assignments →
- * permission_groups.permissions (Slice 42A renames; chain extended through
- * roles in Slice 42C), and throws PermissionDeniedError if the required
- * code is not in the set.
+ * Slice 38 + 42C: defense-in-depth permission check used by HR MCP tool
+ * handlers. Resolves the calling employee row by keycloak_id (= JWT sub)
+ * within the caller's tenant, then chains through the role layer
+ * (employee_role_assignments → role_groups → permission_groups) to flatten
+ * + glob-expand the permission set. Throws PermissionDeniedError if the
+ * required code is not in the set.
  *
  * Uses raw PoolClient + manual BEGIN / set_config so it composes with the
  * same RLS-GUC pattern used elsewhere in employee tools (audit.ts,

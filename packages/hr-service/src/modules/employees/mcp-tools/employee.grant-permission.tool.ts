@@ -67,9 +67,12 @@ export function registerEmployeeGrantPermission(server: McpServer): void {
           return refused('not_found', `employee ${args.employeeId} not found`)
         }
 
-        // Slice 42A: existence check now hits the renamed permission_groups table.
+        // Slice 42C: existence check now hits the new roles table.
+        // grantRoleByCode (proxy to assignRoleToEmployee) inserts into
+        // employee_role_assignments which references roles, so the role
+        // must actually exist for the assignment to land.
         const roleCheck = await client.query<{ id: string }>(
-          `SELECT id FROM permission_groups WHERE tenant_id = $1 AND code = $2 LIMIT 1`,
+          `SELECT id FROM roles WHERE tenant_id = $1 AND code = $2 LIMIT 1`,
           [ctx.tenantId, args.role],
         )
         if (roleCheck.rows.length === 0) {
