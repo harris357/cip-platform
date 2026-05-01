@@ -1,35 +1,50 @@
-# Slice 46c — Checkpoint hygiene: ephemeral fields + retention
+# Slice 46c — LangGraph 1.x performance + checkpoint hygiene
 
-> **Prerequisite:** Slice 46 deployed (PostgresSaver in production). Slice 46b NOT a hard prerequisite, but recommended order is 46 → 46b → 46c.
+> **Prerequisite:** Slice 46 deployed (PostgresSaver in production). **Slice 46b is now a HARD prerequisite** — Part 4 (async checkpointer durability) is unsafe without native `interrupt()`. Recommended order is 46 → 46b → 46c.
 > **Package:** `@cip/teams-bot`, `@cip/hr-service` (cron CronJob).
-> **Verify:** `checkpoint_blobs` row count + size growth tracked over a week. Mid-turn checkpoints no longer carry the candidateTools array. Retention cron deletes stale checkpoints without affecting any active thread.
+> **Verify:** `checkpoint_blobs` row count + size growth tracked over a week. Mid-turn checkpoints no longer carry the candidateTools array. Retention cron deletes stale checkpoints without affecting any active thread. Per-turn p50 graph time drops by ~500-900ms (parallel tool exec + async durability) without regressing correctness; Langfuse spans show prompt-cache hits on iteration ≥ 2 of `plan`.
 
 ---
 
 ## Why
 
-PostgresSaver writes a checkpoint after **every node transition**. Two issues:
+Two motivations bundled into one slice because all five parts touch the LangGraph runtime layer and share a single deploy + verification window:
+
+**Hygiene (Parts 1+2):**
 
 1. **`candidateTools` gets serialized on every mid-turn checkpoint.** It's reset to `[]` by `ingest`, but `discover` populates it (~30 MCP tools × ~1 KB each = ~30 KB), `triage` reads it, `plan` reads it. Each of those node transitions writes a checkpoint that includes the full array. Per turn: ~5-7 mid-turn checkpoints × 30 KB = 150-200 KB of useless serialization that re-derives identically on the next turn anyway.
 
 2. **No retention.** PostgresSaver keeps the entire checkpoint chain forever. Production traffic of ~100 turns/day across ~50 threads = ~500-700 new checkpoints per day. Tables grow without bound. After 60 days, `checkpoint_blobs` will be > 1 GB and slow down (a) checkpointer reads (which scan back to load thread state) and (b) backups.
 
-This slice addresses both at the data layer — no behavior change.
+**Performance (Parts 3+4+5):**
+
+Spot-check of 12 production turns showed p50 ~5–7s per turn, p95 ~9.5s. Three sub-second wins without changing behavior:
+
+3. **Tool calls run sequentially.** When the planner emits multiple `tool_calls` in one AIMessage (e.g., `lookup_employee` + `list_certs` + `get_role_assignments`), `execute.ts` awaits them one-by-one. They're independent HTTP calls; `Promise.all` lets them overlap.
+
+4. **`PostgresSaver` writes are sync by default.** LangGraph 1.x's `compile({durability})` exposes `"sync" | "async" | "exit"`. Sync blocks each transition (~10-30ms × 7 transitions = ~100ms per turn). For non-suspend transitions, async is fine — the user-visible reply gets sent only after `respond` runs, so checkpoint write latency on EARLIER nodes is dead weight.
+
+5. **Mistral has automatic prompt caching** but we don't measure whether we're hitting it. Iteration ≥ 2 of `plan` in a tool loop shares the same system+tool_reference prefix; the cache hit is potentially worth 100–300ms. Langfuse spans expose cache-hit telemetry from LiteLLM — we just need to wire it through `callLLM` metadata so it shows up.
 
 ## What this slice IS
 
-1. **Custom serializer for `candidateTools`** so it dumps as `null` and loads as `[]`. Every checkpoint stays small. The `discover` node still populates the in-memory state for the rest of the turn; only the persisted form is empty.
+1. **Custom serializer for `candidateTools`** so it dumps as `null` and loads as `[]`. Every checkpoint stays small.
 
-2. **Retention cron** as a Kubernetes `CronJob` in `cip-app`, runs nightly. Per-thread retention rule: keep the **latest** checkpoint plus any with an active interrupt (suspended state); delete everything else. SQL is bounded and indexed.
+2. **Retention cron** as a Kubernetes `CronJob` in `cip-app`, runs nightly. Per-thread retention rule: keep the **latest** checkpoint plus any with an active interrupt; delete everything else.
 
-3. **Operational metrics** so we can see the cleanup working: a `[checkpoint-gc]` log line per run with `kept`, `deleted`, `duration_ms`.
+3. **Parallel tool execution.** `execute.ts` runs `Promise.all(tool_calls.map(...))` instead of a sequential loop. ToolMessage order in state may not match emit order — that's fine because messages are joined to AIMessage tool_calls by `tool_call_id`, not array index.
+
+4. **`durability: "async"`** in `graph.compile({checkpointer, durability: "async"})`. Native `interrupt()` (Slice 46b) handles its own forced-sync write at suspend points; async is safe everywhere else. **Without 46b**, this is unsafe — confirm-resume could lose the suspended state if a pod dies between async-write-issue and disk fsync.
+
+5. **Prompt-cache visibility.** Pipe LiteLLM's `cache_hit` / `cache_creation_input_tokens` / `cache_read_input_tokens` fields through `callLLM` into Langfuse generation metadata. No client-side caching change — Mistral's automatic caching already runs server-side; we just observe it. Slice 48's per-node trace tree makes the win measurable.
 
 ## What this slice is NOT
 
-- **Not a behavior change.** No graph nodes added or modified. No new tunables. No state shape changes.
-- **Not a custom checkpointer.** We continue to use `PostgresSaver` as-is — only the per-field serde for `candidateTools` is overridden.
-- **Not time-travel preservation.** We deliberately drop the historical chain because we never use it for replay. If we add a forensic-debug feature later, the cron's retention window becomes a tunable.
-- **Not a partition/sharding migration.** Only relevant once tables exceed ~10 GB — far away.
+- **Not a behavior change.** No graph nodes added. No new tunables (Parts 3, 4 are static config). No state shape changes.
+- **Not a custom checkpointer.** We continue to use `PostgresSaver` as-is — only the per-field serde for `candidateTools` is overridden, plus the durability flag flipped.
+- **Not a manual prompt-caching client.** Mistral does it automatically when prefixes match across calls within ~5 min. We measure, we don't manage.
+- **Not time-travel preservation.** Historical chain dropped intentionally.
+- **Not a partition/sharding migration.** Only relevant > 10 GB.
 
 ---
 
@@ -147,10 +162,86 @@ console.log(
 
 ---
 
+## Part 3: Parallel tool execution
+
+```ts
+// packages/teams-bot/src/langgraph/nodes/execute.ts (sketch — diff vs current)
+const results = await Promise.all(
+  last.tool_calls.map(async call => {
+    const known = state.candidateTools.find(t => t.name === call.name);
+    if (!known) return refusedToolMessage(call, 'unknown_tool');
+    try {
+      const result = await executeTool(call.name, (call.args ?? {}) as Record<string, unknown>, ctx);
+      return { tool: new ToolMessage({ tool_call_id: call.id ?? '', content: stringify(result) }),
+               fact: distillFact(call.name, result) };
+    } catch (err) {
+      return { tool: refusedToolMessage(call, 'execution_error', String(err)),
+               fact: `${call.name} threw: ${String(err)}` };
+    }
+  }),
+);
+return {
+  messages:      results.map(r => r.tool),
+  lastToolFacts: results.map(r => r.fact),
+};
+```
+
+Hard rules:
+- **Tool ordering is by `tool_call_id`, not array index.** OpenAI/LiteLLM and Mistral all use the ID join; emit order doesn't matter.
+- **Every tool_call still produces exactly one ToolMessage** — never zero (would orphan a tool_call_id), never two.
+- **`Promise.all` not `Promise.allSettled`.** Per-tool errors are caught inside the map; the outer promise should never reject.
+- **Step counter unchanged** — still reflects the number of `plan` iterations, not tool fan-out.
+
+## Part 4: Async checkpointer durability
+
+```ts
+// packages/teams-bot/src/langgraph/graph.ts (one-line change)
+return graph.compile({
+  checkpointer,
+  durability: 'async',
+});
+```
+
+Hard rules:
+- **Slice 46b MUST be live first.** Native `interrupt()` issues a synchronous checkpoint at the suspension point regardless of the graph-level `durability` setting; without it, our hand-rolled `pendingWriteCall` pattern races with async writes and can lose the confirm state on pod death.
+- **Verify against pod-restart smoke test.** Same tests as 46b — start a confirm, restart the pod, reply "yes" — must still work end-to-end.
+- **Document the failure mode** in the graph.ts comment: "async durability — last-checkpoint loss on pod death is acceptable for non-suspend transitions because the next user message will reset to ingest with the persisted thread state from before the lost write."
+
+## Part 5: Prompt-cache visibility
+
+`callLLM` already attaches OpenAI-shaped metadata to Langfuse generations. LiteLLM should expose Mistral's cache fields in the response payload (`usage.prompt_tokens_details.cached_tokens` per OpenAI's standard) when caching fires — but verify at implementation time. If LiteLLM doesn't surface the fields for Mistral, log the entire `usage` object once for inspection and adapt to whatever shape LiteLLM emits. (This is hedged because Mistral's caching API has shifted across releases and LiteLLM's normalization may lag.)
+
+```ts
+// packages/shared/src/clients/litellm.ts (sketch — inside callLLM)
+const usage = resp.usage as any;
+const cachedTokens = usage?.prompt_tokens_details?.cached_tokens ?? 0;
+const totalTokens  = usage?.prompt_tokens ?? 0;
+generationSpan.update({
+  metadata: {
+    ...existingMetadata,
+    cache_hit: cachedTokens > 0,
+    cached_tokens:  cachedTokens,
+    total_prompt_tokens: totalTokens,
+    cache_hit_ratio: totalTokens > 0 ? cachedTokens / totalTokens : 0,
+  },
+});
+```
+
+Hard rules:
+- **No client-side caching.** Mistral handles it; we observe.
+- **No new tunable.** This is pure telemetry.
+- **Verification = a Langfuse generation for `bot.plan` on iteration 2 of a turn shows `cache_hit: true`** with non-zero `cached_tokens`. If it doesn't, prompt isn't stable enough — investigate (likely a non-deterministic field in the system prompt template).
+
+---
+
 ## Files in scope
 
 ```
 packages/teams-bot/src/langgraph/state.ts                                (custom serde for candidateTools)
+packages/teams-bot/src/langgraph/graph.ts                                (durability: 'async')
+packages/teams-bot/src/langgraph/nodes/execute.ts                        (Promise.all parallel exec)
+
+packages/shared/src/clients/litellm.ts                                   (cache-hit metadata pipe)
 
 packages/hr-service/src/scripts/checkpoint-gc.ts                         NEW
 packages/hr-service/helm/templates/checkpoint-gc-cronjob.yaml            NEW
@@ -199,6 +290,8 @@ slices/SLICE_46C_CHECKPOINT_HYGIENE.md                                    this f
 - Time-travel debugging (intentionally — we drop historical chains).
 - Partitioning `checkpoint_blobs` by month (only relevant > 10 GB).
 - Auto-discovery of suspended-state rows (the conservative `keep last 3` is good enough until we confirm the 1.x schema).
+- Parallelizing `discover ‖ triage` — separate graph-shape change; tracked in a future perf slice.
+- Client-side prompt caching (LangChain has primitives; we don't need them yet because Mistral does it server-side).
 
 ---
 

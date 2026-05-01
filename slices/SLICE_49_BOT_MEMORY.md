@@ -45,7 +45,7 @@ Adopting it collapses two slices into one and removes ~600 lines of bespoke sche
    ```
    Both kinds written via the same store. One LLM call replaces what would have been two in the original 49 + 50 design.
 
-4. **`set_user_preference` MCP tool** for explicit user intent ("remember that I prefer X"). Writes a `pref.*` fact at confidence 1.0.
+4. **`set_user_preference` MCP tool** for explicit user intent ("remember that I prefer X"). Writes a `pref.*` fact at confidence 1.0. Note: the tool's custom annotations (`whenToUse`, `whenNotToUse`, `sideEffectLevel`, `requiredPermission`, `outputSchema`, `commonNextTools`) reach the bot via the `/admin/tool-metadata` side channel introduced in commit `11c67ce` — no per-tool plumbing required, the registration pattern is already standard.
 
 5. **Prompt injection** — planner's system prompt gains two new Jinja2 blocks: "What we know about you" (facts) and "Relevant from past conversations" (snippets, only when convo retrieval is enabled).
 
@@ -253,13 +253,25 @@ LangGraph's `interrupt` / parallel-branch mechanics let us emit the AIMessage to
 Implementation note: in LangGraph 1.x, the cleanest way is to detach the extractor from the main graph entirely. After the user-facing graph completes, the runner kicks off a follow-up `extractMemory` invocation with the persisted thread state pulled from the checkpointer. This way the extractor's failure mode is fully isolated — a crash mid-extraction can't poison the user's reply.
 
 ```ts
+// packages/teams-bot/src/langgraph/graph.ts — store wired at compile() time
+// (static config, doesn't change per-request)
+const graph = workflow.compile({
+  checkpointer,
+  store: memoryStore,
+  durability: 'async', // post Slice 46c
+});
+
 // packages/teams-bot/src/langgraph/runner.ts (post-reply)
-const reply = await graph.invoke(initialState, { configurable: { thread_id }, store: memoryStore });
+const reply = await graph.invoke(initialState, { configurable: { thread_id } });
 await sendReplyToTeams(reply);
 
-// Fire-and-forget — failures here only log, never bubble to the user
-void extractMemoryAsync({ thread_id, turnId, tenantId, employeeId })
-  .catch(err => logger.warn({ err, turnId }, 'extractMemory failed'));
+// Fire-and-forget — failures here only log, never bubble to the user.
+// Skip when the graph suspended for a confirm interrupt — there's no
+// completed turn to extract from.
+if (!isSuspendedAtInterrupt(reply)) {
+  void extractMemoryAsync({ thread_id, turnId, tenantId, employeeId })
+    .catch(err => logger.warn({ err, turnId }, 'extractMemory failed'));
+}
 ```
 
 `extractMemory` itself:

@@ -135,11 +135,14 @@ Recommended order: **45d → 46b → 46c → 48 → 49 → 51 → 52**.
   No state-shape additions; pure simplification.
   See `slices/SLICE_46B_NATIVE_INTERRUPT.md`.
 
-- **Slice 46c** — Checkpoint hygiene: ephemeral `candidateTools` +
-  retention cron. Custom serde dumps `candidateTools` as `null` so
-  mid-turn checkpoints stay small. Nightly `CronJob` keeps the latest
-  checkpoint per thread plus 24h history; everything else cleared.
-  Prevents `checkpoint_blobs` from growing without bound.
+- **Slice 46c** — LangGraph 1.x perf + checkpoint hygiene. Five parts
+  bundled because they share the runtime layer + a single deploy
+  window: (1) ephemeral `candidateTools` serde, (2) nightly retention
+  CronJob, (3) `Promise.all` parallel tool execution, (4) `durability:
+  "async"` checkpointer (gated on 46b — native `interrupt()` is
+  required for resume safety), (5) prompt-cache visibility piping
+  Mistral's `cached_tokens` through to Langfuse generation metadata.
+  Expected wins: ~500-900ms p50 graph time, no behavior change.
   See `slices/SLICE_46C_CHECKPOINT_HYGIENE.md`.
 
 - **Slice 48** — Langfuse graph traces + structured-log telemetry.

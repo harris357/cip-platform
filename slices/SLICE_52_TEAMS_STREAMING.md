@@ -1,6 +1,7 @@
 # Slice 52 — Streaming partial responses to Teams
 
-> **Prerequisite:** Slice 46 (durable state — streaming spans multiple sendActivity calls; if a pod dies mid-stream, a checkpoint must capture progress). Slice 48 (telemetry — we want to measure whether streaming actually improves perceived latency before making it the default).
+> **Prerequisite:** Slice 46 (durable state). Slice 46b (native interrupt — streaming loop must distinguish "graph suspended for confirm" vs "graph completed" before sending a final reply). Slice 48 (telemetry — even though we're shipping back-to-back without waiting for data, the spans 48 emits are needed to measure whether streaming actually helps).
+> **Note on the original "GATED" framing:** earlier draft said this slice should wait for Slice 48 to produce 1-2 weeks of telemetry before deciding whether to ship. User authorized bypass on 2026-05-01: ship 52 immediately after 48. We retain the per-tenant kill switch (`lg.streaming_mode = 'none'`) as the rollback lever instead of pre-launch data.
 > **Package:** `@cip/teams-bot`.
 > **Verify:** A long planner response surfaces in Teams as a "typing…" indicator that resolves to the final message; total wall-clock time is unchanged but **perceived latency** drops because the user sees activity within ~500 ms instead of waiting silently.
 
@@ -14,11 +15,9 @@ LangGraph 1.x supports `streamMode: 'messages'` for token-level streaming. **Tea
 2. **Adaptive card edit-in-place** — send a card, then edit its content via `updateActivity`. Renders on desktop + mobile. More expressive but heavier — every edit is an API call.
 3. **Multiple sequential `sendActivity` messages** — can render as a thread of "Working on it…" → "Found 3 employees…" → "Final answer." Works, but clutters the channel.
 
-**This slice is GATED.** We don't ship streaming until Slice 48 telemetry shows that p95 turn latency is high enough that perceived-latency wins justify the complexity. Right now most turns are 800–2500 ms — at the edge of where streaming helps. If telemetry shows a fat tail at 4 s+, streaming is worth it.
+**Real measured baseline (12 turns, 2026-05-01):** p50 5–7s, p95 ~9.5s. That's well into "streaming helps perceived latency" territory — the original gating concern (turns at 800-2500ms being too short to bother streaming) doesn't apply.
 
-This slice is therefore split into two sub-decisions:
-1. **Should we stream?** — answered by Slice 48 telemetry.
-2. **How should we stream?** — answered by this slice if (1) is yes.
+User authorized shipping immediately after Slice 48 rather than waiting on telemetry. The implementation includes per-tenant kill switches (`lg.streaming_mode = 'none'`) so a tenant can be reverted without code changes if streaming behaves unexpectedly.
 
 ## What this slice IS (if telemetry justifies it)
 
@@ -129,12 +128,7 @@ slices/SLICE_52_TEAMS_STREAMING.md                                 this file
 
 ## Verification
 
-**Telemetry-gated decision (precondition):**
-1. After Slice 48 has been live for ~2 weeks, query `bot_turn_metrics` for p50/p95/p99 of `total_ms` per tenant.
-2. If p95 < 2500 ms across the board, **don't ship this slice** — perceived-latency wins are marginal. Revisit when traffic patterns change.
-3. If p95 > 4000 ms or the long tail materially affects UX complaints, proceed.
-
-**Functional verification (assuming we proceed):**
+**Functional verification:**
 
 **Mode = `none`:**
 1. Set `lg.streaming_mode = 'none'`. Send a turn. Behavior identical to today (single `sendActivity` of the final reply).

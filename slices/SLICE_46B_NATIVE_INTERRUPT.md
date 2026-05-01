@@ -65,7 +65,7 @@ LangGraph 1.x's `interrupt(payload)` + `Command({resume: value})` does this nati
 
 2. **Rename `pendingWriteCall` → `proposedWriteCall`** to signal "the planner proposed this; confirm is awaiting decision." The previous name was tied to the resume-classification dance which no longer exists.
 
-3. **Remove the resume branch from `ingest`.** [ingest.ts](../packages/teams-bot/src/langgraph/nodes/ingest.ts) collapses to: append the HumanMessage, reset per-turn fields. That's it. The 50-line affirmation/cancellation handler moves into a `classifyConfirmReply()` helper called from `confirm`.
+3. **Remove the resume branch from `ingest`.** [ingest.ts](../packages/teams-bot/src/langgraph/nodes/ingest.ts) collapses to: append the HumanMessage, reset per-turn fields (including the `candidateTools: []` reset added in Slice 46 — keep that). That's it. The 50-line affirmation/cancellation handler moves into a `classifyConfirmReply()` helper called from `confirm`.
 
 4. **Remove the conditional edge `routeAfterIngest`** from [graph.ts](../packages/teams-bot/src/langgraph/graph.ts). With native interrupts, the graph automatically resumes inside `confirm` — there is no "synthesize tool_calls in ingest then route to execute" path anymore. The graph shrinks to a single ingest→discover→triage edge.
 

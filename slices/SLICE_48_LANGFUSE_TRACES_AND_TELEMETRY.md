@@ -131,7 +131,6 @@ If we already have a log aggregator (Loki, Datadog, etc.), the structured `[turn
 ## Files in scope
 
 ```
-packages/teams-bot/package.json                                        (+@langfuse/langchain)
 packages/teams-bot/src/langgraph/runner.ts                             (CallbackHandler + Postgres write)
 packages/teams-bot/src/langgraph/util/turn-metrics.ts                  NEW (writeTurnMetric helper)
 
@@ -150,6 +149,7 @@ slices/SLICE_48_LANGFUSE_TRACES_AND_TELEMETRY.md                       this file
 - **No turn fails because of telemetry.** Every metric write + Langfuse callback is best-effort. DB write fails → log it, return reply normally. Langfuse upload fails → log it, return reply normally.
 - **No model-specific code in the callback handler.** Per `LLM_PROVIDER_NOTES.md`, application code writes OpenAI-style metadata; LiteLLM and Langfuse handle provider-specific naming.
 - **`turnId` is the join key.** Footer → `[turn]` log → `bot_turn_metrics` row → Langfuse trace, all keyed by the same value.
+- **`confirmation_fired` semantics depend on 46b ordering.** If 46b ships first (recommended), `confirmation_fired` = "graph suspended at an interrupt" detected via `result.tasks[*].interrupts.length > 0` (or whatever 1.x exposes). If this slice ships first, fall back to `result.pendingWriteCall != null` and update the predicate during 46b implementation.
 
 ---
 
@@ -170,9 +170,8 @@ slices/SLICE_48_LANGFUSE_TRACES_AND_TELEMETRY.md                       this file
 
 ## Out of scope (still deferred)
 
-- LangGraph Studio integration
-- Long-term factual memory (Slice 49)
-- Vector conversation memory (Slice 50)
+- LangGraph Studio integration (Slice 51)
+- Bot memory (Slice 49 — merged factual + semantic)
 - Removing the no-op `lg.default_engine` tunable
 
 ---
