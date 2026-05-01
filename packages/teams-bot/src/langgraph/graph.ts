@@ -26,19 +26,19 @@ import { AIMessage } from '@langchain/core/messages';
 import type { BotAuthContext } from '../auth/resolve-context.js';
 
 /**
- * Conditional edge after ingest:
- *   - Affirmation/cancellation handling already happened in ingest.
- *     If the most recent AIMessage carries tool_calls (synthesized by
- *     ingest from pendingWriteCall), route directly to executeTool —
- *     skip discover/triage/plan since the user authorized this exact call.
- *   - Otherwise route to discover for a normal turn.
+ * Conditional edge after confirm — Slice 46b:
+ *   - With native interrupt(), confirm resumes inside the node when the
+ *     user replies. On affirm, confirm emits an AIMessage with tool_calls
+ *     for the saved write — route to execute.
+ *   - On cancel or unrecognized, confirm emits a text-only AIMessage —
+ *     route to END.
  */
-function routeAfterIngest(state: State): 'execute' | 'discover' {
+function routeAfterConfirm(state: State): 'execute' | 'end' {
   const last = state.messages[state.messages.length - 1];
   if (last instanceof AIMessage && last.tool_calls && last.tool_calls.length > 0) {
     return 'execute';
   }
-  return 'discover';
+  return 'end';
 }
 
 /**
@@ -88,10 +88,7 @@ export function buildGraph(ctx: BotAuthContext) {
     .addNode('summarize',  makeSummarizeNode(ctx))
 
     .addEdge(START, 'ingest')
-    .addConditionalEdges('ingest', routeAfterIngest, {
-      execute:  'execute',
-      discover: 'discover',
-    })
+    .addEdge('ingest', 'discover')
     .addEdge('discover', 'triage')
     .addConditionalEdges('triage', routeOnSignals, {
       respond: 'respond',
@@ -107,7 +104,10 @@ export function buildGraph(ctx: BotAuthContext) {
       plan:    'plan',
       respond: 'respond',
     })
-    .addEdge('confirm', END)
+    .addConditionalEdges('confirm', routeAfterConfirm, {
+      execute: 'execute',
+      end:     END,
+    })
     .addConditionalEdges('respond', shouldSummarize, {
       summarize: 'summarize',
       end:       END,
@@ -116,8 +116,11 @@ export function buildGraph(ctx: BotAuthContext) {
 
   return graph.compile({
     checkpointer,
-    // confirmNode emits the "About to: X" AIMessage and ends the run.
-    // The graph naturally pauses at END; the next user message resumes
-    // with a fresh invoke that hits ingest, which sees pendingWriteCall.
+    // Slice 46b: confirmNode calls interrupt() to suspend at the confirm
+    // gate. The checkpoint captures the suspension point automatically.
+    // runner detects the suspension via getState().tasks[*].interrupts
+    // and resumes with `new Command({ resume: userText })` on the next
+    // user message — execution continues from inside confirmNode where
+    // it suspended.
   });
 }

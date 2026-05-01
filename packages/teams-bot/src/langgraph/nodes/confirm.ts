@@ -1,32 +1,91 @@
-// Slice 45: confirm node — interrupt point for write-action confirmation.
+// Slice 46b: native interrupt() confirm node.
 //
-// When the graph reaches this node, it sets the latest AIMessage to a
-// human-readable confirmation prompt. The graph is configured with
-// `interruptBefore: ['confirm']` (no — actually we use the AIMessage as
-// the response and let bot.ts detect the interrupt by inspecting state
-// after invoke()).
+// Replaces the hand-rolled pattern (set pendingWriteCall → END → ingest
+// classifies the resume reply) with LangGraph 1.x's first-class
+// interrupt() + Command({resume: ...}). Three things changed:
 //
-// LangGraph supports two interrupt patterns:
-//   1. Static `interruptBefore`/`interruptAfter` at compile time.
-//   2. Dynamic `NodeInterrupt` via throw or interrupt() function.
+//   1. The graph SUSPENDS at interrupt() instead of returning. The
+//      checkpoint captures the suspension point automatically; runner
+//      detects it by reading getState(config).tasks.
+//   2. Affirm/cancel classification lives in this node — moved out of
+//      ingest where it didn't belong.
+//   3. The runner resumes with `new Command({ resume: userText })`,
+//      which makes interrupt() return userText. Execution continues
+//      INSIDE confirm from the line after interrupt().
 //
-// We use pattern 1: interruptAfter: ['confirm']. After this node runs:
-//   - state.pendingWriteCall is set
-//   - state.messages has the AIMessage with the confirm prompt
-//   - graph.invoke() returns; bot.ts sends the AIMessage and waits for
-//     the next user message
-//   - On next user message, ingest sees pendingWriteCall and routes
-//     directly to executeTool (or cancels)
+// On affirm: emit AIMessage(tool_calls) so the conditional edge
+// `routeAfterConfirm` sends the graph to `execute`.
+// On cancel: emit a "Cancelled." AIMessage; routeAfterConfirm sends
+// to END.
+// On unrecognized: emit a clarifying AIMessage and END — safer than
+// guessing. The user can re-state on the next turn.
 
+import { interrupt } from '@langchain/langgraph';
 import { AIMessage } from '@langchain/core/messages';
+import { getTunables, getTunable } from '../tunables.js';
+import { classifyConfirmReply } from '../util/classify-confirm-reply.js';
 import type { State } from '../state.js';
+
+export interface ConfirmInterruptPayload {
+  kind:       'write_confirm';
+  summary:    string;
+  toolName:   string;
+  toolArgs:   Record<string, unknown>;
+  toolCallId: string;
+}
 
 export async function confirmNode(state: State): Promise<Partial<State>> {
   if (!state.pendingWriteCall) {
+    // Defensive: somehow we routed to confirm with no pending. Drop
+    // through cleanly — graph will hit the conditional edge and END.
     return {};
   }
-  const ai = new AIMessage(
-    `About to: \`${state.pendingWriteCall.summary}\`\n\nReply **yes** to confirm or **no** to cancel.`,
-  );
-  return { messages: [ai] };
+
+  const payload: ConfirmInterruptPayload = {
+    kind:       'write_confirm',
+    summary:    state.pendingWriteCall.summary,
+    toolName:   state.pendingWriteCall.toolName,
+    toolArgs:   state.pendingWriteCall.toolArgs,
+    toolCallId: state.pendingWriteCall.toolCallId,
+  };
+
+  // SUSPEND. The checkpoint captures this point. On resume,
+  // `decision` is whatever string the runner passed to Command({resume}).
+  const decision = interrupt<ConfirmInterruptPayload, string>(payload);
+
+  const tunables = await getTunables(state.tenantId);
+  const affirm = getTunable<string[]>(tunables, 'lg.affirmation_patterns',
+    ['yes', 'y', 'confirm', 'go ahead', 'do it', 'ok', 'okay', 'sure']);
+  const cancel = getTunable<string[]>(tunables, 'lg.cancellation_patterns',
+    ['no', 'n', 'cancel', 'stop', 'never mind', 'nevermind', 'wait']);
+
+  const verdict = classifyConfirmReply(decision, affirm, cancel);
+
+  if (verdict === 'affirm') {
+    const ai = new AIMessage({
+      content: '',
+      tool_calls: [{
+        id:   state.pendingWriteCall.toolCallId,
+        name: state.pendingWriteCall.toolName,
+        args: state.pendingWriteCall.toolArgs,
+      }],
+    });
+    return { messages: [ai], pendingWriteCall: null };
+  }
+
+  if (verdict === 'cancel') {
+    return {
+      messages:         [new AIMessage('Cancelled.')],
+      pendingWriteCall: null,
+    };
+  }
+
+  // Unrecognized — safer to cancel and ask the user to re-state.
+  // Treating an ambiguous reply as "yes" can lead to unintended writes.
+  return {
+    messages: [new AIMessage(
+      `I didn't catch a yes/no for "${state.pendingWriteCall.summary}". Cancelling for safety — please re-state your request if you'd like to proceed.`,
+    )],
+    pendingWriteCall: null,
+  };
 }

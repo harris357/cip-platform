@@ -1,84 +1,29 @@
-// Slice 45: ingest node — entry point for every turn.
+// Slice 46b: ingest is now a single-purpose entry node.
 //
-// Two paths:
-//   1. Normal turn: append HumanMessage, reset turn-scoped state.
-//   2. Resume after confirm interrupt: classify the user reply against
-//      affirmation/cancellation patterns and either stage the saved
-//      pendingWriteCall for execution or cancel.
+// Append the new HumanMessage and reset per-turn fields. That's it.
 //
-// State changes signaled by the return shape are merged via reducers.
+// The Slice 45 resume-from-confirm branch (classify the user's reply
+// against affirmation/cancellation patterns and either synthesize a
+// saved tool_call or drop pendingWriteCall) is gone — native
+// interrupt() (Slice 46b) handles resume directly inside confirm.ts.
+// The graph never enters ingest on a resume invoke; it re-enters at
+// the suspended interrupt() call inside confirm.
 
-import { HumanMessage, AIMessage, ToolMessage } from '@langchain/core/messages';
+import { HumanMessage } from '@langchain/core/messages';
 import type { State } from '../state.js';
-import { getTunables, getTunable } from '../tunables.js';
 
 export async function ingestNode(state: State): Promise<Partial<State>> {
-  const text = state.latestUserText;
-
-  // Resume-from-confirm path: pendingWriteCall is set when the previous
-  // turn interrupted at gateWriteAction.
-  if (state.pendingWriteCall) {
-    const tunables = await getTunables(state.tenantId);
-    const affirm = getTunable<string[]>(tunables, 'lg.affirmation_patterns',
-      ['yes', 'y', 'confirm', 'go ahead', 'do it', 'ok', 'okay', 'sure']);
-    const cancel = getTunable<string[]>(tunables, 'lg.cancellation_patterns',
-      ['no', 'n', 'cancel', 'stop', 'never mind', 'nevermind', 'wait']);
-
-    const lower = text.trim().toLowerCase();
-    if (affirm.some(p => lower === p || lower.startsWith(`${p} `) || lower.endsWith(` ${p}`))) {
-      // Affirmation — synthesize an AIMessage with the saved tool call so
-      // executeToolNode can run it. The plan node would otherwise re-plan
-      // and might choose differently.
-      const ai = new AIMessage({
-        content: '',
-        tool_calls: [{
-          id:   state.pendingWriteCall.toolCallId,
-          name: state.pendingWriteCall.toolName,
-          args: state.pendingWriteCall.toolArgs,
-        }],
-      });
-      return {
-        messages:        [new HumanMessage(text), ai],
-        pendingWriteCall: null,
-        triageSignals:    null,
-        lastToolFacts:    [],
-        stepCount:        0,
-        candidateTools:   [],
-      };
-    }
-    if (cancel.some(p => lower === p || lower.startsWith(`${p} `) || lower.endsWith(` ${p}`))) {
-      // Cancellation — append a synthetic ToolMessage so the planner sees
-      // the action was rejected, then re-plan.
-      const ai = new AIMessage({ content: 'Cancelled.' });
-      return {
-        messages:        [new HumanMessage(text), ai],
-        pendingWriteCall: null,
-        triageSignals:    null,
-        lastToolFacts:    [],
-        stepCount:        0,
-        candidateTools:   [],
-      };
-    }
-    // Unrecognized reply — treat as cancellation but ask the planner to
-    // re-plan based on the new message. Drop the pending call.
-    return {
-      messages:        [new HumanMessage(text)],
-      pendingWriteCall: null,
-      triageSignals:    null,
-      lastToolFacts:    [],
-      stepCount:        0,
-    };
-  }
-
-  // Normal turn: append the HumanMessage, reset per-turn fields.
   return {
-    messages:       [new HumanMessage(text)],
-    triageSignals:  null,
-    lastToolFacts:  [],
-    stepCount:      0,
-    candidateTools: [],
+    messages:        [new HumanMessage(state.latestUserText)],
+    triageSignals:   null,
+    lastToolFacts:   [],
+    stepCount:       0,
+    candidateTools:  [],
+    // Defensive: clear any stale pendingWriteCall. Native interrupt
+    // resumes inside confirm.ts on the next user message; ingest only
+    // runs on a fresh-turn invoke. If we somehow got here with a
+    // lingering pendingWriteCall (e.g., a failed previous invoke that
+    // didn't complete confirm), drop it so we don't act on stale state.
+    pendingWriteCall: null,
   };
 }
-
-// Re-export for type-checking convenience in tests.
-export { HumanMessage, AIMessage, ToolMessage };

@@ -1,15 +1,23 @@
-// Slice 45: LangGraph runtime entry point.
+// Slice 45 + 46b: LangGraph runtime entry point.
 //
-// Called from bot.ts when the engine toggle resolves to 'langgraph'.
-// Builds a per-request graph (closing over ctx), invokes it with the
-// thread_id as the checkpointer key, and sends the resulting AIMessage
-// to Teams.
+// Slice 46b introduced native interrupt() for the write-action confirm
+// gate. The runner now does:
+//   1. Read the persisted thread state. If it carries an active
+//      interrupt (graph suspended at confirm), invoke with
+//      `new Command({ resume: text })` so confirm resumes from where
+//      it suspended. Otherwise, invoke with a fresh state seed.
+//   2. After invoke, re-read the state. If it's NOW suspended (a fresh
+//      turn produced a write that needs confirmation), render the
+//      interrupt's `summary` as the user-facing prompt. Otherwise pick
+//      the latest AIMessage and send it.
 
 import { randomUUID } from 'node:crypto';
 import { TurnContext } from '@microsoft/agents-hosting';
 import { AIMessage } from '@langchain/core/messages';
+import { Command } from '@langchain/langgraph';
 import { buildGraph } from './graph.js';
 import { sendResponseTime } from '../intent/debug-banner.js';
+import type { ConfirmInterruptPayload } from './nodes/confirm.js';
 import type { BotAuthContext } from '../auth/resolve-context.js';
 
 /**
@@ -19,6 +27,30 @@ import type { BotAuthContext } from '../auth/resolve-context.js';
  */
 function newTurnId(): string {
   return randomUUID().replace(/-/g, '').slice(0, 8);
+}
+
+interface PendingInterrupt {
+  payload: ConfirmInterruptPayload;
+}
+
+/**
+ * Pull the first active interrupt off the graph state, if any.
+ * In LangGraph 1.x, interrupts surface as `state.tasks[*].interrupts[*]`
+ * after invoke() returns. A non-empty interrupt array means the graph
+ * is suspended.
+ */
+function detectInterrupt(state: { tasks?: unknown }): PendingInterrupt | null {
+  const tasks = (state.tasks ?? []) as Array<{ interrupts?: Array<{ value?: unknown }> }>;
+  for (const t of tasks) {
+    const interrupts = t.interrupts ?? [];
+    if (interrupts.length > 0) {
+      const value = interrupts[0]?.value;
+      if (value && typeof value === 'object' && (value as { kind?: string }).kind === 'write_confirm') {
+        return { payload: value as ConfirmInterruptPayload };
+      }
+    }
+  }
+  return null;
 }
 
 export async function runLangGraph(args: {
@@ -32,32 +64,49 @@ export async function runLangGraph(args: {
   const turnId = newTurnId();
 
   const graph = buildGraph(ctx);
+  const config = { configurable: { thread_id: threadId } };
+
+  // Step 1: detect a suspended interrupt from a prior turn. If present,
+  // this turn is a resume — feed the user's text to confirm via Command.
+  const priorState = await graph.getState(config);
+  const priorInterrupt = detectInterrupt(priorState);
 
   const tInvoke = Date.now();
-  const result = await graph.invoke(
-    {
-      threadId,
-      tenantId:        ctx.tenantId,
-      employeeId:      ctx.employeeId,
-      permissions:     ctx.permissions,
-      roles:           ctx.roles ?? [],
-      latestUserText:  text,
-      turnId,
-      // candidateTools intentionally NOT passed — discover node hydrates
-      // it. Same for messages — checkpointer carries them from prior turns.
-    },
-    { configurable: { thread_id: threadId } },
-  );
+  const result = priorInterrupt
+    ? await graph.invoke(new Command({ resume: text }), config)
+    : await graph.invoke(
+        {
+          threadId,
+          tenantId:        ctx.tenantId,
+          employeeId:      ctx.employeeId,
+          permissions:     ctx.permissions,
+          roles:           ctx.roles ?? [],
+          latestUserText:  text,
+          turnId,
+          // candidateTools intentionally NOT passed — discover hydrates it.
+          // messages — checkpointer carries them across turns.
+        },
+        config,
+      );
   const tDone = Date.now();
 
-  // Find the latest AIMessage to send to Teams.
-  const messages = result.messages ?? [];
+  // Step 2: did THIS invoke produce a new suspension? If yes, render
+  // the confirm prompt.
+  const postState = await graph.getState(config);
+  const newInterrupt = detectInterrupt(postState);
+  const confirmationFired = newInterrupt !== null;
+
   let outbound: string | null = null;
-  for (let i = messages.length - 1; i >= 0; i--) {
-    const m = messages[i];
-    if (m instanceof AIMessage && typeof m.content === 'string' && m.content.trim().length > 0) {
-      outbound = m.content;
-      break;
+  if (newInterrupt) {
+    outbound = `About to: \`${newInterrupt.payload.summary}\`\n\nReply **yes** to confirm or **no** to cancel.`;
+  } else {
+    const messages = result.messages ?? [];
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const m = messages[i];
+      if (m instanceof AIMessage && typeof m.content === 'string' && m.content.trim().length > 0) {
+        outbound = m.content;
+        break;
+      }
     }
   }
 
@@ -69,6 +118,7 @@ export async function runLangGraph(args: {
 
   // Compact LangGraph footer mirroring the legacy debug-banner format.
   const totalMs = Date.now() - tStart;
+  const messages = result.messages ?? [];
   const tools  = (messages
     .filter(m => m instanceof AIMessage && m.tool_calls?.length)
     .flatMap(m => (m as AIMessage).tool_calls?.map(tc => tc.name) ?? []));
@@ -78,7 +128,9 @@ export async function runLangGraph(args: {
        : tools.length > 0
          ? 'tool'
          : 'direct')
-    : 'unknown';
+    : confirmationFired
+      ? 'tool'
+      : 'unknown';
   await sendResponseTime(context, totalMs, {
     classifierAlias: 'cip-classifier',
     routerAlias:     tools.length > 0 ? 'cip-router-careful' : null,
@@ -98,7 +150,8 @@ export async function runLangGraph(args: {
     `stepCount=${result.stepCount ?? 0} ` +
     `triageConfidence=${result.triageSignals?.confidence ?? 'na'} ` +
     `clarificationFired=${result.triageSignals?.needsClarification ?? false} ` +
-    `confirmationFired=${result.pendingWriteCall ? true : false} ` +
+    `confirmationFired=${confirmationFired} ` +
+    `resumed=${priorInterrupt !== null} ` +
     `totalMs=${totalMs} graphMs=${tDone - tInvoke}`,
   );
 }
