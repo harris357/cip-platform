@@ -144,6 +144,13 @@ export class CIPTeamsBot extends TeamsActivityHandler {
     if (!text && fileAttachments.length === 0) return;
 
     const tStart = Date.now();
+    // Log the inbound message so any downstream log line ([classifier], [turn],
+    // [auth-resolve], etc.) can be correlated back to what the user actually
+    // typed. JSON.stringify escapes quotes/newlines safely; cap at 500 chars
+    // to keep logs sane on long pastes.
+    console.log(
+      `[msg] tenantId=${tenantCtx.cipTenantId} files=${fileAttachments.length} text=${JSON.stringify(text.slice(0, 500))}`,
+    );
 
     // Tell Teams to render "<bot> is typing..." while we work.
     await context.sendActivity(Activity.fromObject({ type: 'typing' }));
@@ -163,7 +170,10 @@ export class CIPTeamsBot extends TeamsActivityHandler {
         const result = await executeTool('process_document', { objectStoreKey: key }, ctx);
         const tExec1 = Date.now();
         await renderResponse(context, result);
-        await sendResponseTime(context, Date.now() - tStart, { tool: 'process_document' });
+        await sendResponseTime(context, Date.now() - tStart, {
+          tool: 'process_document',
+          execMs: tExec1 - tDl1,
+        });
         console.log(`[turn] tenantId=${ctx.tenantId} mode=file file=${file.name ?? '?'} typing=${tTyping - tStart}ms auth=${tAuth - tTyping}ms registry=${tRegistry - tAuth}ms download=${tDl1 - tDl0}ms exec=${tExec1 - tDl1}ms render=${Date.now() - tExec1}ms total=${Date.now() - tStart}ms`);
       }
       return;
@@ -185,7 +195,11 @@ export class CIPTeamsBot extends TeamsActivityHandler {
 
     if (classification?.inline_reply) {
       await context.sendActivity(classification.inline_reply);
-      await sendResponseTime(context, Date.now() - tStart, { classifierAlias });
+      await sendResponseTime(context, Date.now() - tStart, {
+        classifierAlias,
+        category:   classification.category,
+        classifyMs: tClassify - tDiscover,
+      });
       await maybeSendDebugBanner(context, {
         classification,
         alias: null,
@@ -215,6 +229,10 @@ export class CIPTeamsBot extends TeamsActivityHandler {
         routerAlias: stage2Alias,
         tool:        selected.name,
         classifierFell,
+        category,
+        classifyMs:  tClassify - tDiscover,
+        routeMs:     tRoute - tClassify,
+        execMs:      tExec - tRoute,
       });
       await maybeSendDebugBanner(context, {
         classification,
@@ -235,6 +253,9 @@ export class CIPTeamsBot extends TeamsActivityHandler {
         routerAlias: stage2Alias,
         tool:        null,
         classifierFell,
+        category,
+        classifyMs:  tClassify - tDiscover,
+        routeMs:     tRoute - tClassify,
       });
       await maybeSendDebugBanner(context, {
         classification,

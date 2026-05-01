@@ -29,11 +29,19 @@ function responseTimeEnabled(): boolean {
 }
 
 export interface ResponseTimeDetail {
-  classifierAlias?: string | null; // Stage-1 alias (cip-classifier or override)
-  routerAlias?:     string | null; // Stage-2 alias (null on inline / chitchat)
-  tool?:            string | null; // tool name selected by Stage 2
-  classifierFell?:  boolean;       // true if classifier failed and we fell back
+  classifierAlias?: string | null;  // Stage-1 alias (cip-classifier or override)
+  routerAlias?:     string | null;  // Stage-2 alias (null on inline / chitchat)
+  tool?:            string | null;  // tool name selected by Stage 2
+  classifierFell?:  boolean;        // true if classifier failed and we fell back
+  // Per-stage timing breakdown — surfaced inline so the user can see where
+  // a slow turn spent its budget without enabling the full debug banner.
+  category?:        string | null;  // chitchat/meta/hr_admin/...
+  classifyMs?:      number;
+  routeMs?:         number;
+  execMs?:          number;
 }
+
+const fmtSeconds = (ms?: number): string => ms === undefined ? '?' : `${(ms / 1000).toFixed(2)}s`;
 
 /**
  * Slice 39B: "_⏱ X.Xs · <pipeline>_" footer sent as a separate Teams activity
@@ -42,11 +50,12 @@ export interface ResponseTimeDetail {
  * banner (which carries timings + classification details) — call both, or
  * either, or neither.
  *
- * The pipeline suffix shows which models/tool ran for this turn:
- *   "_⏱ 2.98s · cip-classifier_"                                  (chitchat/meta)
- *   "_⏱ 1.53s · cip-classifier → cip-router-fast → list_staff_"   (tool path)
- *   "_⏱ 2.50s · cip-classifier → cip-router-fast → ∅_"            (no-tool match)
- *   "_⏱ 4.50s · ∅ → cip-chat → list_staff_"                       (classifier failed, fallback)
+ * The pipeline suffix shows category, per-stage timings, and which
+ * models/tool ran for this turn. Examples:
+ *   "_⏱ 2.98s (classify=1.10s) · meta · cip-classifier_"
+ *   "_⏱ 1.53s (classify=0.52s · route=0.95s · exec=0.06s) · hr_admin · cip-classifier → cip-router-fast → list_staff_"
+ *   "_⏱ 2.50s (classify=0.40s · route=2.10s) · hr_admin · cip-classifier → cip-router-fast → ∅_"
+ *   "_⏱ 4.50s (classify=fail · route=2.10s · exec=2.40s) · reasoning · ∅ → cip-chat → list_staff_"
  */
 export async function sendResponseTime(
   context: TurnContext,
@@ -56,15 +65,30 @@ export async function sendResponseTime(
   if (!responseTimeEnabled()) return;
   const seconds = (totalMs / 1000).toFixed(2);
 
-  const parts: string[] = [];
+  // Per-stage timings parenthesised after the total. Only stages that ran
+  // get a slot — file-upload turns omit classify/route entirely.
+  const timingParts: string[] = [];
   if (detail) {
-    parts.push(detail.classifierFell ? '∅' : (detail.classifierAlias ?? '?'));
-    if (detail.routerAlias)         parts.push(detail.routerAlias);
-    if (detail.tool)                parts.push(detail.tool);
-    else if (detail.routerAlias)    parts.push('∅');   // Stage 2 ran, picked nothing
+    if (detail.classifyMs !== undefined) {
+      timingParts.push(`classify=${detail.classifierFell ? 'fail' : fmtSeconds(detail.classifyMs)}`);
+    }
+    if (detail.routeMs !== undefined) timingParts.push(`route=${fmtSeconds(detail.routeMs)}`);
+    if (detail.execMs  !== undefined) timingParts.push(`exec=${fmtSeconds(detail.execMs)}`);
   }
-  const suffix = parts.length > 0 ? ` · ${parts.join(' → ')}` : '';
-  await context.sendActivity(`_⏱ ${seconds}s${suffix}_`);
+  const timings = timingParts.length > 0 ? ` (${timingParts.join(' · ')})` : '';
+
+  const category = detail?.category ? ` · ${detail.category}` : '';
+
+  const pipelineParts: string[] = [];
+  if (detail) {
+    pipelineParts.push(detail.classifierFell ? '∅' : (detail.classifierAlias ?? '?'));
+    if (detail.routerAlias)         pipelineParts.push(detail.routerAlias);
+    if (detail.tool)                pipelineParts.push(detail.tool);
+    else if (detail.routerAlias)    pipelineParts.push('∅');
+  }
+  const pipeline = pipelineParts.length > 0 ? ` · ${pipelineParts.join(' → ')}` : '';
+
+  await context.sendActivity(`_⏱ ${seconds}s${timings}${category}${pipeline}_`);
 }
 
 export async function maybeSendDebugBanner(

@@ -70,9 +70,11 @@ const TOOLS_FOR_CATEGORY: Record<Category, string[] | null> = {
   ],
 
   hr_admin: [
+    // Employee CRUD + role/permission management
     'employee_create',
     'employee_list',
     'employee_find',
+    'employee_get',
     'employee_assign_role',
     'employee_revoke_role',
     'employee_migrate_identity',
@@ -80,6 +82,21 @@ const TOOLS_FOR_CATEGORY: Record<Category, string[] | null> = {
     'employee_grant_permission',
     'employee_revoke_permission',
     'list_staff',
+    // Self query — answers "what are my roles?" / "what permissions do I have?"
+    // Permitted to all employees; classifier often lands self-queries here
+    // because "roles"/"permissions" sound admin-y.
+    'get_employee_permissions',
+    // Role/group/permission read tools (Slice 42A/42C). Admin-gated server-side
+    // (employee.list); included here so the classifier can pick them when an
+    // admin asks "list roles", "who has X permission", etc.
+    'role_list',
+    'role_get',
+    'role_members',
+    'group_list',
+    'group_get',
+    'permission_holders',
+    'permission_catalog_list',
+    'audit_log_list',
   ],
 
   reasoning: null, // null here means "use all permitted tools, not a subset"
