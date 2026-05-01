@@ -13,6 +13,7 @@ import { AIMessage, type SystemMessage } from '@langchain/core/messages';
 import type { Tool as McpTool } from '@modelcontextprotocol/sdk/types.js';
 import { callLLM, createLiteLLMClient, getPrompt } from '@cip/shared';
 import { resolveAlias } from '../../intent/alias-resolver.js';
+import { discoverTools } from '../../mcp/tool-discovery.js';
 import { messagesToOpenAI } from '../util/messages.js';
 import { formatToolReference } from '../util/tool-reference.js';
 import { getTunables, getTunable } from '../tunables.js';
@@ -55,11 +56,15 @@ export function makePlanNode(ctx: BotAuthContext) {
       virtualKey: ctx.tenantConfig.litellmVirtualKey,
     });
 
+    // 46d: candidateTools no longer in state; recompute via the cached
+    // discovery call (5-min TTL per tenant+employee, sub-ms after warmup).
+    const candidateTools = await discoverTools(ctx, state.latestUserText);
+
     const systemContent = prompt.compile({
       currentGoal:    state.triageSignals?.currentGoal ?? '',
       facts:          state.lastToolFacts,
       summary:        state.summary,
-      tool_reference: formatToolReference(state.candidateTools),
+      tool_reference: formatToolReference(candidateTools),
       latest:         state.latestUserText,
     });
     const systemMsg: SystemMessage = new SysMsg(systemContent);
@@ -77,7 +82,7 @@ export function makePlanNode(ctx: BotAuthContext) {
     }
     const messages = messagesToOpenAI([systemMsg, ...trimmed]);
 
-    const tools = state.candidateTools.map(toChatTool);
+    const tools = candidateTools.map(toChatTool);
 
     const resp = await callLLM(client, {
       model:        alias,

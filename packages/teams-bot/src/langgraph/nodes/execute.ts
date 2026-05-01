@@ -16,6 +16,7 @@
 
 import { AIMessage, ToolMessage } from '@langchain/core/messages';
 import { executeTool } from '../../mcp/tool-executor.js';
+import { discoverTools } from '../../mcp/tool-discovery.js';
 import { distillFact } from '../util/distill.js';
 import type { State } from '../state.js';
 import type { BotAuthContext } from '../../auth/resolve-context.js';
@@ -27,12 +28,15 @@ export function makeExecuteToolNode(ctx: BotAuthContext) {
       return {};
     }
 
+    // 46d: pull candidate tools from the cached discovery (no longer in state).
+    const candidateTools = await discoverTools(ctx, state.latestUserText);
+
     // 46c part 3: parallel tool execution. Use Promise.all so that
     // independent tool_calls overlap. Each per-tool error is caught
     // inside the map; the outer promise should never reject.
     const settled = await Promise.all(
       last.tool_calls.map(async (call): Promise<{ tool: ToolMessage; fact: string }> => {
-        const known = state.candidateTools.find(t => t.name === call.name);
+        const known = candidateTools.find(t => t.name === call.name);
         if (!known) {
           return {
             tool: new ToolMessage({

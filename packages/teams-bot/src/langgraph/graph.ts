@@ -13,10 +13,9 @@ import { StateGraph, START, END } from '@langchain/langgraph';
 import { StateAnnotation, type State } from './state.js';
 import { checkpointer } from './checkpointer.js';
 import { ingestNode } from './nodes/ingest.js';
-import { makeDiscoverCandidatesNode } from './nodes/discover.js';
 import { makeTriageNode } from './nodes/triage.js';
 import { makePlanNode } from './nodes/plan.js';
-import { gateWriteActionNode, routeAfterGate } from './nodes/gate-write.js';
+import { makeGateWriteActionNode, routeAfterGate } from './nodes/gate-write.js';
 import { confirmNode } from './nodes/confirm.js';
 import { makeExecuteToolNode } from './nodes/execute.js';
 import { respondNode } from './nodes/respond.js';
@@ -78,18 +77,19 @@ async function shouldContinue(state: State): Promise<'plan' | 'respond'> {
 export function buildGraph(ctx: BotAuthContext) {
   const graph = new StateGraph(StateAnnotation)
     .addNode('ingest',     ingestNode)
-    .addNode('discover',   makeDiscoverCandidatesNode(ctx))
     .addNode('triage',     makeTriageNode(ctx))
     .addNode('plan',       makePlanNode(ctx))
-    .addNode('gateWrite',  gateWriteActionNode)
+    .addNode('gateWrite',  makeGateWriteActionNode(ctx))
     .addNode('confirm',    confirmNode)
     .addNode('execute',    makeExecuteToolNode(ctx))
     .addNode('respond',    respondNode)
     .addNode('summarize',  makeSummarizeNode(ctx))
 
+    // 46d: discover node removed. plan / gateWrite / execute each call
+    // discoverTools(ctx, latestUserText) directly — cached 5-min per
+    // (tenant, employee) so subsequent calls in the same turn are sub-ms.
     .addEdge(START, 'ingest')
-    .addEdge('ingest', 'discover')
-    .addEdge('discover', 'triage')
+    .addEdge('ingest', 'triage')
     .addConditionalEdges('triage', routeOnSignals, {
       respond: 'respond',
       plan:    'plan',

@@ -1,17 +1,17 @@
-// Slice 45: typed graph state for the LangGraph runtime.
+// Slice 45 + 46d: typed graph state for the LangGraph runtime.
 //
 // State = explicit conversational memory. The reducers tell LangGraph
 // how to merge node returns into the persisted state. The checkpointer
-// (MemorySaver in this slice) persists state per Teams thread.
+// (PostgresSaver) persists state per Teams thread.
 //
-// IMPORTANT: `candidateTools` is computed-not-persisted. The persisted
-// checkpoint always carries an empty array; turn entry re-derives the
-// permitted tool set from the current MCP catalog + current ctx.permissions.
-// This guarantees a confirm→resume cycle uses the user's CURRENT permitted
-// tools, not whatever was permitted when the interrupt fired.
+// 46d Part 1: candidateTools removed from state entirely. Each consumer
+// node (plan, gateWriteAction, executeTool) calls discoverTools(ctx,
+// state.latestUserText) directly — discoverTools caches per
+// (tenant, employee) for 5 minutes, so the second call onwards is
+// sub-millisecond. Net: zero bytes serialized for the tool catalog
+// per checkpoint, no wasted DB I/O across mid-turn writes.
 
 import { type BaseMessage } from '@langchain/core/messages';
-import { type Tool as McpTool } from '@modelcontextprotocol/sdk/types.js';
 import { Annotation, messagesStateReducer } from '@langchain/langgraph';
 
 /**
@@ -73,15 +73,6 @@ export const StateAnnotation = Annotation.Root({
     default: () => [],
   }),
 
-  /**
-   * Computed-not-persisted (see file header). Always re-derived from the
-   * live MCP catalog at the start of each turn and on resume.
-   */
-  candidateTools:  Annotation<McpTool[]>({
-    reducer: (_prev, next) => next,
-    default: () => [],
-  }),
-
   triageSignals:   Annotation<TriageSignals | null>({
     reducer: (_prev, next) => next,
     default: () => null,
@@ -121,6 +112,22 @@ export const StateAnnotation = Annotation.Root({
   turnId:          Annotation<string>({
     reducer: (_prev, next) => next,
     default: () => '',
+  }),
+
+  /**
+   * Slice 48 follow-up: Langfuse session id, scoped to a continuous
+   * interaction within a Teams thread. Reset by ingest when the gap
+   * since the previous turn exceeds `lg.session_timeout_minutes`.
+   * threadId would be a constant-for-the-relationship value; the
+   * sessionId gives Langfuse useful "session" grouping.
+   */
+  sessionId:               Annotation<string>({
+    reducer: (_prev, next) => next,
+    default: () => '',
+  }),
+  sessionLastActivityAt:   Annotation<number>({
+    reducer: (_prev, next) => next,
+    default: () => 0,
   }),
 });
 

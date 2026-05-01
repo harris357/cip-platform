@@ -1,7 +1,8 @@
 # Slice 46d — Ephemeral candidateTools + checkpoint/metrics retention
 
+> **Implementation note (2026-05-01):** Part 1 was implemented using "Option B" (drop `candidateTools` from state entirely, recompute from `discoverTools(ctx, latestUserText)` in each consumer node) rather than the UntrackedValue schema migration described below. Same end-state — zero bytes serialized for candidateTools — at ~10% the implementation cost and zero risk to the rest of the state shape. The `discover` node was deleted; `plan`, `gateWriteAction`, and `execute` each call `discoverTools` directly (cached 5-min per tenant+employee, so the second call onwards is sub-ms).
 > **Prerequisites:** Slice 46 (PostgresSaver), 46b (native interrupt), 46c parts 3+5 deployed. No new runtime deps.
-> **Package:** `@cip/teams-bot` (state schema migration), `@cip/hr-service` (CronJob + GC script).
+> **Package:** `@cip/teams-bot` (state cleanup), `@cip/hr-service` (CronJob + GC script).
 > **Verify:** Mid-turn `checkpoint_blobs` rows no longer carry the `candidateTools` array; nightly cron deletes stale checkpoint chains without affecting any active suspended thread; `bot_turn_metrics` retained ≤ 90 days.
 
 ---

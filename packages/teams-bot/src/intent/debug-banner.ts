@@ -1,9 +1,17 @@
-// Slice 39B → Slice 47b: response-time footer used by the LangGraph
-// runtime. The legacy debug-banner (maybeSendDebugBanner +
+// Slice 39B → Slice 47b → Slice 46e: response-time footer used by the
+// LangGraph runtime. The legacy debug-banner (maybeSendDebugBanner +
 // BOT_DEBUG_CLASSIFICATION env flag) was deleted alongside the legacy
 // classifier+router pipeline.
+//
+// Slice 46e: when a turnId is present, the footer renders as a small
+// adaptive card with a tappable "🔍 Inspect" action that fires a
+// `messageBack` carrying `/turn <id>`. Teams treats the action as if
+// the user typed the slash command — the existing dispatcher handles
+// the rest. No turnId → plain markdown text (back-compat for any
+// legacy code path that doesn't thread a turnId).
 
 import type { TurnContext } from '@microsoft/agents-hosting';
+import { Activity } from '@microsoft/agents-activity';
 
 function responseTimeEnabled(): boolean {
   // Defaults to ON — small unobtrusive footer with total turn duration. Turn
@@ -76,7 +84,47 @@ export async function sendResponseTime(
   const pipeline = pipelineParts.length > 0 ? ` · ${pipelineParts.join(' → ')}` : '';
 
   const turn = detail?.turnId ? ` · turn=\`${detail.turnId}\`` : '';
+  const footerText = `_⏱ ${seconds}s${timings}${intent}${pipeline}${turn}_`;
 
-  await context.sendActivity(`_⏱ ${seconds}s${timings}${intent}${pipeline}${turn}_`);
+  // Slice 46e: when a turnId is present, render as an adaptive card so
+  // the inline "🔍 Inspect" action can fire `/turn <id>` via messageBack.
+  // Otherwise fall back to plain markdown.
+  if (detail?.turnId) {
+    const card = {
+      type:    'AdaptiveCard',
+      $schema: 'http://adaptivecards.io/schemas/adaptive-card.json',
+      version: '1.4',
+      body: [
+        {
+          type:      'TextBlock',
+          text:      footerText,
+          wrap:      true,
+          size:      'Small',
+          isSubtle:  true,
+        },
+      ],
+      actions: [
+        {
+          type:  'Action.Submit',
+          title: '🔍 Inspect',
+          data: {
+            msteams: {
+              type:        'messageBack',
+              displayText: `/turn ${detail.turnId}`,
+              text:        `/turn ${detail.turnId}`,
+            },
+          },
+        },
+      ],
+    };
+    await context.sendActivity(Activity.fromObject({
+      type:        'message',
+      attachments: [
+        { contentType: 'application/vnd.microsoft.card.adaptive', content: card },
+      ],
+    }));
+    return;
+  }
+  await context.sendActivity(footerText);
 }
 

@@ -15,6 +15,7 @@ import type { TurnContext } from '@microsoft/agents-hosting';
 import type { BotAuthContext } from '../auth/resolve-context.js';
 import { helpHandler } from './handlers/help.js';
 import { aboutHandler } from './handlers/about.js';
+import { turnHandler } from './handlers/turn.js';
 
 export interface SlashCommandResult {
   reply: string;
@@ -57,6 +58,12 @@ export const REGISTRY: SlashCommand[] = [
     description: 'Show bot version, runtime, your tenant + roles + permissions',
     requires:    null,
     handler:     aboutHandler,
+  },
+  {
+    command:     '/turn',
+    description: 'Inspect a specific turn — usage: `/turn <8-char-id>`',
+    requires:    'bot.metrics.read',
+    handler:     turnHandler,
   },
 ];
 

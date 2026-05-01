@@ -1,3 +1,8 @@
+// Slice 48 follow-up: OTEL/Langfuse must initialize FIRST, before any
+// other import that might construct LangChain/LangGraph runnables.
+// Without this, @langfuse/langchain's CallbackHandler is silently inert.
+import './instrumentation.js';
+
 import { app } from './server.js';
 import { ensureCheckpointerReady } from './langgraph/checkpointer.js';
 

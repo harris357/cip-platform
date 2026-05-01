@@ -79,9 +79,19 @@ export async function runLangGraph(args: {
   const turnId = newTurnId();
 
   const graph = buildGraph(ctx);
+
+  // Pull persisted state ONCE — used for both interrupt detection AND
+  // session-id seeding. Slice 48: ingest mints a new sessionId when the
+  // idle gap exceeds lg.session_timeout_minutes; otherwise we keep the
+  // existing one. Falls back to threadId on the very first turn.
+  const priorState = await graph.getState({ configurable: { thread_id: threadId } });
+  const stateValues = (priorState?.values ?? {}) as { sessionId?: string };
+  const sessionId = stateValues.sessionId || threadId;
+
   // Slice 48: callbacks + metadata flow through to Langfuse so a single
   // turn produces ONE trace tree keyed by turnId. Pasting `turn=<id>`
-  // from the Teams footer locates the trace.
+  // from the Teams footer locates the trace; sessions group consecutive
+  // turns within a single user interaction.
   const config = {
     configurable: { thread_id: threadId },
     callbacks:    [langfuseHandler],
@@ -90,8 +100,8 @@ export async function runLangGraph(args: {
       tenantId:   ctx.tenantId,
       employeeId: ctx.employeeId,
       threadId,
-      langfuseSessionId:  threadId,    // groups turns by Teams thread in the Langfuse UI
-      langfuseTraceId:    turnId,
+      langfuseSessionId: sessionId,
+      langfuseUserId:    ctx.employeeId,
     },
     runName: `turn-${turnId}`,
   };
@@ -114,7 +124,6 @@ export async function runLangGraph(args: {
 
   // Step 1: detect a suspended interrupt from a prior turn. If present,
   // this turn is a resume — feed the user's text to confirm via Command.
-  const priorState = await graph.getState(config);
   const priorInterrupt = detectInterrupt(priorState);
 
   const tInvoke = Date.now();

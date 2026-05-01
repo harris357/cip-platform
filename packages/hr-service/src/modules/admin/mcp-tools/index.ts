@@ -7,10 +7,18 @@ import { registerGroupList }             from './group.list.tool.js';
 import { registerGroupGet }              from './group.get.tool.js';
 import { registerPermissionHolders }     from './permission.holders.tool.js';
 import { registerAuditLogList }          from './audit-log.list.tool.js';
+import {
+  registerBotMetricsGetTurn,
+  registerBotMetricsSummary,
+  registerBotMetricsTopN,
+  registerBotMetricsTools,
+  registerBotMetricsOutliers,
+} from './bot-metrics.tools.js';
 
-// Slice 42A + 42C: admin / audit MCP tools — read-only discoverability
-// and compliance surface for HR + operators. CRUD tools (role_create,
-// group_update, role_add_group, etc.) deferred to Slice 42D.
+// Slice 42A + 42C + 46e: admin / audit MCP tools — read-only
+// discoverability and compliance surface for HR + operators. 46e adds
+// the five bot_metrics_* tools that wrap the most common queries
+// against bot_turn_metrics.
 export function registerAdminTools(server: McpServer): void {
   registerPermissionCatalogList(server);
   registerRoleList(server);
@@ -20,4 +28,10 @@ export function registerAdminTools(server: McpServer): void {
   registerGroupGet(server);
   registerPermissionHolders(server);
   registerAuditLogList(server);
+  // Slice 46e
+  registerBotMetricsGetTurn(server);
+  registerBotMetricsSummary(server);
+  registerBotMetricsTopN(server);
+  registerBotMetricsTools(server);
+  registerBotMetricsOutliers(server);
 }

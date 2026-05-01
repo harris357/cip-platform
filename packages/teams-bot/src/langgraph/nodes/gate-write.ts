@@ -15,8 +15,10 @@
 import { AIMessage } from '@langchain/core/messages';
 import type { Tool as McpTool } from '@modelcontextprotocol/sdk/types.js';
 import { isExplicitlyAuthorized } from '../util/authorize-write.js';
+import { discoverTools } from '../../mcp/tool-discovery.js';
 import { getTunables, getTunable } from '../tunables.js';
 import type { State, PendingWriteCall } from '../state.js';
+import type { BotAuthContext } from '../../auth/resolve-context.js';
 
 function getSideEffect(tool: McpTool | undefined): string {
   if (!tool) return 'read';
@@ -38,8 +40,13 @@ function summarize(toolName: string, args: Record<string, unknown>): string {
 /**
  * gateWriteAction is a NODE that may stage a pendingWriteCall but always
  * returns. The conditional edge `routeAfterGate` does the actual routing.
+ *
+ * 46d: factory now takes ctx so we can call discoverTools — candidateTools
+ * is no longer in state. discoverTools is cached 5-min per tenant+employee
+ * so this is sub-ms after warmup.
  */
-export async function gateWriteActionNode(state: State): Promise<Partial<State>> {
+export function makeGateWriteActionNode(ctx: BotAuthContext) {
+  return async function gateWriteActionNode(state: State): Promise<Partial<State>> {
   const last = state.messages[state.messages.length - 1];
   if (!(last instanceof AIMessage) || !last.tool_calls?.length) {
     return {};   // No tool calls — nothing to gate.
@@ -51,8 +58,10 @@ export async function gateWriteActionNode(state: State): Promise<Partial<State>>
     ['disable', 'off-board', 'offboard', 'create', 'add', 'assign', 'grant', 'revoke', 'remove', 'fire', 'approve', 'reject'],
   );
 
+  const candidateTools = await discoverTools(ctx, state.latestUserText);
+
   for (const call of last.tool_calls) {
-    const tool = state.candidateTools.find(t => t.name === call.name);
+    const tool = candidateTools.find(t => t.name === call.name);
     const level = getSideEffect(tool);
     if (level !== 'write' && level !== 'external') continue;
 
@@ -73,6 +82,7 @@ export async function gateWriteActionNode(state: State): Promise<Partial<State>>
     return { pendingWriteCall: pending };
   }
   return {};
+  };
 }
 
 /**
