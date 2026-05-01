@@ -20,6 +20,7 @@ import { gateWriteActionNode, routeAfterGate } from './nodes/gate-write.js';
 import { confirmNode } from './nodes/confirm.js';
 import { makeExecuteToolNode } from './nodes/execute.js';
 import { respondNode } from './nodes/respond.js';
+import { makeSummarizeNode, shouldSummarize } from './nodes/summarize.js';
 import { getTunables, getTunable } from './tunables.js';
 import { AIMessage } from '@langchain/core/messages';
 import type { BotAuthContext } from '../auth/resolve-context.js';
@@ -84,6 +85,7 @@ export function buildGraph(ctx: BotAuthContext) {
     .addNode('confirm',    confirmNode)
     .addNode('execute',    makeExecuteToolNode(ctx))
     .addNode('respond',    respondNode)
+    .addNode('summarize',  makeSummarizeNode(ctx))
 
     .addEdge(START, 'ingest')
     .addConditionalEdges('ingest', routeAfterIngest, {
@@ -106,7 +108,11 @@ export function buildGraph(ctx: BotAuthContext) {
       respond: 'respond',
     })
     .addEdge('confirm', END)
-    .addEdge('respond', END);
+    .addConditionalEdges('respond', shouldSummarize, {
+      summarize: 'summarize',
+      end:       END,
+    })
+    .addEdge('summarize', END);
 
   return graph.compile({
     checkpointer,

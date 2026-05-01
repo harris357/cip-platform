@@ -43,6 +43,7 @@ export async function ingestNode(state: State): Promise<Partial<State>> {
         triageSignals:    null,
         lastToolFacts:    [],
         stepCount:        0,
+        candidateTools:   [],
       };
     }
     if (cancel.some(p => lower === p || lower.startsWith(`${p} `) || lower.endsWith(` ${p}`))) {
@@ -55,6 +56,7 @@ export async function ingestNode(state: State): Promise<Partial<State>> {
         triageSignals:    null,
         lastToolFacts:    [],
         stepCount:        0,
+        candidateTools:   [],
       };
     }
     // Unrecognized reply — treat as cancellation but ask the planner to
@@ -70,10 +72,11 @@ export async function ingestNode(state: State): Promise<Partial<State>> {
 
   // Normal turn: append the HumanMessage, reset per-turn fields.
   return {
-    messages:      [new HumanMessage(text)],
-    triageSignals: null,
-    lastToolFacts: [],
-    stepCount:     0,
+    messages:       [new HumanMessage(text)],
+    triageSignals:  null,
+    lastToolFacts:  [],
+    stepCount:      0,
+    candidateTools: [],
   };
 }
 

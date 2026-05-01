@@ -1,6 +1,6 @@
 # Slice 46 — Durable LangGraph state + LLM summarization
 
-> **Prerequisite:** Slice 47b deployed (LangGraph is the only runtime; `/lg` toggle removed).
+> **Prerequisite:** Slice 47b deployed (LangGraph is the only runtime; `/lg` toggle removed). Slice 45c deployed (LangChain/LangGraph 1.x + `@langchain/langgraph-checkpoint-postgres` installed).
 > **Package:** `@cip/teams-bot`, `@cip/hr-service` (migrations + tunables).
 > **Verify:** `pnpm --filter @cip/teams-bot typecheck`; pod restart preserves an in-progress LangGraph thread (especially confirm-interrupted ones); long conversation triggers summarization.
 
@@ -15,7 +15,9 @@ Slice 45 shipped the LangGraph runtime with two deliberate gaps:
 
 This slice closes both gaps.
 
-> **Revision note (2026-05-01):** the previous draft also included a "persisted engine overrides" component for the per-thread `/lg` toggle. **Slice 47b removed the toggle entirely** — LangGraph is the only runtime. That component is dropped from this slice. The `engine-toggle.ts` file no longer exists and `lg.default_engine` is a no-op tunable awaiting removal.
+> **Revision notes:**
+> - **2026-05-01a:** the previous draft included a "persisted engine overrides" component for the per-thread `/lg` toggle. **Slice 47b removed the toggle entirely** — LangGraph is the only runtime. That component is dropped. The `engine-toggle.ts` file no longer exists and `lg.default_engine` is a no-op tunable awaiting removal.
+> - **2026-05-01b:** Slice 45c (LangChain/LangGraph 1.x + openai 6.x upgrade) was inserted as a prerequisite. The `@langchain/langgraph-checkpoint-postgres` package this slice depends on is now installed by 45c. Same package is reused in the merged Slice 49 for `PostgresStore`.
 
 ## What this slice IS
 

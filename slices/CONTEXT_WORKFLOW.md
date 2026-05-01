@@ -103,17 +103,24 @@ PENDING:    42A ──► 42C ──► 42B
 
 ### Drafted, not yet shipped
 
-All four below have full slice docs and are ready to implement. Suggested
-order is the numbering: 46 → 48 → 49 → 50, but only 49 → 50 has a hard
-prerequisite (Slice 50's extractor reuses Slice 49's pattern).
+All four below have full slice docs and are ready to implement. Hard
+order: **45c → 46 → 48 → 49**. (Original Slices 49 and 50 have been
+merged into the new Slice 49 — see archive note below.)
+
+- **Slice 45c** — LangChain/LangGraph 1.x + openai 6.x upgrade.
+  Pure dependency bump + breakage fixes. Installs
+  `@langchain/langgraph-checkpoint-postgres@^1.0.1` (used by 46 + 49).
+  Bumps `@langchain/langgraph` 0.2 → 1.2, `@langchain/core` 0.3 → 1.x,
+  `@langchain/openai` 0.4 → 1.x, `openai` 4 → 6. No new graph nodes,
+  no new tunables, no new tables. Verifies Langfuse generations still
+  appear after the major-version jumps.
+  See `slices/SLICE_45C_DEPENDENCY_UPGRADE.md`.
 
 - **Slice 46** — Durable LangGraph state + LLM summarization.
   `MemorySaver` → `PostgresSaver` (multi-replica, restart-safe).
   `summarize` node compresses older messages once `messages.length >
-  lg.summarize_at` (default 12). Three new tunables seeded. **Revised
-  2026-05-01:** the previous draft included a persisted-engine-override
-  component; Slice 47b removed the toggle entirely so that piece is
-  dropped. See `slices/SLICE_46_DURABLE_LANGGRAPH_STATE.md`.
+  lg.summarize_at` (default 12). Three new tunables seeded.
+  See `slices/SLICE_46_DURABLE_LANGGRAPH_STATE.md`.
 
 - **Slice 48** — Langfuse graph traces + structured-log telemetry.
   Two parts that share the `turnId` join key:
@@ -127,31 +134,23 @@ prerequisite (Slice 50's extractor reuses Slice 49's pattern).
 
   See `slices/SLICE_48_LANGFUSE_TRACES_AND_TELEMETRY.md`.
 
-- **Slice 49** — Long-term factual memory across threads. New
-  `bot_memory` table keyed `(tenant_id, employee_id, key)`. Hydrated
-  into a new `state.memory` field via a `loadMemory` node before
-  `triage`. Two write paths: a post-turn `extractMemory` LLM call (cheap
-  nemo) producing keyed facts at confidence ≥ 0.7, and a `set_user_preference`
-  MCP tool for explicit user intent. Planner prompt gains a "What we
-  know about you" markdown block. Three new tunables, kill-switch,
-  per-user opt-out. Keyed lookup only — semantic recall is Slice 50.
-  See `slices/SLICE_49_LONG_TERM_FACTUAL_MEMORY.md`.
-
-- **Slice 50** — Vector retrieval over past conversations. New
-  `bot_conversation_memory` pgvector table (1024-dim, mistral-embed,
-  no HNSW per Slice 44 lesson). Post-turn extractor produces narrative
-  summaries; per-turn `loadConversationMemory` node embeds the latest
-  user message and pgvector-searches scoped to the calling user. Top-K
-  injected as "Relevant from past conversations" block in the planner
-  prompt. Off by default (`lg.conversation_memory_enabled = false`)
-  until production data justifies enabling. Heavy lift — should ship
-  LAST and only after telemetry shows users actually ask cross-thread
-  semantic recall questions.
-  See `slices/SLICE_50_VECTOR_CONVERSATION_MEMORY.md`.
+- **Slice 49 (merged)** — Bot memory (factual + semantic) via LangGraph
+  `PostgresStore`. Single store instance with two namespaces per user:
+  `[tenantId, employeeId, "facts"]` for keyed prefs/notes, and
+  `[tenantId, employeeId, "convo"]` for embedded conversation snippets.
+  `loadMemory` node hydrates both before `triage`. `extractMemory` runs
+  AFTER `respond` (off the user-facing critical path) — single nemo LLM
+  call produces both keyed facts and embedded snippets. `set_user_preference`
+  MCP tool for explicit user intent. Convo retrieval is OFF by default
+  (`lg.memory_convo_enabled = false`) until Slice 48 telemetry justifies
+  it. Tenant isolation via namespace prefixing (no DB-level RLS — see
+  hard rules). Replaces the original Slice 49 (factual) + Slice 50
+  (vector) — those drafts are archived as superseded.
+  See `slices/SLICE_49_BOT_MEMORY.md`.
 
 ### Proposed (not yet drafted)
 
-(None currently — all proposed slices have draft docs.)
+(None currently.)
 
 #### Earlier upcoming slices (legacy, may already be obsolete)
 

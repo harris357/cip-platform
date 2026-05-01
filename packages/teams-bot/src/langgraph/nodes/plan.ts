@@ -93,11 +93,13 @@ export function makePlanNode(ctx: BotAuthContext) {
     const ai = new AIMessage({
       content: choice.content ?? '',
       tool_calls: choice.tool_calls?.length
-        ? choice.tool_calls.map((tc, i) => ({
-            id:   tc.id ?? `call_${i}`,
-            name: tc.function.name,
-            args: safeParseArgs(tc.function.arguments),
-          }))
+        ? choice.tool_calls
+            .filter((tc): tc is Extract<typeof tc, { type: 'function' }> => tc.type === 'function')
+            .map((tc, i) => ({
+              id:   tc.id ?? `call_${i}`,
+              name: tc.function.name,
+              args: safeParseArgs(tc.function.arguments),
+            }))
         : [],
     });
 

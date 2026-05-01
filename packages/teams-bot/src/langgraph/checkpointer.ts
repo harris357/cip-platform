@@ -1,12 +1,31 @@
-// Slice 45: in-process checkpointer for the LangGraph runtime.
+// Slice 46: durable checkpointer.
 //
-// MemorySaver is a Map keyed by thread_id (Teams conversation ID). State
-// survives node-to-node transitions within a turn AND successive turns
-// within a pod's lifetime — but NOT pod restarts and NOT multi-replica.
+// PostgresSaver from @langchain/langgraph-checkpoint-postgres replaces the
+// in-process MemorySaver. State now survives pod restart and is shared across
+// replicas — the same Postgres backing the rest of `cip_hr` is reused.
 //
-// Slice 46 swaps to PostgresSaver via @langchain/langgraph-checkpoint-postgres
-// for durable + multi-replica state.
+// Hard rules (per slice doc):
+//   1. ensureCheckpointerReady() runs once at boot before serving traffic.
+//      setup() is idempotent; we cache the promise so concurrent boots don't
+//      run it twice.
+//   2. Connection string comes from DATABASE_URL_HR — the same env the rest
+//      of teams-bot uses for hr-service queries (auth context, channel
+//      registry, tunables, etc.).
+//   3. candidateTools is reset to [] at turn start (in ingest) so the
+//      between-turn checkpoint is small. Per slice 45's "computed-not-
+//      persisted" rule.
 
-import { MemorySaver } from '@langchain/langgraph';
+import { PostgresSaver } from '@langchain/langgraph-checkpoint-postgres';
 
-export const checkpointer = new MemorySaver();
+const POOL_URL = process.env['DATABASE_URL_HR'];
+if (!POOL_URL) {
+  throw new Error('DATABASE_URL_HR required for LangGraph Postgres checkpointer');
+}
+
+export const checkpointer = PostgresSaver.fromConnString(POOL_URL);
+
+let setupPromise: Promise<void> | null = null;
+export async function ensureCheckpointerReady(): Promise<void> {
+  if (!setupPromise) setupPromise = checkpointer.setup();
+  return setupPromise;
+}
