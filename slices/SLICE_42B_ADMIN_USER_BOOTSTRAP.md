@@ -1,6 +1,6 @@
-# Slice 42B — Admin user bootstrap (PLATFORM_ADMIN_EMAIL → service-admin group)
+# Slice 42B — Admin user bootstrap (PLATFORM_ADMIN_EMAIL → hr-service-admin role + `hr` realm role)
 
-> **Prerequisite:** Slice 42A (permission_groups + globs + catalog) complete.
+> **Prerequisite:** Slices 42A AND 42C complete. 42B builds on 42C's role layer + 42A's catalog/globs.
 > **Package:** `@cip/hr-service`, `scripts/`, helm charts
 > **Verify:** `pnpm -r run typecheck && bash scripts/bootstrap.sh && bash scripts/provision-tenant.sh ...`
 
@@ -8,20 +8,42 @@
 
 ## Why This Slice Exists
 
-Slice 42A introduced glob-aware permission groups but didn't change WHO has admin in any tenant. Today, on a fresh dev cluster, no employee has any permission until someone hand-grants `hr_standard` via SQL. Same for new tenants: provisioning creates the realm + groups + virtual key, but the admin email from `--admin-email` flag isn't tied to any actual employee row or group.
+After 42A + 42C, every fresh cluster bootstrap leaves zero employees with admin permissions. To use any HR-admin tool, an operator has to manually:
 
-Two recurring pain points:
-1. **Dev onboarding** — every fresh cluster bootstrap requires manually assigning permissions to test the bot. The pattern is so well-known we've run that SQL ~10 times this week.
-2. **Production onboarding** — when a customer is provisioned, the operator has to do a separate SQL step to elevate their admin email to a usable group. Easy to forget, hard to verify.
+1. Insert a row into `employee_role_assignments` linking themselves to a role with admin permissions
+2. Hit Keycloak admin API to grant their KC user the `hr` realm role
 
-Slice 42B closes the loop. **One env var (`PLATFORM_ADMIN_EMAIL`) drives admin elevation in any tenant where that email is provisioned.** The flow:
+We've run that pair of SQL/curl commands ~10 times this week. It's brittle, and worse, the same dance has to happen for every newly-provisioned production tenant.
 
-- New `hr-service-admin` system group seeded with cross-module globs (`employee.*, cert.*, compliance.*, tenant.*`) — Slice 42A's glob expansion makes this a 4-entry array instead of an enumerated list of 16.
-- `bootstrap.sh` (dev) ensures the admin email exists as an employee in the dev tenant + assigns the admin group.
-- `provision-tenant.sh` (prod) does the same for every newly-provisioned tenant.
-- `sync_employee` MCP tool (the per-turn first-time-user creation path) auto-assigns the admin group to a freshly-synced employee whose email matches `PLATFORM_ADMIN_EMAIL`. This is the safety net for "operator forgot to seed."
+42B closes the loop. **One env var (`PLATFORM_ADMIN_EMAIL`) drives admin elevation in any tenant where that email is provisioned.** Three idempotent paths apply it:
 
-**Per-tenant scope, per-tenant trigger** — confirmed Q5. The admin email is a *condition* checked in each tenant's provisioning path, not a platform-wide auto-elevation. An admin in Acme can't see Beta's data; they're only admin where they have a tenant-scoped employee row.
+- `bootstrap.sh` — dev tenant on cluster bootstrap
+- `provision-tenant.sh` — every newly-provisioned production tenant
+- `sync_employee` MCP tool — auto-assigns on first sync as safety net (catches "operator forgot to seed before user signed in")
+
+Defense-in-depth requires BOTH layers:
+- **CIP role assignment** — gives the user permissions inside hr-service (the fine-grained gate)
+- **KC realm role assignment** — puts `hr` in the JWT (the coarse gate)
+
+Without one, the user fails one of the two checks and can't actually do anything. 42B does both.
+
+**Per-tenant scope, per-tenant trigger.** The same email can be admin in some tenants and not provisioned in others. `PLATFORM_ADMIN_EMAIL` is a *condition checked in each tenant's provisioning path*, not a platform-wide auto-elevation. No super-admin blast radius.
+
+---
+
+## What 42B DOES
+
+- Migration 013 seeds an `hr-service-admin` ROLE per tenant (and the four module-admin groups it contains), all using glob permissions
+- `bootstrap.sh` and `provision-tenant.sh` ensure the admin email exists as an employee + assign the role + grant `hr` realm role via Keycloak Admin API
+- `sync_employee` MCP tool auto-fires the same elevation on first sync if the email matches `PLATFORM_ADMIN_EMAIL`
+- helm values + create-secrets.sh + .envrc operator instructions for `PLATFORM_ADMIN_EMAIL`
+
+## What 42B DOES NOT do
+
+- **No platform-wide super-admin.** Per-tenant only.
+- **No new MCP tools.** Existing `employee.grant-permission` (now operates on roles per 42C) handles the assignment internally.
+- **No additional KC realm roles.** Two existing roles (`hr`, `employee`) cover everything; admin gets `hr` (additive on top of `employee`).
+- **No demotion / removal flow.** This slice only ADDS. To revoke admin: existing `employee.revoke-permission` MCP tool works (removes the role, and a future slice can add KC realm role revocation if needed).
 
 ---
 
@@ -31,20 +53,19 @@ Slice 42B closes the loop. **One env var (`PLATFORM_ADMIN_EMAIL`) drives admin e
 packages/hr-service/src/
   db/
     migrations/
-      012_hr_service_admin_group.sql          ← NEW: seed the cross-module admin group per tenant
+      013_hr_service_admin_role.sql           ← NEW: per-tenant admin role + 4 module-admin groups
   modules/employees/mcp-tools/
-    sync-employee.ts                          ← MOD: auto-assign admin group on first sync if email matches
-  index.ts                                    ← (no change — env var read at request time)
+    sync-employee.ts                          ← MOD: auto-elevate on first sync if email matches
+  services/
+    keycloak-admin.ts                         ← (existing) used by sync-employee for realm role grant
 
 scripts/
-  bootstrap.sh                                ← MOD: new step "[7/7] Admin user elevation"
+  bootstrap.sh                                ← MOD: new step "[8/8] Admin user elevation" (renumber existing steps)
   provision-tenant.sh                         ← MOD: new step "[7a/7] Admin user elevation"
+  create-secrets.sh                           ← MOD: PLATFORM_ADMIN_EMAIL into hr-service-credentials
 
 packages/hr-service/helm/
   values.yaml                                 ← MOD: PLATFORM_ADMIN_EMAIL env
-
-scripts/
-  create-secrets.sh                           ← MOD: PLATFORM_ADMIN_EMAIL into hr-service-credentials
 
 slices/
   SLICE_42B_ADMIN_USER_BOOTSTRAP.md           ← this doc
@@ -54,118 +75,176 @@ slices/
 
 ## Read Before Writing
 
-- `slices/SLICE_42A_PERMISSION_GROUPS_SCHEMA.md` — fresh in scope from previous slice
-- `packages/hr-service/src/modules/employees/mcp-tools/sync-employee.ts` — the auto-assignment hook lives here
-- `scripts/bootstrap.sh` — current dev tenant + employee seed structure
-- `scripts/provision-tenant.sh` — current tenant provisioning steps
-- `packages/hr-service/src/db/migrations/008_role_permissions.sql` (now-renamed migration) for the seed pattern
-- `packages/hr-service/src/db/queries/permissions.ts` — `assignGroupByCode` (renamed in 42A) is the helper for elevation
+- `slices/SLICE_42A_PERMISSION_GROUPS_SCHEMA.md` — catalog + globs (foundation)
+- `slices/SLICE_42C_ROLES_LAYER.md` — role/group/assignment shape (foundation)
+- `packages/hr-service/src/modules/employees/mcp-tools/sync-employee.ts` — the auto-elevation hook lives here
+- `packages/hr-service/src/services/keycloak-admin.ts` — `getKcAdmin` + `kcAdminRequest` helpers used by other MCP tools
+- `packages/hr-service/src/modules/employees/mcp-tools/employee.assign-role.tool.ts` — example of calling KC Admin API to assign realm role
+- `scripts/bootstrap.sh` — current dev tenant + employee seed; admin elevation goes at the end
+- `scripts/provision-tenant.sh` — current tenant provisioning; admin elevation goes after virtual-key issuance
 
-Do **not** modify `employee.assign-role.tool.ts` / `employee.revoke-role.tool.ts` — those are for KC realm roles, separate concern.
+Do **not** modify `employee.assign-role.tool.ts` / `employee.revoke-role.tool.ts`. They handle KC realm roles for non-admin users — adjacent concern.
 
 ---
 
 ## Hard Rules (Seven Non-Negotiables)
 
-1. **Per-tenant scope, per-tenant trigger.** The same email can be admin in tenant A and not provisioned in tenant B. Admin status only flows through to tenants where the employee row exists. Never platform-wide.
-2. **`PLATFORM_ADMIN_EMAIL` is the ONLY env var driving this.** No additional configuration; if the var is empty, the slice's behaviour is a no-op (no auto-elevation, no errors). Lets dev clusters opt out.
-3. **Idempotent at every layer.** Bootstrap, provisioning, and sync-employee all use ON CONFLICT DO NOTHING for the group assignment. Re-running any of them is safe.
-4. **The admin group MUST use globs (per 42A).** Hard-coding the full permission list would silently rot every time a new permission is added. Use `permissions: ['employee.*', 'cert.*', 'compliance.*', 'tenant.*']`. Slice 42A's resolver expands these against the catalog.
-5. **`tenantId` flows through every code path.** The admin group is tenant-scoped (one row per tenant). Auto-assignment scopes to the tenant the synced employee belongs to.
-6. **Auto-assignment fires ONLY ON FIRST SYNC.** sync_employee runs every turn — the auto-elevate logic must short-circuit if the employee row already existed. Otherwise removing admin and the user re-signs in undoes the manual revocation.
-7. **No new MCP tools.** Group assignment uses the existing `employee_grant_permission` (renamed internally to `assignGroupByCode` in 42A but the MCP tool name stays). Bootstrap/provisioning call the helper directly via SQL; the MCP path stays for HR-driven changes.
+1. **Per-tenant scope, per-tenant trigger.** The same email can be admin in tenant A and not provisioned in tenant B. Admin status flows only through tenants where the employee row exists. Never platform-wide.
+2. **Both layers MUST be assigned together.** CIP role (DB) AND KC realm role (`hr` via Keycloak Admin API). Single-layer assignment leaves the user broken — passes one gate, fails the other.
+3. **`PLATFORM_ADMIN_EMAIL` is the ONLY env var driving this.** Empty/unset = feature is a no-op (no auto-elevation, no errors). Lets dev clusters opt out.
+4. **Idempotent at every layer.** Bootstrap, provisioning, and sync-employee all use ON CONFLICT DO NOTHING for the role assignment, and KC's `POST /role-mappings/realm` is naturally idempotent (HTTP 204 on re-add). Re-running any path is safe.
+5. **The admin role uses globs.** `permissions: ['employee.*', 'cert.*', 'compliance.*', 'tenant.*']` — 4 entries leveraging 42A's expansion. Hard-coding the full permission list would silently rot when new permissions are added.
+6. **Auto-assignment fires ONLY ON FIRST SYNC.** `sync_employee` runs every turn; the auto-elevate logic short-circuits if the employee row already existed (no re-firing). Otherwise revoking admin and the user re-signing in undoes the manual revocation.
+7. **`tenantId` flows through every code path.** The admin role is tenant-scoped (one row per tenant). KC realm role assignment scopes to the tenant's KC realm (`getKcAdmin(tenantId)`).
 
 ---
 
-## Migration: `012_hr_service_admin_group.sql`
+## Migration: `013_hr_service_admin_role.sql`
+
+The hr-service-admin role spans modules (employee + cert + compliance + tenant), so per the locked design it's a ROLE composing FOUR module-scoped admin groups, not one cross-module group.
 
 ```sql
--- Slice 42B: seed the platform's hr-service admin group per tenant.
--- Cross-module: spans employee/cert/compliance/tenant. Uses globs (Slice
--- 42A) so new permissions added later are automatically inherited.
---
--- Idempotent: ON CONFLICT DO UPDATE (refresh permissions list on re-run).
+BEGIN;
+
+-- ─── 1. Per-module admin groups (4 per tenant) ───────────────────────────────
+-- Each is single-module with a glob permission. Globs expand against the
+-- catalog (Slice 42A) so new permissions are auto-included.
 
 INSERT INTO permission_groups (
-  tenant_id, service, module, code, keycloak_role, label, permissions, is_system_role
+  tenant_id, service, module, code, label, permissions, is_system_role
 )
 SELECT
   t.id,
   'hr-service',
-  'general',                  -- spans modules → 'general'
-  'hr-service-admin',
-  'hr',                       -- gates on hr realm role
-  'HR Service Administrator',
-  '["employee.*", "cert.*", "compliance.*", "tenant.*"]'::jsonb,
-  true                        -- system group; operators shouldn't edit
+  m.module,
+  'admin__' || m.module,                                  -- 'admin__cert', 'admin__employee', etc.
+  upper(substring(m.module, 1, 1)) || substring(m.module, 2) || ' Module Admin',
+  jsonb_build_array(m.module || '.*'),                    -- ['cert.*'] → glob-expanded at runtime
+  true
 FROM tenants t
+CROSS JOIN (VALUES ('cert'), ('employee'), ('compliance'), ('tenant')) AS m(module)
 ON CONFLICT (tenant_id, service, module, code) DO UPDATE
-  SET permissions   = EXCLUDED.permissions,
-      label         = EXCLUDED.label,
+  SET permissions    = EXCLUDED.permissions,
+      label          = EXCLUDED.label,
+      is_system_role = true;
+
+-- ─── 2. The hr-service-admin role per tenant ────────────────────────────────
+
+INSERT INTO roles (
+  tenant_id, code, label, description, keycloak_role, is_system_role
+)
+SELECT
+  id,
+  'hr-service-admin',
+  'HR Service Administrator',
+  'Cross-module admin: every permission in hr-service. Implies KC realm role hr.',
+  'hr',
+  true
+FROM tenants
+ON CONFLICT (tenant_id, code) DO UPDATE
+  SET label = EXCLUDED.label,
+      description = EXCLUDED.description,
       keycloak_role = EXCLUDED.keycloak_role,
       is_system_role = true;
+
+-- ─── 3. Link the role to its 4 module-admin groups ──────────────────────────
+
+INSERT INTO role_groups (role_id, group_id)
+SELECT r.id, pg.id
+FROM roles r
+JOIN permission_groups pg
+  ON pg.tenant_id = r.tenant_id
+ AND pg.service   = 'hr-service'
+ AND pg.code      LIKE 'admin\___%' ESCAPE '\'           -- matches admin__cert, admin__employee, etc.
+WHERE r.code = 'hr-service-admin'
+ON CONFLICT DO NOTHING;
+
+COMMIT;
 ```
 
-Run via `pnpm --filter @cip/hr-service run migrate` (the existing migration runner picks it up automatically).
+Result: every tenant has an `hr-service-admin` role containing 4 module-admin groups. Each group has 1 glob permission. Resolver expands → admin gets every permission in the catalog.
+
+Re-runs are no-ops (everything ON CONFLICT). New permissions added to the catalog later are automatically picked up because the groups use globs.
 
 ---
 
-## sync-employee.ts auto-assignment hook
+## sync-employee.ts auto-elevation hook
 
-The existing tool runs every turn. Add a fast-path that fires only when the employee row was just created (not on subsequent re-syncs). Pseudocode:
+Existing tool runs every turn. Add a fast-path that fires only when the employee row was just created.
+
+Pseudocode:
 
 ```typescript
-const { employeeId, isNewlyCreated } = await syncEmployeeRow(...);
+import { assignRoleToEmployee } from '../../../db/queries/roles.js';   // 42C helper
+import { getKcAdmin, kcAdminRequest } from '../../../services/keycloak-admin.js';
+
+const { employeeId, isNewlyCreated, kcUserId } = await syncEmployeeRow(...);
+//   ^ existing logic; expose isNewlyCreated + kcUserId from syncEmployeeRow
 
 const adminEmail = process.env['PLATFORM_ADMIN_EMAIL']?.toLowerCase().trim();
 if (isNewlyCreated && adminEmail && email.toLowerCase().trim() === adminEmail) {
-  // Auto-assign the hr-service-admin group for THIS tenant.
-  // Uses 42A's renamed helper. Idempotent ON CONFLICT.
-  await assignGroupByCode(client, tenantId, employeeId, 'hr-service-admin', /*grantedBy*/ null);
+  // Step 1: assign the hr-service-admin CIP role (DB).
+  // Idempotent ON CONFLICT inside the helper.
+  await assignRoleToEmployee(client, tenantId, employeeId, 'hr-service-admin', /*grantedBy*/ null);
+
+  // Step 2: grant the `hr` Keycloak realm role (defense-in-depth, JWT claim).
+  // POST /role-mappings/realm is idempotent (204 on re-add).
+  if (kcUserId) {
+    try {
+      const admin = await getKcAdmin(tenantId);
+      const roleResp = await kcAdminRequest(admin, 'GET', `/roles/hr`);
+      if (roleResp.ok) {
+        const roleRep = await roleResp.json();
+        await kcAdminRequest(admin, 'POST', `/users/${kcUserId}/role-mappings/realm`, [roleRep]);
+      }
+    } catch (err) {
+      // Don't fail the sync if KC is briefly unavailable — log and continue.
+      // The user will re-sync next turn; idempotent retry.
+      console.warn(`[admin-elevate] KC realm role assignment failed: ${err}`);
+    }
+  }
+
   console.log(`[sync_employee] auto-elevated admin email=${email} tenantId=${tenantId}`);
 }
 ```
 
-The `isNewlyCreated` boolean is the new return field — the existing tool already does the upsert and knows whether INSERT fired vs UPDATE. Surface it.
-
-Two important details:
-- **Lowercase + trim** both sides before comparing — emails routinely show up with subtle case variations from different identity providers.
-- **`grantedBy: null`** since the auto-elevate is a system action, not done by another employee. Audit trail still shows it via the timestamp + the log line.
+Three details to get right:
+- **`isNewlyCreated`** boolean — surface from the existing INSERT-or-UPDATE logic. New return field.
+- **Lowercase + trim** both sides of email comparison. AAD/KC routinely vary case.
+- **KC failure is logged, not fatal.** The sync turn shouldn't block on a KC API hiccup. Next turn re-fires (idempotent on both sides), so eventual consistency.
 
 ---
 
-## bootstrap.sh — `[7/7] Admin user elevation`
+## bootstrap.sh — `[8/8] Admin user elevation`
 
-Renumber existing steps `[N/6]` → `[N/7]`. New step at the end:
+The current `bootstrap.sh` ends at `[7/7]` (Langfuse seed from Slice 41 era). 42B adds `[8/8]`. Renumber existing labels.
 
 ```bash
-# ── 7. Admin user elevation (Slice 42B) ──────────────────────────────────────
-echo "[7/7] Elevating PLATFORM_ADMIN_EMAIL to hr-service-admin group..."
+# ── 8. Admin user elevation (Slice 42B) ──────────────────────────────────────
+echo "[8/8] Elevating PLATFORM_ADMIN_EMAIL to hr-service-admin role..."
 if [[ -z "${PLATFORM_ADMIN_EMAIL:-}" ]]; then
   echo "      WARNING: PLATFORM_ADMIN_EMAIL not in env — skipping admin elevation."
-  echo "      Set it in .envrc to auto-elevate. Otherwise, manually grant via the bot."
+  echo "      Set it in .envrc to auto-elevate the dev admin user."
 elif [[ -n "$POSTGRES_POD" && -n "${PG_USER_PASSWORD:-}" ]]; then
+  # Step 1: DB-side — ensure employee + assign role.
   kubectl exec -i -n cip-infra "$POSTGRES_POD" -- \
     env PGPASSWORD="$PG_USER_PASSWORD" psql -U cipuser -d cip_hr -v ON_ERROR_STOP=1 <<SQL 2>&1 \
       | sed 's/^/      /' || true
 DO \$\$
 DECLARE
-  v_employee_id UUID;
-  v_group_id    UUID;
-  v_tenant_id   UUID := '00000000-0000-0000-0000-000000000001';   -- dev tenant
+  v_tenant_id   UUID := '00000000-0000-0000-0000-000000000001';
   v_email       TEXT := '${PLATFORM_ADMIN_EMAIL}';
+  v_employee_id UUID;
+  v_role_id     UUID;
 BEGIN
-  -- Find the hr-service-admin group for the dev tenant (seeded by migration 012)
-  SELECT id INTO v_group_id
-    FROM permission_groups
-   WHERE tenant_id = v_tenant_id AND service = 'hr-service' AND code = 'hr-service-admin';
+  SELECT id INTO v_role_id
+    FROM roles WHERE tenant_id = v_tenant_id AND code = 'hr-service-admin';
 
-  IF v_group_id IS NULL THEN
-    RAISE NOTICE 'hr-service-admin group not seeded for dev tenant — re-run migrations';
+  IF v_role_id IS NULL THEN
+    RAISE NOTICE 'hr-service-admin role not seeded for dev tenant — re-run migrations';
     RETURN;
   END IF;
 
-  -- Find or create the employee row.
   SELECT id INTO v_employee_id
     FROM employees WHERE tenant_id = v_tenant_id AND lower(email) = lower(v_email);
 
@@ -176,53 +255,71 @@ BEGIN
     RAISE NOTICE 'Created admin employee row id=%', v_employee_id;
   END IF;
 
-  -- Assign the admin group (idempotent).
-  INSERT INTO employee_group_assignments (employee_id, group_id, granted_by)
-  VALUES (v_employee_id, v_group_id, NULL)
+  INSERT INTO employee_role_assignments (employee_id, role_id, granted_by)
+  VALUES (v_employee_id, v_role_id, NULL)
   ON CONFLICT DO NOTHING;
 
-  RAISE NOTICE 'Admin elevation complete for email=% tenant=%', v_email, v_tenant_id;
+  RAISE NOTICE 'CIP role assignment complete: email=% tenant=% role=hr-service-admin', v_email, v_tenant_id;
 END \$\$;
 SQL
+
+  # Step 2: KC-side — grant `hr` realm role to the matching KC user.
+  # Re-uses the bootstrap script's existing KC port-forward + admin token.
+  KC_USER_ID=$(curl -s "${KC_LOCAL}/admin/realms/cip-dev/users?email=${PLATFORM_ADMIN_EMAIL}" \
+    -H "Authorization: Bearer $KC_ADMIN_TOKEN" 2>/dev/null \
+    | jq -r '.[0].id // empty')
+
+  if [[ -n "$KC_USER_ID" ]]; then
+    HR_ROLE_REP=$(curl -s "${KC_LOCAL}/admin/realms/cip-dev/roles/hr" \
+      -H "Authorization: Bearer $KC_ADMIN_TOKEN")
+    curl -s -o /dev/null -w "      KC hr realm role grant: HTTP %{http_code}\n" \
+      -X POST "${KC_LOCAL}/admin/realms/cip-dev/users/${KC_USER_ID}/role-mappings/realm" \
+      -H "Authorization: Bearer $KC_ADMIN_TOKEN" \
+      -H "Content-Type: application/json" \
+      -d "[$HR_ROLE_REP]"
+  else
+    echo "      KC user not found for ${PLATFORM_ADMIN_EMAIL} — they'll get the realm role on first sync via sync_employee."
+  fi
 else
   echo "      WARNING: postgres pod or PG_USER_PASSWORD missing — skipping admin elevation"
 fi
 ```
 
+Note: bootstrap.sh runs the KC port-forward earlier (step 4); reuse the existing `$KC_ADMIN_TOKEN` and `$KC_LOCAL` if available, or open a fresh forward.
+
 ---
 
 ## provision-tenant.sh — `[7a/7] Admin user elevation`
 
-Step inserted right after the existing virtual-key issuance. Same idempotent SQL block, but `v_tenant_id` comes from the `$TENANT_ID` shell variable being provisioned.
+Insert right after the existing virtual-key issuance step.
 
 ```bash
-echo "[7a/7] Elevating admin email to hr-service-admin group for tenant $TENANT_ID..."
-if [[ -z "${PLATFORM_ADMIN_EMAIL:-}" && -z "$ADMIN_EMAIL" ]]; then
-  echo "      WARNING: neither PLATFORM_ADMIN_EMAIL nor --admin-email available — skipping."
+echo "[7a/7] Elevating admin email to hr-service-admin role for tenant $TENANT_ID..."
+ADMIN_EMAIL_FOR_TENANT="${ADMIN_EMAIL:-${PLATFORM_ADMIN_EMAIL:-}}"
+
+if [[ -z "$ADMIN_EMAIL_FOR_TENANT" ]]; then
+  echo "      WARNING: neither --admin-email nor PLATFORM_ADMIN_EMAIL — skipping."
+elif [[ -n "$POSTGRES_POD" && -n "${PG_USER_PASSWORD:-}" ]]; then
+  # Same DO $$ block as bootstrap.sh, parameterised:
+  #   v_tenant_id := $TENANT_ID
+  #   v_email     := $ADMIN_EMAIL_FOR_TENANT
+  # ...
+
+  # KC-side: realm here is $REALM (per-tenant); admin user lookup by email
+  # in the tenant's own realm.
+  KC_USER_ID=$(curl -s "${KC_LOCAL}/admin/realms/${REALM}/users?email=${ADMIN_EMAIL_FOR_TENANT}" \
+    -H "Authorization: Bearer $KC_ADMIN_TOKEN" | jq -r '.[0].id // empty')
+  # ... grant hr realm role same as bootstrap.sh ...
 else
-  ADMIN_EMAIL_FOR_TENANT="${PLATFORM_ADMIN_EMAIL:-$ADMIN_EMAIL}"
-  POSTGRES_POD=$(kubectl get pod -n cip-infra -l app.kubernetes.io/name=postgresql \
-    -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
-  if [[ -n "$POSTGRES_POD" && -n "${PG_USER_PASSWORD:-}" ]]; then
-    # Same DO $$ ... $$ block as bootstrap.sh, with v_tenant_id and v_email
-    # parameterised from this script's environment.
-    ...
-  fi
+  echo "      WARNING: postgres pod or PG_USER_PASSWORD missing — skipping."
 fi
 ```
 
-`provision-tenant.sh` accepts `--admin-email <addr>` as an existing arg. We use that as the per-tenant admin if it's set; fall back to `PLATFORM_ADMIN_EMAIL` if not. So:
-- Dev → `PLATFORM_ADMIN_EMAIL` (single email seeded as admin in dev tenant)
-- Production tenant Acme provisioned with `--admin-email admin@acme.com` → `admin@acme.com` is admin of the Acme tenant
-- Customer also has `--admin-email` ALSO matching `PLATFORM_ADMIN_EMAIL` for cross-tenant CIP-staff access? Not by default — operator decides at provision time.
+Per-tenant precedence: explicit `--admin-email` (the customer's admin) wins; `PLATFORM_ADMIN_EMAIL` is a fallback for tenants where the operator forgot to specify.
 
 ---
 
 ## helm values + create-secrets
-
-Add `PLATFORM_ADMIN_EMAIL` to:
-- `packages/hr-service/helm/values.yaml` env block
-- `scripts/create-secrets.sh` — into `hr-service-credentials` secret (same pattern as PLATFORM_ADMIN_TOKEN)
 
 ```yaml
 # packages/hr-service/helm/values.yaml
@@ -230,9 +327,9 @@ env:
   ...
   # Slice 42B: email of the platform admin. When sync_employee runs for a
   # newly-created employee whose email matches (case-insensitive), they get
-  # auto-assigned the hr-service-admin group in their tenant. Empty = feature
-  # off (no auto-elevation; admin must be assigned manually via SQL or MCP).
-  PLATFORM_ADMIN_EMAIL: ""    # set per-deployment
+  # auto-assigned the hr-service-admin role + the `hr` Keycloak realm role.
+  # Empty = feature off (no auto-elevation; admin must be assigned manually).
+  PLATFORM_ADMIN_EMAIL: ""    # set per-deployment via .envrc + create-secrets
 ```
 
 `create-secrets.sh`:
@@ -255,23 +352,30 @@ export PLATFORM_ADMIN_EMAIL="aharris@idlevice.ca"
 
 ## Acceptance Criteria
 
-- [ ] Migration `012_hr_service_admin_group.sql` applies cleanly. Each tenant in `tenants` table now has exactly one `hr-service-admin` permission group with `permissions: ['employee.*', 'cert.*', 'compliance.*', 'tenant.*']` and `is_system_role: true`.
-- [ ] Re-running migration 012 is a no-op (ON CONFLICT DO UPDATE keeps the row consistent; no new versions).
-- [ ] Bootstrap on a fresh cluster with `PLATFORM_ADMIN_EMAIL=aharris@idlevice.ca` set in `.envrc`:
+- [ ] Migration `013_hr_service_admin_role.sql` applies cleanly. Each tenant has:
+  - 4 permission_groups rows: `admin__cert`, `admin__employee`, `admin__compliance`, `admin__tenant` with glob permissions
+  - 1 role: `hr-service-admin` with `keycloak_role='hr'`, `is_system_role=true`
+  - 4 role_groups rows linking the role to the 4 module-admin groups
+- [ ] Re-running migration 013 is a no-op (ON CONFLICT DO UPDATE keeps rows consistent; no duplicates).
+- [ ] Bootstrap on a fresh cluster with `PLATFORM_ADMIN_EMAIL=aharris@idlevice.ca`:
   - Creates an employee row with that email in the dev tenant
-  - Assigns the hr-service-admin group
-  - Logs `Admin elevation complete for email=aharris@idlevice.ca tenant=00000000-...`
-- [ ] Re-running bootstrap is idempotent — second run logs "Admin elevation complete" without errors, no duplicate assignments.
+  - Assigns the `hr-service-admin` role via `employee_role_assignments`
+  - Grants the `hr` realm role to the matching KC user (verifiable via Keycloak admin console or `GET /role-mappings/realm`)
+  - Logs both steps' completion
+- [ ] Re-running bootstrap is idempotent — no errors, no duplicate assignments.
 - [ ] Provisioning a new tenant with `--admin-email admin@acme.com`:
   - Creates the employee in the new tenant only (not in dev)
-  - Assigns hr-service-admin
+  - Assigns `hr-service-admin` role
+  - Grants `hr` realm role in the tenant's KC realm
   - The same email signing into the bot for Acme has full HR-tool access
-  - Same email signing into bot for dev (where `PLATFORM_ADMIN_EMAIL` differs) has no access UNLESS pre-provisioned
-- [ ] sync_employee auto-elevation: starting from a clean state with no admin assignment, the user with email matching `PLATFORM_ADMIN_EMAIL` signs into the bot. After the first turn, `SELECT count(*) FROM employee_group_assignments WHERE employee_id = …` returns 1, and subsequent turns don't re-fire (verified by sync_employee log line appearing exactly once across multiple turns).
+  - Same email signing into bot for dev (different `PLATFORM_ADMIN_EMAIL`) has no access UNLESS pre-provisioned
+- [ ] **sync_employee auto-elevation**: starting from a clean state where the admin user has signed up via Teams but bootstrap hasn't elevated them yet:
+  - First message: sync_employee creates the row. Auto-elevation fires: row in `employee_role_assignments` for `hr-service-admin`, `hr` realm role granted in KC.
+  - Subsequent messages: `isNewlyCreated=false`, auto-elevation does NOT re-fire (verified via log line appearing exactly once across multiple turns).
 - [ ] sync_employee auto-elevation does NOT trigger for emails not matching `PLATFORM_ADMIN_EMAIL`.
-- [ ] When `PLATFORM_ADMIN_EMAIL` is empty in env, none of the three paths (bootstrap/provisioning/sync) elevate anyone. They log a warning and continue.
-- [ ] After the slice ships, the previously-needed manual SQL `INSERT INTO employee_group_assignments ... hr_standard ...` is never necessary again on a fresh cluster bootstrap.
-- [ ] Bot test: with `PLATFORM_ADMIN_EMAIL` set and matching the user, after sign-in the classifier sees all six categories (cert_query, cert_action, hr_admin available because admin has all permissions). "List all employees" routes to `cip-router-careful` and returns the employee list.
+- [ ] When `PLATFORM_ADMIN_EMAIL` is empty, none of the three paths elevate anyone. Warning logged, no errors.
+- [ ] Bot test: with admin elevated, after sign-in the classifier sees all six categories. "List all employees" routes through `cip-router-careful` and returns the employee list.
+- [ ] **Defense-in-depth verified.** Manually revoke the `hr` realm role in KC. Bot turns immediately fail HR-only tools (coarse gate refuses). Re-run bootstrap to restore. Then revoke the `employee_role_assignments` row instead. HR tools fail at `assertPermission` (fine-grained gate refuses). Both gates work independently.
 - [ ] `pnpm -r run typecheck` passes.
 - [ ] `bash -n scripts/bootstrap.sh && bash -n scripts/provision-tenant.sh` pass.
 
@@ -279,46 +383,48 @@ export PLATFORM_ADMIN_EMAIL="aharris@idlevice.ca"
 
 ## Out of Scope
 
-- **Multiple admin emails.** `PLATFORM_ADMIN_EMAIL` is singular. If we need a list, future slice — the env var becomes a comma-separated list and the SQL DO block iterates.
-- **Demoting an existing admin.** This slice only adds. To remove admin from a user, use the existing `employee_revoke_permission` MCP tool (renamed internally to `removeGroupByCode` in 42A).
-- **Cross-tenant super-admin.** Per-tenant scope is by design (Q5). A future slice could add a `super_admins` platform-scoped table if/when CIP staff need cross-tenant read access for support — but it'd be a Big Deal and have its own audit story.
-- **Password / SSO / Keycloak realm-role assignment.** Slice 42B only handles permission group assignment in the CIP DB. The admin user still needs a Keycloak realm role (e.g., `hr`) to pass the bot's coarse gate. Bootstrap.sh already handles that for the dev tenant; provision-tenant.sh assumes the admin will sign in via AAD federation and bootstrap their own realm role. Worth verifying in the provisioning spec, separate slice.
-- **Separating "admin" from a tenant role.** The admin group is per-tenant; the user IS in a tenant. CIP staff helping debug a customer would need to be a separate concern. Don't tackle in this slice.
-- **MCP tool rename** (`employee_grant_permission` → `employee_assign_group`). Stays for a future coordinated rename slice.
+- **Multiple admin emails per tenant.** `PLATFORM_ADMIN_EMAIL` is singular. If we ever need a list, future slice — env becomes comma-separated, SQL DO block iterates.
+- **Demoting an existing admin.** This slice only adds. To remove admin: existing `employee.revoke-permission` MCP tool removes the role. Realm-role revocation would be its own micro-slice via `employee.revoke-role`.
+- **Cross-tenant super-admin** for CIP staff. Per-tenant scope is a hard rule. If we eventually need cross-tenant read access for support, separate `super_admins` platform-scoped table — its own slice with audit story.
+- **First-broker-login auto-default-role.** When a non-admin user first federates from AAD into KC, they currently land with NO realm role. Slice 42B doesn't change that — the `bot-auto-create` flow could be extended to assign `employee` by default, but that's a separate Keycloak-flow change. Defer.
+- **MCP tool rename** (`employee_grant_permission` → `employee_assign_role`). Tool args are already `role` (accurate post-42C). The MCP tool NAME changes are a coordinated bot+hr-service rename for a future slice.
 
 ---
 
 ## Cross-Slice Notes
 
-- **Depends on Slice 42A.** Without 42A's `permission_groups` table + glob expansion, the admin group's `cert.*`/`employee.*` arrays don't expand and admin can't actually do anything. Hard prerequisite.
-- **No new cross-slice notes anticipated.** This slice only consumes 42A primitives.
+- **Hard depends on Slice 42A and 42C.** Without 42C's `roles` and `role_groups` tables, migration 013 can't run. Without 42A's catalog + globs, the `cert.*` etc. glob entries don't expand.
+- **No new cross-slice notes anticipated.** This slice only consumes 42A/42C primitives.
 
-If `PLATFORM_ADMIN_EMAIL` is set to an email of a user who's already in tenants under multiple permission groups (e.g., `field_employee` from earlier testing), the auto-elevation ADDS the admin group — doesn't replace. Result: user is in both groups. That's the intended additive behaviour. To clean up, manually remove the lower group via `employee_revoke_permission`.
+If `PLATFORM_ADMIN_EMAIL` is set to an email of a user who's already in another tenant's roles (e.g. `field_employee` from earlier testing), auto-elevation ADDS the `hr-service-admin` role — doesn't remove the existing one. Result: user has both roles in their tenant, permissions union (additive multi-role per Slice 42C). To clean up, manually remove the lower role.
 
 ---
 
 ## Commit
 
 ```
-slice(42B): admin user bootstrap via PLATFORM_ADMIN_EMAIL → hr-service-admin group
+slice(42B): admin user bootstrap (PLATFORM_ADMIN_EMAIL → hr-service-admin role + hr realm role)
 
-Migration 012 seeds an `hr-service-admin` permission group per tenant
-with cross-module glob permissions (Slice 42A's expansion machinery
-makes this `['employee.*', 'cert.*', 'compliance.*', 'tenant.*']`
-instead of an enumerated list).
+Migration 013 seeds an `hr-service-admin` role per tenant containing
+four module-admin groups (cert, employee, compliance, tenant) — each
+with a single glob permission ('cert.*', etc.) that 42A's resolver
+expands at lookup time to all permissions in that module.
 
-Three elevation paths, all idempotent:
-1. bootstrap.sh — dev tenant, admin from PLATFORM_ADMIN_EMAIL
-2. provision-tenant.sh — new tenants, admin from --admin-email or
-   PLATFORM_ADMIN_EMAIL fallback
-3. sync_employee MCP tool — auto-assigns admin group on FIRST sync
-   when email matches PLATFORM_ADMIN_EMAIL (safety net)
+Three idempotent elevation paths driven by PLATFORM_ADMIN_EMAIL env:
+1. bootstrap.sh — dev tenant
+2. provision-tenant.sh — new production tenants (--admin-email
+   takes precedence; falls back to PLATFORM_ADMIN_EMAIL)
+3. sync_employee MCP tool — auto-elevates on FIRST sync if email
+   matches (safety net for "operator forgot to seed beforehand")
 
-Per-tenant scope: the same email can be admin in some tenants and
-not provisioned in others. No platform-wide super-admin.
+Each path performs BOTH halves of defense-in-depth:
+- CIP role assignment (employee_role_assignments → hr-service-admin)
+- KC realm role assignment (POST /role-mappings/realm with `hr`)
 
-Eliminates the recurring "manually grant hr_standard via SQL" step
-on every fresh cluster bootstrap.
+Per-tenant scope, per-tenant trigger. No platform-wide super-admin.
+The same email can be admin in some tenants and not provisioned in
+others. Eliminates the recurring manual SQL+curl elevation step on
+every fresh cluster bootstrap.
 
 PLATFORM_ADMIN_EMAIL added to hr-service helm values + create-
 secrets.sh + .envrc operator instructions.

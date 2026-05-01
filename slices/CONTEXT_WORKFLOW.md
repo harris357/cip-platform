@@ -29,7 +29,8 @@
 | 40 | LiteLLM Tier Governance via provision-tenant.sh | [SLICE_40_LITELLM_TIER_GOVERNANCE.md](./SLICE_40_LITELLM_TIER_GOVERNANCE.md) | COMPLETE |
 | 41 | Langfuse-hosted Prompts | [SLICE_41_LANGFUSE_PROMPTS.md](./SLICE_41_LANGFUSE_PROMPTS.md) | COMPLETE |
 | 42A | Permission Groups (rename roles + module + catalog + globs) | [SLICE_42A_PERMISSION_GROUPS_SCHEMA.md](./SLICE_42A_PERMISSION_GROUPS_SCHEMA.md) | PENDING |
-| 42B | Admin User Bootstrap (PLATFORM_ADMIN_EMAIL → admin group) | [SLICE_42B_ADMIN_USER_BOOTSTRAP.md](./SLICE_42B_ADMIN_USER_BOOTSTRAP.md) | PENDING |
+| 42C | Role Layer (cross-module composition over groups) | [SLICE_42C_ROLES_LAYER.md](./SLICE_42C_ROLES_LAYER.md) | PENDING |
+| 42B | Admin User Bootstrap (PLATFORM_ADMIN_EMAIL → admin role + hr realm role) | [SLICE_42B_ADMIN_USER_BOOTSTRAP.md](./SLICE_42B_ADMIN_USER_BOOTSTRAP.md) | PENDING |
 
 All slices 01–21 are complete — see [archive/](./archive/). Slices 31, 32,
 33, 35, 36, 37, 38 completed during the auth/multi-tenant + permissions
@@ -45,20 +46,36 @@ Only pending slices shown. Completed slices are archived.
 
 ```
 COMPLETE: 22 ──► 23 ──► 24
-                  └─► 25 ──► 32 ──► 31 ──► 33 ──► 38
-                                            └─► 35 ──► 36 ──► 37
+                  └─► 25 ──► 32 ──► 31 ──► 33 ──► 38 ──► 39A ──► 39B
+                                            └─► 35 ──► 36 ──► 37     └─► 40, 41
                   └─► 26          └─► 27       └─► 28
 
-PENDING:    39A ──► 39B          (per-purpose LLM routing; 39B depends on 39A)
+PENDING:    42A ──► 42C ──► 42B
+            (groups + module + catalog + globs)
+                  ──► (role layer composing groups)
+                       ──► (admin bootstrap via PLATFORM_ADMIN_EMAIL)
 ```
 
 ### Recommended next order
 
-1. **Slice 39A** — Per-Purpose LLM Routing Foundation. Adds a
-   `routing_rules` table (tunable via SQL), per-purpose Langfuse tagging,
-   `resolveAlias()` helpers, and `store_model_in_db: true` on LiteLLM.
-   No user-visible behaviour change. Ship + validate Langfuse data shows
-   per-purpose attribution before 39B.
+1. **Slice 42A** — Permission Groups (rename + module + catalog + globs).
+   Renames `roles` → `permission_groups`, adds module column, builds
+   permission catalog, teaches resolver to expand globs. Multi-module
+   rows get `module='general'` as a TRANSITIONAL marker that 42C
+   eliminates. No user-visible behaviour change. ~1 day of work.
+2. **Slice 42C** — Role Layer. Adds `roles` + `role_groups` +
+   `employee_role_assignments` tables. Splits 42A's transitional
+   'general' rows into per-module groups + a composing role each.
+   Migrates employee assignments from groups → roles. Moves
+   `keycloak_role` column from groups to roles. Resolver chains
+   employee → role → groups → permissions. After 42C, every
+   permission_group is single-module. ~1.5 days of work.
+3. **Slice 42B** — Admin User Bootstrap. Migration 013 seeds an
+   `hr-service-admin` role per tenant (with 4 glob-permission module-
+   admin groups). Bootstrap.sh + provision-tenant.sh + sync_employee
+   all auto-elevate the email matching `PLATFORM_ADMIN_EMAIL` to the
+   admin role AND grant the `hr` Keycloak realm role. Per-tenant
+   scope, per-tenant trigger. ~1 day of work.
 2. **Slice 39B** — LLM-as-Classifier in the Bot. Adds Stage-1 Mistral Nemo
    classifier with chitchat/meta inline-reply short-circuit. Stage-2 tool
    selection on a category-filtered catalog routed through `routing_rules`.
