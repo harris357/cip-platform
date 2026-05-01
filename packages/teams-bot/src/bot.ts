@@ -179,7 +179,9 @@ export class CIPTeamsBot extends TeamsActivityHandler {
       return;
     }
 
-    const tools = await discoverTools(ctx);
+    // Slice 44: pass `text` into discoverTools so the vector-retrieval
+    // pre-filter can narrow the candidate set by semantic similarity.
+    const tools = await discoverTools(ctx, text);
     const tDiscover = Date.now();
 
     // Slice 43: classify intent into chitchat | meta | proceed.

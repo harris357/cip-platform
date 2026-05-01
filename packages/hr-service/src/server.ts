@@ -4,6 +4,7 @@ import { healthRouter } from './routes/health.js';
 import { adminTenantsRouter } from './routes/admin-tenants.js';
 import { adminEmployeesRouter } from './routes/admin-employees.js';
 import { adminRoutingRouter } from './routes/admin-routing.js';
+import { adminToolRetrievalRouter } from './routes/admin-tool-retrieval.js';
 
 export function createApp(): Express {
   const app = express();
@@ -20,6 +21,11 @@ export function createApp(): Express {
   // Slice 39A: routing rules read by the bot's alias-resolver. Same
   // platform-admin token, mounted before the tenant JWT middleware.
   app.use(adminRoutingRouter);
+
+  // Slice 44: tool-retrieval endpoint called by the bot's discoverTools
+  // to narrow the LLM-visible tool set via vector similarity. Same
+  // platform-admin token; mounted before the tenant JWT middleware.
+  app.use(adminToolRetrievalRouter);
 
   // All other routes require a valid tenant JWT
   app.use(tenantAuthMiddleware);

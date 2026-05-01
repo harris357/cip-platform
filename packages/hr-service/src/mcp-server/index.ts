@@ -8,6 +8,7 @@ import { registerEmployeeTools } from '../modules/employees/mcp-tools/index.js'
 import { registerSettingsTools } from '../modules/settings/mcp-tools/index.js'
 import { getPool } from '../db/index.js'
 import { seedPermissionCatalog } from '../services/permission-catalog-seed.js'
+import { seedToolEmbeddings } from '../services/tool-embeddings-seed.js'
 
 // Pull the Bearer token off the HTTP request and attach it as req.auth so that
 // the MCP transport surfaces it to each tool handler as authInfo.token.
@@ -44,6 +45,16 @@ export async function startMcpServer(): Promise<void> {
   } catch (err) {
     console.warn(`[catalog] seed failed: ${err instanceof Error ? err.message : String(err)}`)
     // Non-fatal: glob expansion will skip unknown catalog entries; literals still work.
+  }
+
+  // Slice 44: seed tool_embeddings (idempotent — only re-embeds tools whose
+  // description_hash changed since last pod start). Non-fatal: discoverTools
+  // falls back to the full permission-filtered list if the table is empty
+  // or this seed fails partway through.
+  try {
+    await seedToolEmbeddings(server, getPool())
+  } catch (err) {
+    console.warn(`[tool-embeddings] seed failed: ${err instanceof Error ? err.message : String(err)}`)
   }
 
   const app = express()

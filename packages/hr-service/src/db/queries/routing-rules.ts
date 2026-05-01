@@ -27,6 +27,24 @@ export async function listRoutingRulesByService(
 }
 
 /**
+ * Slice 44: fetch a single routing rule's alias by (service, purpose).
+ * Used by hr-service's own retrieval endpoint to resolve `bot.embed`
+ * → `mistral-embed` (or whatever the operator overrode it to).
+ * Returns null if no rule registered.
+ */
+export async function getRoutingRule(
+  client: PoolClient,
+  service: string,
+  purpose: string,
+): Promise<string | null> {
+  const r = await client.query<{ alias: string }>(
+    `SELECT alias FROM routing_rules WHERE service = $1 AND purpose = $2`,
+    [service, purpose],
+  );
+  return r.rows[0]?.alias ?? null;
+}
+
+/**
  * Slice 39A: read tenant_settings.routing_overrides for a tenant.
  * Returns the JSONB blob as a Record<string, string>; '<service>.<purpose>' → alias.
  */
