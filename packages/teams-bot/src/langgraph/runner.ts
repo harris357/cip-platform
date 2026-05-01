@@ -16,12 +16,14 @@
 
 import { randomUUID } from 'node:crypto';
 import { TurnContext } from '@microsoft/agents-hosting';
+import { Activity } from '@microsoft/agents-activity';
 import { AIMessage } from '@langchain/core/messages';
 import { Command } from '@langchain/langgraph';
 import { CallbackHandler } from '@langfuse/langchain';
 import { buildGraph } from './graph.js';
 import { sendResponseTime } from '../intent/debug-banner.js';
 import { writeTurnMetric } from './util/turn-metrics.js';
+import { getTunables, getTunable } from './tunables.js';
 import type { ConfirmInterruptPayload } from './nodes/confirm.js';
 import type { BotAuthContext } from '../auth/resolve-context.js';
 
@@ -94,28 +96,49 @@ export async function runLangGraph(args: {
     runName: `turn-${turnId}`,
   };
 
+  // Slice 52: streaming mode. bot.ts already sends one typing indicator
+  // before the graph runs (Slice 47). For long turns we need to refresh
+  // it so Teams doesn't drop the indicator (~10-15s TTL). Per-tenant
+  // tunable; default is "typing" (refresh enabled).
+  const tunables = await getTunables(ctx.tenantId);
+  const mode = getTunable<string>(tunables, 'lg.streaming_mode', 'typing');
+  const refreshMs = getTunable<number>(tunables, 'lg.streaming_typing_refresh_ms', 4000);
+  let typingInterval: NodeJS.Timeout | null = null;
+  if (mode === 'typing') {
+    typingInterval = setInterval(() => {
+      // Best-effort — typing failures should never bubble. Fire-and-forget.
+      context.sendActivity(Activity.fromObject({ type: 'typing' }))
+        .catch(err => console.warn(`[streaming] typing refresh failed: ${err instanceof Error ? err.message : String(err)}`));
+    }, refreshMs);
+  }
+
   // Step 1: detect a suspended interrupt from a prior turn. If present,
   // this turn is a resume — feed the user's text to confirm via Command.
   const priorState = await graph.getState(config);
   const priorInterrupt = detectInterrupt(priorState);
 
   const tInvoke = Date.now();
-  const result = priorInterrupt
-    ? await graph.invoke(new Command({ resume: text }), config)
-    : await graph.invoke(
-        {
-          threadId,
-          tenantId:        ctx.tenantId,
-          employeeId:      ctx.employeeId,
-          permissions:     ctx.permissions,
-          roles:           ctx.roles ?? [],
-          latestUserText:  text,
-          turnId,
-          // candidateTools intentionally NOT passed — discover hydrates it.
-          // messages — checkpointer carries them across turns.
-        },
-        config,
-      );
+  let result;
+  try {
+    result = priorInterrupt
+      ? await graph.invoke(new Command({ resume: text }), config)
+      : await graph.invoke(
+          {
+            threadId,
+            tenantId:        ctx.tenantId,
+            employeeId:      ctx.employeeId,
+            permissions:     ctx.permissions,
+            roles:           ctx.roles ?? [],
+            latestUserText:  text,
+            turnId,
+            // candidateTools intentionally NOT passed — discover hydrates it.
+            // messages — checkpointer carries them across turns.
+          },
+          config,
+        );
+  } finally {
+    if (typingInterval) clearInterval(typingInterval);
+  }
   const tDone = Date.now();
 
   // Step 2: did THIS invoke produce a new suspension? If yes, render
