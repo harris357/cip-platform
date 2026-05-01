@@ -103,58 +103,63 @@ PENDING:    42A ──► 42C ──► 42B
 
 ### Shipped (recent)
 
-- **Slice 45c** — LangChain/LangGraph 1.x + openai 6.x upgrade
-  (shipped 2026-05-01 in commit `fbf957b`). Bumped LangGraph 0.2 → 1.2,
-  core 0.3 → 1.1, openai 4 → 6. Installed
-  `@langchain/langgraph-checkpoint-postgres@^1.0.1` (reused in 46 + 49).
-  See `slices/SLICE_45C_DEPENDENCY_UPGRADE.md`.
+- **Slice 45c** (2026-05-01, `fbf957b`) — LangChain/LangGraph 1.x +
+  openai 6.x upgrade. See `slices/SLICE_45C_DEPENDENCY_UPGRADE.md`.
 
-- **Slice 46** — Durable LangGraph state + LLM summarization
-  (shipped 2026-05-01 in commit `fbf957b`). `PostgresSaver` replaces
-  `MemorySaver`; `summarize` node compresses older messages once
-  `messages.length > lg.summarize_at` (default 12). Three new tunables
-  seeded. `DATABASE_URL_HR` wired into `teams-bot-credentials`.
-  See `slices/SLICE_46_DURABLE_LANGGRAPH_STATE.md`.
+- **Slice 46** (2026-05-01, `fbf957b`) — Durable LangGraph state +
+  LLM summarization (PostgresSaver + summarize node). See
+  `slices/SLICE_46_DURABLE_LANGGRAPH_STATE.md`.
+
+- **Tool-annotation hotfix** (2026-05-01, `11c67ce`) — MCP SDK was
+  stripping non-spec annotation fields, breaking the write-confirm
+  gate + permission filter in production. Added
+  `/admin/tool-metadata` side channel; bot merges back at discovery.
+  Strengthened `sync_employee` description + bot.plan honesty rule.
+
+- **Slice 45d** (2026-05-01, `76f6d8e`) — Temporal SDK 1.16 → 1.17.
+  See `slices/SLICE_45D_TEMPORAL_BUMP.md`.
+
+- **Slice 46b** (2026-05-01, `cded50e`) — Native `interrupt()` for
+  write-action confirmation. Removed `routeAfterIngest`, simplified
+  ingest, runner detects via `getState().tasks` and resumes with
+  `Command({resume})`. New `resumed=` field in `[turn]` log.
+  See `slices/SLICE_46B_NATIVE_INTERRUPT.md`.
+
+- **Slice 46c parts 3+5** (2026-05-01, `1fee9f9`) — Parallel tool
+  execution via `Promise.all` + Mistral prompt-cache visibility
+  (`[llm-cache]` log lines). Part 4 (async durability) inherited
+  free from 1.x default. Parts 1+2 deferred to 46d.
+  See `slices/SLICE_46C_CHECKPOINT_HYGIENE.md`.
+
+- **Slice 48** (2026-05-01, `f0213f1`) — Langfuse `CallbackHandler` +
+  `bot_turn_metrics` Postgres table. Per-turn trace tree keyed by
+  turnId; metrics filling for SQL-based perf debugging.
+  See `slices/SLICE_48_LANGFUSE_TRACES_AND_TELEMETRY.md` and the
+  runbook at `slices/BOT_PERF_DEBUGGING.md`.
+
+- **Slice 52** (2026-05-01, `3caadda`) — Typing-indicator refresh
+  for long turns. New `lg.streaming_mode` tunable (default `typing`).
+  See `slices/SLICE_52_TEAMS_STREAMING.md`.
 
 ### Drafted, not yet shipped
 
-All seven below have full slice docs and are ready to implement.
-Recommended order: **45d → 46b → 46c → 48 → 49 → 51 → 52**.
+Recommended order: **46d → 46e → 49 → 51**.
 
-- **Slice 45d** — Temporal SDK 1.16 → 1.17 routine bump.
-  Standalone bump because workflow code is replay-sensitive — must land
-  in isolation. Four `@temporalio/*` packages move together; verify
-  with end-to-end smoke test of the disable-employee flow.
-  See `slices/SLICE_45D_TEMPORAL_BUMP.md`.
+- **Slice 46d** — Ephemeral `candidateTools` (state-schema migration
+  to `UntrackedValue`) + nightly retention CronJob for `checkpoints`
+  and `bot_turn_metrics`. Carved out of 46c because the LG `Annotation`
+  API doesn't expose serde overrides — needs `StateGraph` + Zod schema
+  migration. Cron is a separate build path (Helm CronJob template +
+  `dist/scripts/gc.js`).
+  See `slices/SLICE_46D_EPHEMERAL_STATE_AND_RETENTION.md`.
 
-- **Slice 46b** — Native `interrupt()` for write-action confirmation.
-  Replaces the hand-rolled `pendingWriteCall` + ingest-resume pattern
-  with LangGraph 1.x's first-class `interrupt()` + `Command({resume})`.
-  Removes ~80 lines, kills a confusing dual-path through `ingest`,
-  puts affirm/cancel logic inside `confirm` where it belongs.
-  No state-shape additions; pure simplification.
-  See `slices/SLICE_46B_NATIVE_INTERRUPT.md`.
-
-- **Slice 46c** — LangGraph 1.x perf + checkpoint hygiene. Five parts
-  bundled because they share the runtime layer + a single deploy
-  window: (1) ephemeral `candidateTools` serde, (2) nightly retention
-  CronJob, (3) `Promise.all` parallel tool execution, (4) `durability:
-  "async"` checkpointer (gated on 46b — native `interrupt()` is
-  required for resume safety), (5) prompt-cache visibility piping
-  Mistral's `cached_tokens` through to Langfuse generation metadata.
-  Expected wins: ~500-900ms p50 graph time, no behavior change.
-  See `slices/SLICE_46C_CHECKPOINT_HYGIENE.md`.
-
-- **Slice 48** — Langfuse graph traces + structured-log telemetry.
-  Two parts that share the `turnId` join key:
-  1. Wire `@langfuse/langchain` `CallbackHandler` into the LangGraph
-     runner so every node + every LLM call shows up as nested spans in
-     a single per-turn trace tree.
-  2. Aggregate `[turn]` log lines into a `bot_turn_metrics` Postgres
-     table + Grafana dashboard.
-
-  Telemetry from this slice is the gating signal for Slice 52.
-  See `slices/SLICE_48_LANGFUSE_TRACES_AND_TELEMETRY.md`.
+- **Slice 46e** — Admin MCP tools for `bot_turn_metrics` + clickable
+  turn footer. Five new tools (`bot_metrics_get_turn`, `_summary`,
+  `_top_n`, `_tools`, `_outliers`) gated on a new `bot.metrics.read`
+  permission. New `/turn <id>` slash command. Adaptive-card footer
+  with `messageBack` action so the existing `turn=<id>` text becomes
+  tappable. Productizes the runbook queries inside Teams.
+  See `slices/SLICE_46E_ADMIN_METRICS_TOOLS.md`.
 
 - **Slice 49 (merged)** — Bot memory (factual + semantic) via LangGraph
   `PostgresStore`. Single store instance with two namespaces per user:
