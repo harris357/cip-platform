@@ -89,8 +89,17 @@ PENDING:    42A ──► 42C ──► 42B
   and renders a markdown menu. Welcome message gains universal chips
   (auth context not yet available at welcome time). Manifest
   `commandLists` updated with universal slashes only; admin commands
-  surface via role-filtered `/help`.
+  surface via role-filtered `/help`. `deploy.ts` generates manifest
+  commandLists from REGISTRY at build time.
   See `slices/archive/SLICE_47_SLASH_COMMANDS_AND_SUGGESTED_ACTIONS.md`.
+- **Slice 47b** — Removed legacy classifier+router pipeline + `/lg`
+  toggle. LangGraph is now the only runtime. Deleted: `intent/`
+  classifier, router, meta-compose, tool-categories, engine-toggle;
+  `slash-commands/handlers/lg.ts`; shared prompts `bot-intent-classify`,
+  `bot-meta-compose`; legacy `maybeSendDebugBanner` debug banner.
+  Added `/about` command showing build SHA, runtime, tenant, roles,
+  permission count. Pod ~30% smaller. `lg.default_engine` tunable
+  retained as no-op (unused; bot always runs LangGraph).
 
 ### Drafted, not yet shipped
 

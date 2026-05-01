@@ -1,28 +1,9 @@
-// Slice 39B: dev-only classifier debug banner.
-// Slice 43: renamed `category` → `intent` throughout (the field carries
-// chitchat | meta | proceed now, not the legacy 6-label business categories).
-// When BOT_DEBUG_CLASSIFICATION=true, the bot posts an additional Teams
-// message after every reply showing classifier output, downstream alias
-// (if any), and per-stage timing. Off by default.
+// Slice 39B → Slice 47b: response-time footer used by the LangGraph
+// runtime. The legacy debug-banner (maybeSendDebugBanner +
+// BOT_DEBUG_CLASSIFICATION env flag) was deleted alongside the legacy
+// classifier+router pipeline.
 
 import type { TurnContext } from '@microsoft/agents-hosting';
-import type { Classification } from './classifier.js';
-
-interface DebugInput {
-  classification: Classification | null;   // null when classifier failed
-  alias:          string | null;           // downstream alias (router or meta_compose); null if chitchat
-  tool:           string | null;           // tool selected; null if inline / meta / no-tool
-  timings:        {
-    classify: number;
-    route?:   number;   // route or meta_compose duration
-    exec?:    number;
-    total:    number;
-  };
-}
-
-function debugEnabled(): boolean {
-  return (process.env['BOT_DEBUG_CLASSIFICATION'] ?? '').toLowerCase() === 'true';
-}
 
 function responseTimeEnabled(): boolean {
   // Defaults to ON — small unobtrusive footer with total turn duration. Turn
@@ -93,32 +74,3 @@ export async function sendResponseTime(
   await context.sendActivity(`_⏱ ${seconds}s${timings}${intent}${pipeline}_`);
 }
 
-export async function maybeSendDebugBanner(
-  context: TurnContext,
-  input:   DebugInput,
-): Promise<void> {
-  if (!debugEnabled()) return;
-
-  const { classification, alias, tool, timings } = input;
-  const lines: string[] = ['🔍 **classifier debug**'];
-
-  if (classification === null) {
-    lines.push('• intent: _classifier failed — fell back to proceed (full router)_');
-  } else {
-    lines.push(`• intent: \`${classification.intent}\``);
-    if (classification.inline_reply) {
-      lines.push('• inline_reply: yes (chitchat path)');
-    }
-  }
-
-  if (alias) lines.push(`• downstream alias: \`${alias}\``);
-  if (tool)  lines.push(`• tool: \`${tool}\``);
-
-  const t = `classify=${timings.classify}ms` +
-            (timings.route !== undefined ? ` route=${timings.route}ms` : '') +
-            (timings.exec  !== undefined ? ` exec=${timings.exec}ms`   : '') +
-            ` total=${timings.total}ms`;
-  lines.push(`• timings: ${t}`);
-
-  await context.sendActivity(lines.join('\n'));
-}

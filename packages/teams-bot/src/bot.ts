@@ -2,7 +2,6 @@ import { randomUUID } from 'node:crypto';
 import { TurnContext } from '@microsoft/agents-hosting';
 import { Activity, type Attachment } from '@microsoft/agents-activity';
 import { TeamsActivityHandler } from '@microsoft/agents-hosting-extensions-teams';
-import type { Tool as McpTool } from '@modelcontextprotocol/sdk/types.js';
 import { resolveAuthContext } from './auth/resolve-context.js';
 import { cacheToken, getCachedToken } from './auth/token-store.js';
 import { storePendingMessage, takePendingMessage } from './auth/pending-message-store.js';
@@ -10,13 +9,8 @@ import { resolveTenantContext, type TenantContext } from './auth/tenant-resolver
 import { updateChannelRegistry } from './teams-protocol/channel-registry.js';
 import { detectFileAttachments, downloadToObjectStore } from './teams-protocol/file-handler.js';
 import { renderResponse } from './teams-protocol/card-renderer.js';
-import { discoverTools } from './mcp/tool-discovery.js';
-import { routeIntent } from './intent/router.js';
-import { classify } from './intent/classifier.js';
-import { composeMetaReply } from './intent/meta-compose.js';
-import { maybeSendDebugBanner, sendResponseTime } from './intent/debug-banner.js';
+import { sendResponseTime } from './intent/debug-banner.js';
 import { executeTool } from './mcp/tool-executor.js';
-import { selectEngine } from './intent/engine-toggle.js';
 import { runLangGraph } from './langgraph/runner.js';
 import { dispatchSlashCommand } from './slash-commands/dispatch.js';
 import { buildWelcomeChips } from './slash-commands/welcome-chips.js';
@@ -39,12 +33,6 @@ export function buildWelcomeActivity(): Activity {
     text: 'Hello! I can help you manage certifications and HR tasks. Tap an option below or ask in your own words.',
     suggestedActions: { actions: buildWelcomeChips() },
   });
-}
-
-function buildNoToolMessage(tools: McpTool[]): string {
-  return tools.length > 0
-    ? "I'm not sure how to help with that. Try asking about your certifications or HR tasks."
-    : "I don't have any tools available for your account. Please contact your administrator.";
 }
 
 function getAadTenantId(context: TurnContext): string {
@@ -192,21 +180,11 @@ export class CIPTeamsBot extends TeamsActivityHandler {
       return;
     }
 
-    // Slice 45: engine dispatch. If LangGraph is selected for this thread,
-    // hand off to the runner and skip the legacy classifier+router pipeline.
-    // File-attachment turns always use the legacy fast path (process_document
-    // is the only valid tool for those and we don't need a planner).
-    if (fileAttachments.length === 0) {
-      const engine = await selectEngine(tenantCtx.cipTenantId, threadId);
-      if (engine === 'langgraph') {
-        await runLangGraph({ context, ctx, threadId, text, tStart });
-        return;
-      }
-    }
-
     await updateChannelRegistry(context, ctx.tenantId, ctx.bearerToken);
     const tRegistry = Date.now();
 
+    // File-attachment fast path. process_document is the only valid tool
+    // for these turns; no planner needed.
     if (fileAttachments.length > 0) {
       for (const file of fileAttachments) {
         const tDl0 = Date.now();
@@ -224,126 +202,10 @@ export class CIPTeamsBot extends TeamsActivityHandler {
       return;
     }
 
-    // Slice 44: pass `text` into discoverTools so the vector-retrieval
-    // pre-filter can narrow the candidate set by semantic similarity.
-    const tools = await discoverTools(ctx, text);
-    const tDiscover = Date.now();
-
-    // Slice 43: classify intent into chitchat | meta | proceed.
-    // Pass `tools` so the classifier prompt can suppress `proceed` for
-    // a user with zero permitted tools.
-    const { classification, alias: classifierAlias } = await classify(text, ctx, tools);
-    const tClassify = Date.now();
-    const classifierFell = classification === null;
-
-    // Slice 43: 3-intent flow.
-    //   chitchat → send LLM-authored inline_reply (free-form), short-circuit
-    //   meta     → call composeMetaReply (dedicated LLM call), short-circuit
-    //   proceed  → routeIntent over full permitted catalog (no category filter)
-    // Classifier failure (classification === null) falls through to proceed
-    // — the safe default that hands off to the router.
-    const intent = classification?.intent ?? 'proceed';
-
-    if (intent === 'chitchat') {
-      const reply = classification?.inline_reply ?? 'Hi — how can I help?';
-      await context.sendActivity(reply);
-      await sendResponseTime(context, Date.now() - tStart, {
-        classifierAlias,
-        intent:     'chitchat',
-        classifyMs: tClassify - tDiscover,
-      });
-      await maybeSendDebugBanner(context, {
-        classification,
-        alias: null,
-        tool:  null,
-        timings: { classify: tClassify - tDiscover, total: Date.now() - tStart },
-      });
-      console.log(`[turn] tenantId=${ctx.tenantId} mode=inline intent=chitchat typing=${tTyping - tStart}ms auth=${tAuth - tTyping}ms registry=${tRegistry - tAuth}ms discover=${tDiscover - tRegistry}ms classify=${tClassify - tDiscover}ms total=${Date.now() - tStart}ms`);
-      return;
-    }
-
-    if (intent === 'meta') {
-      const meta = await composeMetaReply(ctx, tools);
-      const tMeta = Date.now();
-      await context.sendActivity(meta.reply);
-      await sendResponseTime(context, Date.now() - tStart, {
-        classifierAlias,
-        routerAlias: meta.alias,
-        intent:      'meta',
-        classifyMs:  tClassify - tDiscover,
-        routeMs:     tMeta - tClassify,
-      });
-      await maybeSendDebugBanner(context, {
-        classification,
-        alias: meta.alias,
-        tool:  null,
-        timings: {
-          classify: tClassify - tDiscover,
-          route:    tMeta - tClassify,
-          total:    Date.now() - tStart,
-        },
-      });
-      console.log(`[turn] tenantId=${ctx.tenantId} mode=meta typing=${tTyping - tStart}ms auth=${tAuth - tTyping}ms registry=${tRegistry - tAuth}ms discover=${tDiscover - tRegistry}ms classify=${tClassify - tDiscover}ms meta=${tMeta - tClassify}ms total=${Date.now() - tStart}ms`);
-      return;
-    }
-
-    // intent === 'proceed' (or classifier fell back). Route over the full
-    // permission-filtered catalog — no category filter, the LLM picks via
-    // tool descriptions.
-    const routeResult = await routeIntent({ message: text, tools, ctx });
-    const tRoute = Date.now();
-    const selected = routeResult.selected;
-    const routerAlias = routeResult.alias;
-
-    if (selected) {
-      const result = await executeTool(selected.name, selected.args, ctx);
-      const tExec = Date.now();
-      await renderResponse(context, result);
-      await sendResponseTime(context, Date.now() - tStart, {
-        classifierAlias,
-        routerAlias,
-        tool:        selected.name,
-        classifierFell,
-        intent:      'proceed',
-        classifyMs:  tClassify - tDiscover,
-        routeMs:     tRoute - tClassify,
-        execMs:      tExec - tRoute,
-      });
-      await maybeSendDebugBanner(context, {
-        classification,
-        alias: routerAlias,
-        tool:  selected.name,
-        timings: {
-          classify: tClassify - tDiscover,
-          route:    tRoute - tClassify,
-          exec:     tExec - tRoute,
-          total:    Date.now() - tStart,
-        },
-      });
-      console.log(`[turn] tenantId=${ctx.tenantId} mode=tool intent=proceed fallback=${classifierFell ? 'yes' : 'no'} typing=${tTyping - tStart}ms auth=${tAuth - tTyping}ms registry=${tRegistry - tAuth}ms discover=${tDiscover - tRegistry}ms classify=${tClassify - tDiscover}ms route=${tRoute - tClassify}ms exec=${tExec - tRoute}ms render=${Date.now() - tExec}ms total=${Date.now() - tStart}ms tool=${selected.name}`);
-    } else {
-      await context.sendActivity(buildNoToolMessage(tools));
-      await sendResponseTime(context, Date.now() - tStart, {
-        classifierAlias,
-        routerAlias,
-        tool:        null,
-        classifierFell,
-        intent:      'proceed',
-        classifyMs:  tClassify - tDiscover,
-        routeMs:     tRoute - tClassify,
-      });
-      await maybeSendDebugBanner(context, {
-        classification,
-        alias: routerAlias,
-        tool:  null,
-        timings: {
-          classify: tClassify - tDiscover,
-          route:    tRoute - tClassify,
-          total:    Date.now() - tStart,
-        },
-      });
-      console.log(`[turn] tenantId=${ctx.tenantId} mode=no-tool intent=proceed fallback=${classifierFell ? 'yes' : 'no'} typing=${tTyping - tStart}ms auth=${tAuth - tTyping}ms registry=${tRegistry - tAuth}ms discover=${tDiscover - tRegistry}ms classify=${tClassify - tDiscover}ms route=${tRoute - tClassify}ms reply=${Date.now() - tRoute}ms total=${Date.now() - tStart}ms`);
-    }
+    // All non-file turns go through the LangGraph runtime. Slice 47b
+    // removed the legacy classifier+router pipeline and the /lg toggle
+    // — LangGraph is the only runtime now.
+    await runLangGraph({ context, ctx, threadId, text, tStart });
   }
 
   // signin/failure is NOT routed through onSigninInvokeActivity — catch it here first.

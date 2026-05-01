@@ -13,8 +13,8 @@
 
 import type { TurnContext } from '@microsoft/agents-hosting';
 import type { BotAuthContext } from '../auth/resolve-context.js';
-import { lgOnHandler, lgOffHandler, lgStatusHandler } from './handlers/lg.js';
 import { helpHandler } from './handlers/help.js';
+import { aboutHandler } from './handlers/about.js';
 
 export interface SlashCommandResult {
   reply: string;
@@ -53,22 +53,10 @@ export const REGISTRY: SlashCommand[] = [
     handler:     helpHandler,
   },
   {
-    command:     '/lg on',
-    description: 'Use the LangGraph runtime in this thread',
+    command:     '/about',
+    description: 'Show bot version, runtime, your tenant + roles + permissions',
     requires:    null,
-    handler:     lgOnHandler,
-  },
-  {
-    command:     '/lg off',
-    description: 'Use the legacy runtime in this thread',
-    requires:    null,
-    handler:     lgOffHandler,
-  },
-  {
-    command:     '/lg status',
-    description: 'Show which engine is active in this thread',
-    requires:    null,
-    handler:     lgStatusHandler,
+    handler:     aboutHandler,
   },
 ];
 
