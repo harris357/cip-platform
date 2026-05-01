@@ -113,11 +113,28 @@ PENDING:    42A ──► 42C ──► 42B
 
 ### Proposed (not yet drafted)
 
-- **Slice 48** — Telemetry dashboard for both runtimes. Aggregates the
-  structured `[turn]` log lines (engine, intent, tools attempted,
-  blocked, refused, step count, clarification rate, confirmation rate,
-  per-stage latency) into a queryable surface for tuning + regression
-  detection. Likely Grafana over Loki/Postgres.
+- **Slice 48** — Telemetry: Langfuse graph traces + dashboard.
+  Two parts:
+  1. **Wire LangChain's Langfuse callback handler into the LangGraph
+     runner** so every node entry/exit shows up as a span in the
+     Langfuse trace tree alongside our LLM calls. Each turn becomes
+     ONE Langfuse trace with the per-turn `turnId` (already plumbed
+     in Slice 47b) as the trace_id. Pasting `turn=<id>` from the
+     footer jumps straight to the full graph trace.
+     — Implementation: ~50 lines. Add `@langfuse/langchain` package,
+     instantiate the `CallbackHandler`, pass via `config.callbacks`
+     in `graph.invoke`. The handler picks up the `turn=<id>` from
+     metadata we already pass to `callLLM`.
+  2. **Aggregate structured `[turn]` log lines** (engine, intent,
+     tools attempted, blocked, refused, step count, clarification
+     rate, confirmation rate, per-stage latency) into a queryable
+     surface for tuning + regression detection. Likely Grafana over
+     Loki/Postgres.
+
+  Together these give us: (a) per-turn drill-down via Langfuse for
+  individual debug sessions, (b) aggregate views for tuning. Both
+  driven by the same `turnId`. (See `slices/LANGGRAPH_ARCHITECTURE.md`
+  for the trace-correlation plan.)
 - **Slice 49** — Long-term factual memory across threads. New
   `bot_memory` table keyed `(tenant_id, employee_id, key)` for
   user-specific facts (preferences, last actions, durable state).
