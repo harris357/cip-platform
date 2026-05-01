@@ -16,14 +16,29 @@ import { classify } from './intent/classifier.js';
 import { composeMetaReply } from './intent/meta-compose.js';
 import { maybeSendDebugBanner, sendResponseTime } from './intent/debug-banner.js';
 import { executeTool } from './mcp/tool-executor.js';
-import { selectEngine, handleEngineSlashCommand } from './langgraph/engine-toggle.js';
+import { selectEngine } from './intent/engine-toggle.js';
 import { runLangGraph } from './langgraph/runner.js';
+import { dispatchSlashCommand } from './slash-commands/dispatch.js';
+import { buildWelcomeChips } from './slash-commands/welcome-chips.js';
 
 export function buildWelcomeMessage(): string {
   return (
     'Hello! I can help you manage certifications and HR tasks. ' +
     'Send me a message or upload a certificate document to get started.'
   );
+}
+
+/**
+ * Slice 47: welcome message with suggestedActions chips. The chips are
+ * universal because onMembersAdded fires before auth context exists.
+ * Role-aware filtering happens once the user runs /help.
+ */
+export function buildWelcomeActivity(): Activity {
+  return Activity.fromObject({
+    type: 'message',
+    text: 'Hello! I can help you manage certifications and HR tasks. Tap an option below or ask in your own words.',
+    suggestedActions: { actions: buildWelcomeChips() },
+  });
 }
 
 function buildNoToolMessage(tools: McpTool[]): string {
@@ -69,7 +84,7 @@ export class CIPTeamsBot extends TeamsActivityHandler {
     this.onMembersAdded(async (context, next) => {
       for (const member of context.activity.membersAdded ?? []) {
         if (member.id !== context.activity.recipient?.id) {
-          await context.sendActivity(buildWelcomeMessage());
+          await context.sendActivity(buildWelcomeActivity());
         }
       }
       await next();
@@ -154,14 +169,7 @@ export class CIPTeamsBot extends TeamsActivityHandler {
       `[msg] tenantId=${tenantCtx.cipTenantId} files=${fileAttachments.length} text=${JSON.stringify(text.slice(0, 500))}`,
     );
 
-    // Slice 45: engine slash commands — short-circuit before any LLM work.
-    // /lg on, /lg off, /lg status, /lg help.
     const threadId = context.activity.conversation?.id ?? 'unknown';
-    const slash = await handleEngineSlashCommand(tenantCtx.cipTenantId, threadId, text);
-    if (slash) {
-      await context.sendActivity(slash.reply);
-      return;
-    }
 
     // Tell Teams to render "<bot> is typing..." while we work.
     await context.sendActivity(Activity.fromObject({ type: 'typing' }));
@@ -169,6 +177,20 @@ export class CIPTeamsBot extends TeamsActivityHandler {
 
     const ctx = await resolveAuthContext(context, tenantCtx, keycloakJwt);
     const tAuth = Date.now();
+
+    // Slice 47: slash command dispatch — runs AFTER auth resolution because
+    // /help needs ctx.permissions to filter the registry. Slash commands
+    // short-circuit before any LLM/runtime work.
+    const slash = await dispatchSlashCommand({
+      ctx,
+      context,
+      threadId,
+      text,
+    });
+    if (slash) {
+      await context.sendActivity(slash.reply);
+      return;
+    }
 
     // Slice 45: engine dispatch. If LangGraph is selected for this thread,
     // hand off to the runner and skip the legacy classifier+router pipeline.

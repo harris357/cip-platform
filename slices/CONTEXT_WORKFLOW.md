@@ -83,6 +83,14 @@ PENDING:    42A ──► 42C ──► 42B
   `commonNextTools[]`, `outputSchema` to every tool annotation.
   In-process MemorySaver checkpointer. Default engine: `legacy`.
   See `slices/archive/SLICE_45_LANGGRAPH_PARALLEL_RUNTIME.md`.
+- **Slice 47** — Role-aware slash commands + `suggestedActions` chips.
+  Slash command registry as single source of truth (replaced inline
+  `/lg` handling). `/help` filters the registry by caller permissions
+  and renders a markdown menu. Welcome message gains universal chips
+  (auth context not yet available at welcome time). Manifest
+  `commandLists` updated with universal slashes only; admin commands
+  surface via role-filtered `/help`.
+  See `slices/archive/SLICE_47_SLASH_COMMANDS_AND_SUGGESTED_ACTIONS.md`.
 
 ### Drafted, not yet shipped
 
@@ -93,13 +101,6 @@ PENDING:    42A ──► 42C ──► 42B
   engine override in a new `bot_engine_overrides` table so `/lg on`
   survives pod restarts. Three new tunables seeded.
   See `slices/SLICE_46_DURABLE_LANGGRAPH_STATE.md`.
-- **Slice 47** — Role-aware slash commands + `suggestedActions` chips.
-  Slash command registry replaces inline `/lg` handling. `/help` filters
-  the registry by caller permissions and renders a markdown menu.
-  Welcome message gains permission-filtered chips. Manifest
-  `commandLists` updated with universal slashes only; admin commands
-  surface only via role-filtered `/help`.
-  See `slices/SLICE_47_SLASH_COMMANDS_AND_SUGGESTED_ACTIONS.md`.
 
 ### Proposed (not yet drafted)
 
