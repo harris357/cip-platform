@@ -23,7 +23,32 @@ export function registerEmployeeRevokeRole(server: McpServer): void {
       role:       z.enum(['hr', 'employee']),
     },
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    { requiredPermission: 'employee.revoke_role' } as any,
+    {
+      requiredPermission: 'employee.revoke_role',
+      sideEffectLevel: 'write',
+      whenToUse: [
+        'User asks to remove the Keycloak hr realm role from a specific employee',
+      ],
+      whenNotToUse: [
+        'User wants to terminate access entirely — use employee_disable',
+        'User wants to remove a CIP role — use employee_revoke_permission',
+        'Trying to revoke baseline "employee" role — refused; use employee_disable',
+      ],
+      commonNextTools: ['employee_get'],
+      outputSchema: {
+        type: 'object',
+        required: ['data'],
+        properties: {
+          data: {
+            type: 'object',
+            properties: {
+              employeeId: { type: 'string', format: 'uuid' },
+              role:       { type: 'string' },
+            },
+          },
+        },
+      },
+    } as any,
     async (args, context) => {
       const ctx = extractAuthContext(context.authInfo);
       if (!ctx.roles.includes('hr')) {

@@ -22,7 +22,44 @@ export function registerEmployeeList(server: McpServer): void {
       limit:        z.number().int().min(1).max(200).default(50),
     },
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    { requiredPermission: 'employee.list' } as any,
+    {
+      requiredPermission: 'employee.list',
+      sideEffectLevel: 'read',
+      whenToUse: [
+        'User asks "list employees" / "show all staff" / "who\'s in the tenant"',
+        'Bulk audit work — paginated listing',
+      ],
+      whenNotToUse: [
+        'User names a specific employee — use employee_find or employee_get',
+        'User wants a Teams adaptive card view — use list_staff',
+      ],
+      commonNextTools: ['employee_find', 'employee_get'],
+      outputSchema: {
+        type: 'object',
+        required: ['data'],
+        properties: {
+          data: {
+            type: 'object',
+            properties: {
+              employees: {
+                type: 'array',
+                items: {
+                  type: 'object',
+                  properties: {
+                    id:           { type: 'string', format: 'uuid' },
+                    email:        { type: 'string' },
+                    fullName:     { type: 'string' },
+                    identityType: { type: 'string' },
+                    disabledAt:   { type: ['string', 'null'] },
+                  },
+                },
+              },
+              count: { type: 'number' },
+            },
+          },
+        },
+      },
+    } as any,
     async (args, context) => {
       const ctx = extractAuthContext(context.authInfo);
       if (!ctx.roles.includes('hr')) {

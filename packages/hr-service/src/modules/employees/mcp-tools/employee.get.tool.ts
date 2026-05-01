@@ -30,7 +30,33 @@ export function registerEmployeeGet(server: McpServer): void {
     'Differs from get_employee_permissions (caller\'s own roles, no admin gate), employee_find (lookup by email, identity row only), employee_list (tenant-wide list).',
     { employeeId: z.string().uuid() },
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    { requiredPermission: 'employee.find' } as any,
+    {
+      requiredPermission: 'employee.find',
+      sideEffectLevel: 'read',
+      whenToUse: [
+        'User wants the FULL detail of one specific employee (identity + roles + permissions)',
+        'After employee_find or employee_list returned a UUID, drill into one record',
+      ],
+      whenNotToUse: [
+        'Caller asks about themselves — use get_employee_permissions',
+        'No UUID known yet — use employee_find by email first',
+      ],
+      commonNextTools: ['employee_assign_role', 'employee_revoke_role', 'employee_grant_permission', 'employee_revoke_permission', 'employee_disable'],
+      outputSchema: {
+        type: 'object',
+        required: ['data'],
+        properties: {
+          data: {
+            type: 'object',
+            properties: {
+              employee:    { type: 'object' },
+              roles:       { type: 'array', items: { type: 'string' } },
+              permissions: { type: 'array', items: { type: 'string' } },
+            },
+          },
+        },
+      },
+    } as any,
     async ({ employeeId }, context) => {
       const ctx = extractAuthContext(context.authInfo);
       try {

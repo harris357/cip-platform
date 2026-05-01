@@ -25,7 +25,42 @@ export function registerRoleList(server: McpServer): void {
     'Differs from get_employee_permissions (the caller\'s OWN roles only) and employee_get (one specific employee\'s assigned roles).',
     {},
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    { requiredPermission: 'employee.list' } as any,
+    {
+      requiredPermission: 'employee.list',
+      sideEffectLevel: 'read',
+      whenToUse: [
+        'User asks "what roles exist" / "list our roles" / audit role inventory',
+      ],
+      whenNotToUse: [
+        'User asks about THEIR roles — use get_employee_permissions',
+        'User asks about ONE specific employee\'s roles — use employee_get',
+      ],
+      commonNextTools: ['role_get', 'role_members'],
+      outputSchema: {
+        type: 'object',
+        required: ['data'],
+        properties: {
+          data: {
+            type: 'object',
+            properties: {
+              roles: {
+                type: 'array',
+                items: {
+                  type: 'object',
+                  properties: {
+                    code:          { type: 'string' },
+                    label:         { type: 'string' },
+                    keycloak_role: { type: 'string' },
+                    group_count:   { type: 'number' },
+                  },
+                },
+              },
+              total: { type: 'number' },
+            },
+          },
+        },
+      },
+    } as any,
     async (_args, context) => {
       const ctx = extractAuthContext(context.authInfo);
       try {

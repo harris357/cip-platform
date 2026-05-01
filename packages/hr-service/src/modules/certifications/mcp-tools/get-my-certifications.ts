@@ -20,7 +20,27 @@ export function registerGetMyCertifications(server: McpServer): void {
     'Differs from get_staff_certifications (HR view of someone else\'s certs) and get_expiring_certifications (caller-scoped expiry-only filter).',
     {},
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    { requiredPermission: 'cert.view_own' } as any,
+    {
+      requiredPermission: 'cert.view_own',
+      sideEffectLevel: 'read',
+      whenToUse: [
+        'User asks "show my certs" / "what certs do I have" / "when does my X expire"',
+      ],
+      whenNotToUse: [
+        'User asks about another employee\'s certs — use get_staff_certifications',
+        'User wants tenant-wide expiring certs — use get_expiring_certifications',
+      ],
+      commonNextTools: ['get_submission_status', 'process_document'],
+      outputSchema: {
+        type: 'object',
+        required: ['data'],
+        properties: {
+          data: { type: 'array', items: { type: 'object' } },
+          card: {},
+          message: { type: 'string' },
+        },
+      },
+    } as any,
     async (_args, context) => {
       const { tenantId, employeeId } = extractAuthContext(context.authInfo)
       const db = getDb()

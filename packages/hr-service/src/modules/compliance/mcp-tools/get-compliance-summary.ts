@@ -18,7 +18,34 @@ export function registerGetComplianceSummary(server: McpServer): void {
     'Differs from get_expiring_certifications (per-employee cert detail in a window) and get_staff_certifications (one specific employee).',
     {},
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    { requiredPermission: 'compliance.view' } as any,
+    {
+      requiredPermission: 'compliance.view',
+      sideEffectLevel: 'read',
+      whenToUse: [
+        'User asks "what\'s our compliance status" / "compliance dashboard" / "are we good on certs"',
+      ],
+      whenNotToUse: [
+        'User wants per-employee detail — use get_expiring_certifications or get_staff_certifications',
+        'User wants the catalog of permissions — use permission_catalog_list',
+      ],
+      commonNextTools: ['get_expiring_certifications', 'get_staff_certifications'],
+      outputSchema: {
+        type: 'object',
+        required: ['data'],
+        properties: {
+          data: {
+            type: 'object',
+            properties: {
+              total:    { type: 'number' },
+              valid:    { type: 'number' },
+              expiring: { type: 'number' },
+              expired:  { type: 'number' },
+              missing:  { type: 'number' },
+            },
+          },
+        },
+      },
+    } as any,
     async (_args, context) => {
       const { tenantId } = extractAuthContext(context.authInfo)
       const db = getDb()

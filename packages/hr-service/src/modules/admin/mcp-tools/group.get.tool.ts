@@ -32,7 +32,33 @@ export function registerGroupGet(server: McpServer): void {
       code:   z.string().min(1),
     },
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    { requiredPermission: 'employee.list' } as any,
+    {
+      requiredPermission: 'employee.list',
+      sideEffectLevel: 'read',
+      whenToUse: [
+        'User asks "what does the cert_admin group grant" / "which roles use this group"',
+        'Impact analysis before editing a group',
+      ],
+      whenNotToUse: [
+        'User wants the group catalog — use group_list',
+        'User wants role detail — use role_get',
+      ],
+      commonNextTools: [],
+      outputSchema: {
+        type: 'object',
+        required: ['data'],
+        properties: {
+          data: {
+            type: 'object',
+            properties: {
+              group:        { type: 'object' },
+              permissions:  { type: 'array', items: { type: 'string' } },
+              usedByRoles:  { type: 'array' },
+            },
+          },
+        },
+      },
+    } as any,
     async ({ module, code }, context) => {
       const ctx = extractAuthContext(context.authInfo);
       try {

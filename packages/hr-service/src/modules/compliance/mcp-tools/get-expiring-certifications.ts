@@ -20,7 +20,42 @@ export function registerGetExpiringCertifications(server: McpServer): void {
     'Differs from get_my_certifications (caller-only, all certs) and get_compliance_summary (aggregate stats, no per-cert detail).',
     { daysAhead: z.number().int().min(1).max(365).default(90).describe('Days ahead to check') },
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    { requiredPermission: 'cert.list_all' } as any,
+    {
+      requiredPermission: 'cert.list_all',
+      sideEffectLevel: 'read',
+      whenToUse: [
+        'User asks "what\'s expiring soon" / "compliance check next 30 days" / "who needs to renew"',
+      ],
+      whenNotToUse: [
+        'User wants ONE employee\'s certs — use get_staff_certifications',
+        'User asks about their own — use get_my_certifications',
+      ],
+      commonNextTools: ['get_staff_certifications', 'employee_find'],
+      outputSchema: {
+        type: 'object',
+        required: ['data'],
+        properties: {
+          data: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                employee: {
+                  type: 'object',
+                  properties: {
+                    id:       { type: 'string', format: 'uuid' },
+                    fullName: { type: 'string' },
+                    email:    { type: 'string' },
+                  },
+                },
+                certs: { type: 'array' },
+              },
+            },
+          },
+          card: {},
+        },
+      },
+    } as any,
     async ({ daysAhead }, context) => {
       const { tenantId } = extractAuthContext(context.authInfo)
       const db = getDb()

@@ -16,6 +16,8 @@ import { classify } from './intent/classifier.js';
 import { composeMetaReply } from './intent/meta-compose.js';
 import { maybeSendDebugBanner, sendResponseTime } from './intent/debug-banner.js';
 import { executeTool } from './mcp/tool-executor.js';
+import { selectEngine, handleEngineSlashCommand } from './langgraph/engine-toggle.js';
+import { runLangGraph } from './langgraph/runner.js';
 
 export function buildWelcomeMessage(): string {
   return (
@@ -152,12 +154,33 @@ export class CIPTeamsBot extends TeamsActivityHandler {
       `[msg] tenantId=${tenantCtx.cipTenantId} files=${fileAttachments.length} text=${JSON.stringify(text.slice(0, 500))}`,
     );
 
+    // Slice 45: engine slash commands — short-circuit before any LLM work.
+    // /lg on, /lg off, /lg status, /lg help.
+    const threadId = context.activity.conversation?.id ?? 'unknown';
+    const slash = await handleEngineSlashCommand(tenantCtx.cipTenantId, threadId, text);
+    if (slash) {
+      await context.sendActivity(slash.reply);
+      return;
+    }
+
     // Tell Teams to render "<bot> is typing..." while we work.
     await context.sendActivity(Activity.fromObject({ type: 'typing' }));
     const tTyping = Date.now();
 
     const ctx = await resolveAuthContext(context, tenantCtx, keycloakJwt);
     const tAuth = Date.now();
+
+    // Slice 45: engine dispatch. If LangGraph is selected for this thread,
+    // hand off to the runner and skip the legacy classifier+router pipeline.
+    // File-attachment turns always use the legacy fast path (process_document
+    // is the only valid tool for those and we don't need a planner).
+    if (fileAttachments.length === 0) {
+      const engine = await selectEngine(tenantCtx.cipTenantId, threadId);
+      if (engine === 'langgraph') {
+        await runLangGraph({ context, ctx, threadId, text, tStart });
+        return;
+      }
+    }
 
     await updateChannelRegistry(context, ctx.tenantId, ctx.bearerToken);
     const tRegistry = Date.now();

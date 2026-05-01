@@ -22,7 +22,32 @@ export function registerEmployeeMigrateIdentity(server: McpServer): void {
       phone:              z.string().min(7).optional(),
     },
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    { requiredPermission: 'employee.migrate_identity' } as any,
+    {
+      requiredPermission: 'employee.migrate_identity',
+      sideEffectLevel: 'write',
+      whenToUse: [
+        'User asks to switch an employee between AAD-federated and field (OTP) identity types',
+        'Rare: "Jane is now in our Entra tenant — re-link her account"',
+      ],
+      whenNotToUse: [
+        'Creating a new employee — use employee_create',
+        'Disabling an employee — use employee_disable',
+      ],
+      commonNextTools: ['employee_get'],
+      outputSchema: {
+        type: 'object',
+        required: ['data'],
+        properties: {
+          data: {
+            type: 'object',
+            properties: {
+              employeeId:   { type: 'string', format: 'uuid' },
+              identityType: { type: 'string', enum: ['aad_federated', 'field_employee'] },
+            },
+          },
+        },
+      },
+    } as any,
     async (args, context) => {
       const ctx = extractAuthContext(context.authInfo);
       if (!ctx.roles.includes('hr')) {

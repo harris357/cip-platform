@@ -110,7 +110,29 @@ export function registerSyncEmployee(server: McpServer): void {
     'No sibling overlap.',
     {},
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    { requiredPermission: null } as any,
+    {
+      requiredPermission: null,
+      sideEffectLevel: 'write',
+      whenToUse: [
+        'Internal — called by the bot on every turn before get_employee_permissions',
+      ],
+      whenNotToUse: [
+        'Never call this directly from a user request',
+      ],
+      commonNextTools: ['get_employee_permissions'],
+      outputSchema: {
+        type: 'object',
+        required: ['data'],
+        properties: {
+          data: {
+            type: 'object',
+            required: ['employeeId'],
+            properties: { employeeId: { type: 'string', format: 'uuid' } },
+          },
+          message: { type: 'string' },
+        },
+      },
+    } as any,
     async (_args, context) => {
       const { tenantId, keycloakId, email, fullName, givenName, surname, aadOid } =
         extractSyncClaims(context.authInfo?.token ?? '')

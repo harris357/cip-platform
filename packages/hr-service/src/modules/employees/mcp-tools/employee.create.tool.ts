@@ -24,7 +24,31 @@ export function registerEmployeeCreate(server: McpServer): void {
       employmentType: z.enum(['employee', 'contractor']).optional(),
     },
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    { requiredPermission: 'employee.create' } as any,
+    {
+      requiredPermission: 'employee.create',
+      sideEffectLevel: 'write',
+      whenToUse: [
+        'User asks to "create employee" / "add Jane" / "onboard new hire" with email + name',
+      ],
+      whenNotToUse: [
+        'User wants to convert an existing employee\'s identity type — use employee_migrate_identity',
+        'User wants to assign a role to an existing employee — use employee_assign_role',
+      ],
+      commonNextTools: ['employee_assign_role', 'employee_grant_permission'],
+      outputSchema: {
+        type: 'object',
+        required: ['data'],
+        properties: {
+          data: {
+            type: 'object',
+            properties: {
+              employeeId: { type: 'string', format: 'uuid' },
+              workflowId: { type: 'string' },
+            },
+          },
+        },
+      },
+    } as any,
     async (args, context) => {
       const ctx = extractAuthContext(context.authInfo);
       if (!ctx.roles.includes('hr')) {

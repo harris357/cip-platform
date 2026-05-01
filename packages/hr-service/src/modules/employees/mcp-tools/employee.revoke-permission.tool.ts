@@ -38,7 +38,32 @@ export function registerEmployeeRevokePermission(server: McpServer): void {
       role:       z.string().min(1),
     },
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    { requiredPermission: 'employee.revoke_permission' } as any,
+    {
+      requiredPermission: 'employee.revoke_permission',
+      sideEffectLevel: 'write',
+      whenToUse: [
+        'User asks to remove a CIP role from a specific employee',
+      ],
+      whenNotToUse: [
+        'Revoking a Keycloak realm role — use employee_revoke_role',
+        'Off-boarding entirely — use employee_disable',
+        'Would leave employee with zero roles — refused; use employee_disable',
+      ],
+      commonNextTools: ['employee_get'],
+      outputSchema: {
+        type: 'object',
+        required: ['data'],
+        properties: {
+          data: {
+            type: 'object',
+            properties: {
+              employeeId: { type: 'string', format: 'uuid' },
+              role:       { type: 'string' },
+            },
+          },
+        },
+      },
+    } as any,
     async (args, context) => {
       const ctx = extractAuthContext(context.authInfo)
       if (!ctx.roles.includes('hr')) {

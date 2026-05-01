@@ -12,6 +12,8 @@
     "@aws-sdk/client-s3": "^3.600.0",
     "@cip/shared": "workspace:*",
     "@kubernetes/client-node": "^1.0.0",
+    "@langchain/core": "^0.3.0",
+    "@langchain/langgraph": "^0.2.0",
     "@microsoft/agents-activity": "^1.4.2",
     "@microsoft/agents-hosting": "^1.4.2",
     "@microsoft/agents-hosting-extensions-teams": "^1.4.2",

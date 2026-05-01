@@ -23,7 +23,32 @@ export function registerEmployeeAssignRole(server: McpServer): void {
       role:       z.enum(['hr', 'employee']),
     },
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    { requiredPermission: 'employee.assign_role' } as any,
+    {
+      requiredPermission: 'employee.assign_role',
+      sideEffectLevel: 'write',
+      whenToUse: [
+        'User asks to grant a Keycloak realm role (hr | employee) to a specific employee',
+        'After employee_find/employee_get returned a UUID and the user explicitly authorized the assignment',
+      ],
+      whenNotToUse: [
+        'User wants to grant a CIP role (e.g., hr_standard) — use employee_grant_permission',
+        'Granting baseline employee role on a new hire — employee_create handles this',
+      ],
+      commonNextTools: ['employee_get'],
+      outputSchema: {
+        type: 'object',
+        required: ['data'],
+        properties: {
+          data: {
+            type: 'object',
+            properties: {
+              employeeId: { type: 'string', format: 'uuid' },
+              role:       { type: 'string', enum: ['hr', 'employee'] },
+            },
+          },
+        },
+      },
+    } as any,
     async (args, context) => {
       const ctx = extractAuthContext(context.authInfo);
       if (!ctx.roles.includes('hr')) {

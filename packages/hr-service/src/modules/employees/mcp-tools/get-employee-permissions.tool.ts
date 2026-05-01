@@ -26,7 +26,34 @@ export function registerGetEmployeePermissions(server: McpServer): void {
     'Differs from employee_get (returns ANOTHER specific employee\'s detail, HR-only) and role_list (returns every role in the tenant, not the caller\'s assignments).',
     {},
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    { requiredPermission: null } as any,
+    {
+      requiredPermission: null,
+      sideEffectLevel: 'read',
+      whenToUse: [
+        'User asks "what are my roles" / "what permissions do I have" / "what can I do"',
+        'Caller wants to see their OWN access (not someone else\'s)',
+      ],
+      whenNotToUse: [
+        'User is asking about another employee — use employee_get instead',
+        'User wants the catalog of every role in the tenant — use role_list instead',
+      ],
+      commonNextTools: [],
+      outputSchema: {
+        type: 'object',
+        required: ['data', 'message'],
+        properties: {
+          data: {
+            type: 'object',
+            required: ['roles', 'permissions'],
+            properties: {
+              roles:       { type: 'array', items: { type: 'string' } },
+              permissions: { type: 'array', items: { type: 'string' } },
+            },
+          },
+          message: { type: 'string' },
+        },
+      },
+    } as any,
     async (_args, context) => {
       const ctx = extractAuthContext(context.authInfo)
       const pool = getPool()

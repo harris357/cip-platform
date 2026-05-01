@@ -16,7 +16,40 @@ export function registerEmployeeFind(server: McpServer): void {
     'Differs from employee_list (paginated tenant-wide list with filters) and employee_get (returns full detail including roles + permissions).',
     { email: z.string().email() },
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    { requiredPermission: 'employee.find' } as any,
+    {
+      requiredPermission: 'employee.find',
+      sideEffectLevel: 'read',
+      whenToUse: [
+        'User asks to look up a specific employee by exact email',
+        'A subsequent tool needs the employeeId and only the email is known',
+      ],
+      whenNotToUse: [
+        'User wants a list of employees — use employee_list',
+        'User asks about themselves — use get_employee_permissions',
+        'User has a UUID (not email) — use employee_get',
+      ],
+      commonNextTools: ['employee_get', 'employee_assign_role', 'employee_disable', 'employee_grant_permission'],
+      outputSchema: {
+        type: 'object',
+        required: ['data'],
+        properties: {
+          data: {
+            type: 'object',
+            properties: {
+              employee: {
+                type: 'object',
+                properties: {
+                  id:         { type: 'string', format: 'uuid' },
+                  email:      { type: 'string' },
+                  fullName:   { type: 'string' },
+                  disabledAt: { type: ['string', 'null'] },
+                },
+              },
+            },
+          },
+        },
+      },
+    } as any,
     async (args, context) => {
       const ctx = extractAuthContext(context.authInfo);
       if (!ctx.roles.includes('hr')) {

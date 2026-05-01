@@ -24,7 +24,43 @@ export function registerGroupList(server: McpServer): void {
     'Differs from role_list (lists ROLES, which compose groups) and permission_catalog_list (lists individual permissions, the atoms inside groups).',
     { module: z.string().min(1).optional() },
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    { requiredPermission: 'employee.list' } as any,
+    {
+      requiredPermission: 'employee.list',
+      sideEffectLevel: 'read',
+      whenToUse: [
+        'User asks "what permission groups exist" / "list groups in the cert module"',
+      ],
+      whenNotToUse: [
+        'User asks about ROLES — use role_list',
+        'User asks about individual permission codes — use permission_catalog_list',
+      ],
+      commonNextTools: ['group_get'],
+      outputSchema: {
+        type: 'object',
+        required: ['data'],
+        properties: {
+          data: {
+            type: 'object',
+            properties: {
+              groups: {
+                type: 'array',
+                items: {
+                  type: 'object',
+                  properties: {
+                    code:        { type: 'string' },
+                    label:       { type: 'string' },
+                    module:      { type: 'string' },
+                    permissions: { type: 'array' },
+                  },
+                },
+              },
+              total:  { type: 'number' },
+              filter: { type: 'object' },
+            },
+          },
+        },
+      },
+    } as any,
     async ({ module }, context) => {
       const ctx = extractAuthContext(context.authInfo);
       try {

@@ -22,7 +22,34 @@ export function registerGetSubmissionStatus(server: McpServer): void {
     'Differs from process_document (kicks off a NEW submission) and resolve_hitl (operator action on a stuck submission).',
     { submissionId: z.string().uuid().describe('The submission UUID') },
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    { requiredPermission: 'cert.view_own' } as any,
+    {
+      requiredPermission: 'cert.view_own',
+      sideEffectLevel: 'read',
+      whenToUse: [
+        'User asks "what happened to the cert I uploaded" / "did my submission go through"',
+        'Following up on a process_document call by submissionId',
+      ],
+      whenNotToUse: [
+        'User has not yet uploaded — use process_document first',
+        'User asks generally what certs they have — use get_my_certifications',
+      ],
+      commonNextTools: ['resolve_hitl'],
+      outputSchema: {
+        type: 'object',
+        required: ['data'],
+        properties: {
+          data: {
+            type: 'object',
+            properties: {
+              status:           { type: 'string' },
+              processingStage:  { type: 'string' },
+              extractedData:    {},
+              errors:           { type: 'array' },
+            },
+          },
+        },
+      },
+    } as any,
     async ({ submissionId }, context) => {
       const { tenantId } = extractAuthContext(context.authInfo)
       const db = getDb()

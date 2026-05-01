@@ -34,7 +34,32 @@ export function registerAuditLogList(server: McpServer): void {
       limit:            z.number().int().min(1).max(500).optional(),
     },
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    { requiredPermission: 'employee.list' } as any,
+    {
+      requiredPermission: 'employee.list',
+      sideEffectLevel: 'read',
+      whenToUse: [
+        'User asks "who changed X last week" / "show audit history" / "what happened yesterday"',
+        'Compliance / forensic queries about HR actions',
+      ],
+      whenNotToUse: [
+        'User wants current state of a role/employee — use role_get / employee_get',
+      ],
+      commonNextTools: ['employee_get'],
+      outputSchema: {
+        type: 'object',
+        required: ['data'],
+        properties: {
+          data: {
+            type: 'object',
+            properties: {
+              events: { type: 'array' },
+              total:  { type: 'number' },
+              filter: { type: 'object' },
+            },
+          },
+        },
+      },
+    } as any,
     async (args, context) => {
       const ctx = extractAuthContext(context.authInfo);
       try {

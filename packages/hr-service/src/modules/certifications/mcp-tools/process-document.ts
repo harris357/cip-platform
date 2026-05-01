@@ -20,7 +20,29 @@ export function registerProcessDocument(server: McpServer): void {
     'Use when the user uploads a cert document (the bot routes file uploads through here automatically; rarely called by an LLM directly).',
     { objectStoreKey: z.string().describe('Object store key for the uploaded document') },
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    { requiredPermission: 'cert.submit' } as any,
+    {
+      requiredPermission: 'cert.submit',
+      sideEffectLevel: 'write',
+      whenToUse: [
+        'User uploaded a cert document and the bot needs to start processing',
+      ],
+      whenNotToUse: [
+        'User did not actually upload a file — there is no objectStoreKey to pass',
+        'User wants the status of an existing submission — use get_submission_status',
+      ],
+      commonNextTools: ['get_submission_status'],
+      outputSchema: {
+        type: 'object',
+        required: ['data'],
+        properties: {
+          data: {
+            type: 'object',
+            required: ['submissionId'],
+            properties: { submissionId: { type: 'string', format: 'uuid' } },
+          },
+        },
+      },
+    } as any,
     async ({ objectStoreKey }, context) => {
       const { tenantId, employeeId } = extractAuthContext(context.authInfo)
       const submissionId = randomUUID()

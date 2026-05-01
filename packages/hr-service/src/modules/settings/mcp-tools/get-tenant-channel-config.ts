@@ -15,7 +15,23 @@ export function registerGetTenantChannelConfig(server: McpServer): void {
     'Used internally by the bot\'s channel registry on every turn; rarely invoked directly by an LLM.',
     {},
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    { requiredPermission: null } as any,
+    {
+      requiredPermission: null,
+      sideEffectLevel: 'read',
+      whenToUse: ['Internal — Teams channel registry hydration'],
+      whenNotToUse: ['User-facing requests — this is an internal bookkeeping tool'],
+      commonNextTools: [],
+      outputSchema: {
+        type: 'object',
+        required: ['data'],
+        properties: {
+          data: {
+            type: 'object',
+            properties: { channelConfig: {} },
+          },
+        },
+      },
+    } as any,
     async (_args, context) => {
       const { tenantId } = extractAuthContext(context.authInfo)
       const db = getDb()

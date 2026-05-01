@@ -27,7 +27,43 @@ export function registerPermissionHolders(server: McpServer): void {
     'Differs from role_members (members of a specific ROLE, not a permission).',
     { permission: z.string().min(1) },
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    { requiredPermission: 'employee.list' } as any,
+    {
+      requiredPermission: 'employee.list',
+      sideEffectLevel: 'read',
+      whenToUse: [
+        'User asks "who can do X" / "who has cert.approve permission"',
+        'Compliance audit: who has elevated access to a specific operation',
+      ],
+      whenNotToUse: [
+        'User wants WHO has a ROLE (not a permission) — use role_members',
+        'User wants the catalog of permissions — use permission_catalog_list',
+      ],
+      commonNextTools: ['employee_get'],
+      outputSchema: {
+        type: 'object',
+        required: ['data'],
+        properties: {
+          data: {
+            type: 'object',
+            properties: {
+              permission: { type: 'string' },
+              holders:    {
+                type: 'array',
+                items: {
+                  type: 'object',
+                  properties: {
+                    id:       { type: 'string', format: 'uuid' },
+                    email:    { type: 'string' },
+                    fullName: { type: 'string' },
+                  },
+                },
+              },
+              total:      { type: 'number' },
+            },
+          },
+        },
+      },
+    } as any,
     async ({ permission }, context) => {
       const ctx = extractAuthContext(context.authInfo);
       try {

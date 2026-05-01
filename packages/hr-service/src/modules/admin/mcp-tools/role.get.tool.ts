@@ -29,7 +29,33 @@ export function registerRoleGet(server: McpServer): void {
     'Differs from role_list (every role overview, no group/permission detail) and role_members (which employees hold this role).',
     { code: z.string().min(1) },
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    { requiredPermission: 'employee.list' } as any,
+    {
+      requiredPermission: 'employee.list',
+      sideEffectLevel: 'read',
+      whenToUse: [
+        'User asks "what does role X do" / "what permissions does the hr-service-admin role grant"',
+        'After role_list returned a role code, drill into its groups + permissions',
+      ],
+      whenNotToUse: [
+        'User wants WHO has a role — use role_members',
+        'User wants who has a specific permission — use permission_holders',
+      ],
+      commonNextTools: ['role_members', 'group_get'],
+      outputSchema: {
+        type: 'object',
+        required: ['data'],
+        properties: {
+          data: {
+            type: 'object',
+            properties: {
+              role:        { type: 'object' },
+              groups:      { type: 'array' },
+              permissions: { type: 'array', items: { type: 'string' } },
+            },
+          },
+        },
+      },
+    } as any,
     async ({ code }, context) => {
       const ctx = extractAuthContext(context.authInfo);
       try {

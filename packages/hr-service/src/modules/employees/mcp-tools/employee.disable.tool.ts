@@ -20,7 +20,32 @@ export function registerEmployeeDisable(server: McpServer): void {
       reason:     z.string().optional(),
     },
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    { requiredPermission: 'employee.disable' } as any,
+    {
+      requiredPermission: 'employee.disable',
+      sideEffectLevel: 'write',
+      whenToUse: [
+        'User asks to "fire" / "off-board" / "deactivate" / "terminate access" for a specific employee',
+        'IRREVERSIBLE — write-confirmation gate must fire unless user authorized explicitly',
+      ],
+      whenNotToUse: [
+        'User wants to remove one role but keep employee active — use employee_revoke_role / employee_revoke_permission',
+        'User wants to migrate identity type — use employee_migrate_identity',
+      ],
+      commonNextTools: [],
+      outputSchema: {
+        type: 'object',
+        required: ['data'],
+        properties: {
+          data: {
+            type: 'object',
+            properties: {
+              employeeId: { type: 'string', format: 'uuid' },
+              disabledAt: { type: 'string', format: 'date-time' },
+            },
+          },
+        },
+      },
+    } as any,
     async (args, context) => {
       const ctx = extractAuthContext(context.authInfo);
       if (!ctx.roles.includes('hr')) {

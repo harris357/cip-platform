@@ -20,7 +20,25 @@ export function registerGetStaffCertifications(server: McpServer): void {
     'Differs from get_my_certifications (caller-only) and get_expiring_certifications (cross-employee, expiry-filtered).',
     { employeeId: z.string().uuid().describe('The employee UUID') },
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    { requiredPermission: 'cert.list_all' } as any,
+    {
+      requiredPermission: 'cert.list_all',
+      sideEffectLevel: 'read',
+      whenToUse: [
+        'User asks "what certs does Jane have" / "show John\'s certifications" / "audit Sarah\'s compliance"',
+      ],
+      whenNotToUse: [
+        'User asks about themselves — use get_my_certifications',
+        'User wants tenant-wide expiring view — use get_expiring_certifications',
+      ],
+      commonNextTools: ['employee_get', 'resolve_hitl'],
+      outputSchema: {
+        type: 'object',
+        required: ['data'],
+        properties: {
+          data: { type: 'array', items: { type: 'object' } },
+        },
+      },
+    } as any,
     async ({ employeeId }, context) => {
       const { tenantId } = extractAuthContext(context.authInfo)
       const db = getDb()

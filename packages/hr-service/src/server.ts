@@ -5,6 +5,7 @@ import { adminTenantsRouter } from './routes/admin-tenants.js';
 import { adminEmployeesRouter } from './routes/admin-employees.js';
 import { adminRoutingRouter } from './routes/admin-routing.js';
 import { adminToolRetrievalRouter } from './routes/admin-tool-retrieval.js';
+import { adminBotTunablesRouter } from './routes/admin-bot-tunables.js';
 
 export function createApp(): Express {
   const app = express();
@@ -26,6 +27,11 @@ export function createApp(): Express {
   // to narrow the LLM-visible tool set via vector similarity. Same
   // platform-admin token; mounted before the tenant JWT middleware.
   app.use(adminToolRetrievalRouter);
+
+  // Slice 45: bot_tunables endpoint — runtime-tunable thresholds for the
+  // LangGraph runtime. Per-tenant overrides shadow global defaults. Same
+  // platform-admin token; mounted before the tenant JWT middleware.
+  app.use(adminBotTunablesRouter);
 
   // All other routes require a valid tenant JWT
   app.use(tenantAuthMiddleware);

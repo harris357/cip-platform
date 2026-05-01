@@ -26,7 +26,45 @@ export function registerPermissionCatalogList(server: McpServer): void {
       module:  z.string().min(1).optional(),
     },
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    { requiredPermission: null } as any,
+    {
+      requiredPermission: null,
+      sideEffectLevel: 'read',
+      whenToUse: [
+        'User asks "what permission codes exist" / "what could a role grant"',
+        'Designing a new role or group — needs to know available atoms',
+      ],
+      whenNotToUse: [
+        'User asks who HAS a permission — use permission_holders instead',
+        'User asks about their own permissions — use get_employee_permissions',
+      ],
+      commonNextTools: ['group_list', 'role_list'],
+      outputSchema: {
+        type: 'object',
+        required: ['data'],
+        properties: {
+          data: {
+            type: 'object',
+            required: ['entries', 'total'],
+            properties: {
+              entries: {
+                type: 'array',
+                items: {
+                  type: 'object',
+                  required: ['service', 'module', 'permission'],
+                  properties: {
+                    service:     { type: 'string' },
+                    module:      { type: 'string' },
+                    permission:  { type: 'string' },
+                    description: { type: 'string' },
+                  },
+                },
+              },
+              total: { type: 'number' },
+            },
+          },
+        },
+      },
+    } as any,
     async (args, context) => {
       // Extract auth so the call is at least authenticated; no permission gate.
       extractAuthContext(context.authInfo);

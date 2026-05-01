@@ -36,7 +36,31 @@ export function registerEmployeeGrantPermission(server: McpServer): void {
       role:       z.string().min(1),
     },
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    { requiredPermission: 'employee.grant_permission' } as any,
+    {
+      requiredPermission: 'employee.grant_permission',
+      sideEffectLevel: 'write',
+      whenToUse: [
+        'User asks to grant a CIP role (e.g., hr_standard, hr-service-admin) to a specific employee',
+      ],
+      whenNotToUse: [
+        'User wants to grant a Keycloak realm role (hr | employee) — use employee_assign_role',
+        'User wants to revoke a role — use employee_revoke_permission',
+      ],
+      commonNextTools: ['employee_get'],
+      outputSchema: {
+        type: 'object',
+        required: ['data'],
+        properties: {
+          data: {
+            type: 'object',
+            properties: {
+              employeeId: { type: 'string', format: 'uuid' },
+              role:       { type: 'string' },
+            },
+          },
+        },
+      },
+    } as any,
     async (args, context) => {
       const ctx = extractAuthContext(context.authInfo)
       if (!ctx.roles.includes('hr')) {

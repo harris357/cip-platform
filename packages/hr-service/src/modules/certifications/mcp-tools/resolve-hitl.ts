@@ -29,7 +29,24 @@ export function registerResolveHitl(server: McpServer): void {
       notes: z.string().optional().describe('Reviewer notes'),
     },
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    { requiredPermission: 'cert.approve' } as any,
+    {
+      requiredPermission: 'cert.approve',
+      sideEffectLevel: 'write',
+      whenToUse: [
+        'Approver wants to approve / reject / correct a HITL-pending cert submission',
+      ],
+      whenNotToUse: [
+        'Submission is not yet at HITL stage — check get_submission_status first',
+      ],
+      commonNextTools: ['get_submission_status'],
+      outputSchema: {
+        type: 'object',
+        required: ['data'],
+        properties: {
+          data: { type: 'object', properties: { resolved: { type: 'boolean' } } },
+        },
+      },
+    } as any,
     async ({ submissionId, approved, correctedFields }, context) => {
       const { tenantId, employeeId } = extractAuthContext(context.authInfo)
       const db = getDb()

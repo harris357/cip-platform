@@ -19,7 +19,26 @@ export function registerListStaff(server: McpServer): void {
     'Differs from employee_list (paginated raw data with filters, no card) and employee_find (single employee by exact email).',
     {},
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    { requiredPermission: 'employee.list' } as any,
+    {
+      requiredPermission: 'employee.list',
+      sideEffectLevel: 'read',
+      whenToUse: [
+        'User wants a quick visual roster card in Teams',
+      ],
+      whenNotToUse: [
+        'User needs raw paginated data — use employee_list',
+        'Looking up one specific employee — use employee_find',
+      ],
+      commonNextTools: ['employee_find', 'employee_get'],
+      outputSchema: {
+        type: 'object',
+        required: ['data'],
+        properties: {
+          data: { type: 'array' },
+          card: {},
+        },
+      },
+    } as any,
     async (_args, context) => {
       const { tenantId } = extractAuthContext(context.authInfo)
       const db = getDb()
