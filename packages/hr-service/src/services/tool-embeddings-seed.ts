@@ -135,6 +135,13 @@ export async function seedToolEmbeddings(
           console.warn(`[tool-embeddings] empty embedding for ${tool.name} — skipping`);
           continue;
         }
+        if (vec.length !== 1024) {
+          console.warn(
+            `[tool-embeddings] unexpected dim for ${tool.name}: ${vec.length} (expected 1024). ` +
+            `Skipping. Check LiteLLM cip-embed alias resolves to a 1024-dim model.`,
+          );
+          continue;
+        }
         // pgvector accepts the literal '[v1,v2,...]' string format.
         const vecLiteral = `[${vec.join(',')}]`;
         await client.query(

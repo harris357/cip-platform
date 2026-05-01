@@ -84,9 +84,25 @@ export async function callEmbed(
   };
   // OpenAI SDK's embeddings.create doesn't accept a typed `metadata` field,
   // but LiteLLM forwards arbitrary extras when passed via the request body.
+  // encoding_format: 'float' is set explicitly — without it, some LiteLLM
+  // configurations default to base64, and the SDK then surfaces the raw
+  // base64 string as `embedding` rather than decoding it to a float array,
+  // truncating downstream consumers' dim checks.
   const resp = await client.embeddings.create(
-    { model, input } as Parameters<typeof client.embeddings.create>[0],
+    { model, input, encoding_format: 'float' } as Parameters<typeof client.embeddings.create>[0],
     { headers: { 'x-litellm-metadata': JSON.stringify(metadata) } },
   );
-  return resp.data.map(d => d.embedding);
+  return resp.data.map(d => {
+    const e = d.embedding;
+    // Defensive: SDK type says number[], but we've seen base64 strings come
+    // through certain proxy configurations. If we get a string, decode it
+    // (float32 little-endian) ourselves.
+    if (typeof e === 'string') {
+      const buf = Buffer.from(e, 'base64');
+      const out: number[] = [];
+      for (let i = 0; i < buf.length; i += 4) out.push(buf.readFloatLE(i));
+      return out;
+    }
+    return e as number[];
+  });
 }
