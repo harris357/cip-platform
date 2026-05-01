@@ -21,7 +21,12 @@ import { ok, refused } from '../../employees/mcp-tools/_envelope.js';
 export function registerGroupGet(server: McpServer): void {
   server.tool(
     'group_get',
-    'Get a permission group\'s detail: permissions + which roles include it.',
+    'Drill into one specific permission group: its glob-expanded permissions and which roles compose it (impact analysis). ' +
+    'Scope: one group identified by (module, code). ' +
+    'Audience: HR admins (gated on `employee.list`). ' +
+    'Output: {group, permissions[], usedByRoles[]}. ' +
+    'Required args: module (e.g. "cert"), code (group code). ' +
+    'Differs from group_list (every group overview) and role_get (one ROLE\'s composed groups + flattened permissions).',
     {
       module: z.string().min(1),
       code:   z.string().min(1),

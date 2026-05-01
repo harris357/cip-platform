@@ -16,7 +16,12 @@ import { ok, refused } from '../../employees/mcp-tools/_envelope.js';
 export function registerGroupList(server: McpServer): void {
   server.tool(
     'group_list',
-    'List permission groups in the calling user\'s tenant. Filter by module.',
+    'List permission GROUPS in the caller\'s tenant. ' +
+    'Scope: tenant-wide (all groups, optionally filtered to one module). ' +
+    'Audience: HR admins (gated on `employee.list`). ' +
+    'Output: {groups[], total} — each group is {code, label, module, permissions[]}. ' +
+    'Optional arg: module (e.g. "cert", "employee") to filter. ' +
+    'Differs from role_list (lists ROLES, which compose groups) and permission_catalog_list (lists individual permissions, the atoms inside groups).',
     { module: z.string().min(1).optional() },
     async ({ module }, context) => {
       const ctx = extractAuthContext(context.authInfo);

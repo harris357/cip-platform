@@ -11,7 +11,13 @@ import { buildExpiryCard, type ExpiringCertGroup } from './cards/expiry-card.js'
 export function registerGetExpiringCertifications(server: McpServer): void {
   server.tool(
     'get_expiring_certifications',
-    'Get certifications expiring within the specified number of days',
+    'Find every employee\'s certifications that expire within a given window of days (compliance overview). ' +
+    'Scope: tenant-wide (all employees, not just caller). ' +
+    'Audience: HR / compliance (gated on `cert.list_all`). ' +
+    'Output: grouped by employee, each with their expiring certs + days remaining. Includes adaptive card. ' +
+    'Required arg: daysAhead (window from today, e.g. 30, 90, 365). ' +
+    'Use for "what\'s expiring in the next 30 days", "compliance check", "who needs to renew". ' +
+    'Differs from get_my_certifications (caller-only, all certs) and get_compliance_summary (aggregate stats, no per-cert detail).',
     { daysAhead: z.number().int().min(1).max(365).default(90).describe('Days ahead to check') },
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     { requiredPermission: 'cert.list_all' } as any,

@@ -13,7 +13,13 @@ type SubmissionRow = typeof certSubmissions.$inferSelect
 export function registerGetSubmissionStatus(server: McpServer): void {
   server.tool(
     'get_submission_status',
-    'Get the status of a specific certification submission',
+    'Get processing status for one specific certification document submission. ' +
+    'Scope: one submission identified by UUID. ' +
+    'Audience: every employee with `cert.view_own` (baseline). ' +
+    'Output: {status, processingStage, errors, extractedData}. Status flow: queued → ocr → matching → hitl_pending → resolved. ' +
+    'Required arg: submissionId (UUID returned by process_document). ' +
+    'Use for "what happened to the cert I uploaded", "did my cert go through". ' +
+    'Differs from process_document (kicks off a NEW submission) and resolve_hitl (operator action on a stuck submission).',
     { submissionId: z.string().uuid().describe('The submission UUID') },
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     { requiredPermission: 'cert.view_own' } as any,

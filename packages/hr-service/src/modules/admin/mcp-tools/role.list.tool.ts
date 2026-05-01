@@ -17,7 +17,12 @@ import { ok, refused } from '../../employees/mcp-tools/_envelope.js';
 export function registerRoleList(server: McpServer): void {
   server.tool(
     'role_list',
-    'List CIP roles available in the calling user\'s tenant.',
+    'List every CIP role defined in the caller\'s tenant. ' +
+    'Scope: tenant-wide (all roles, not just the caller\'s assignments). ' +
+    'Audience: HR admins (gated on `employee.list` permission). ' +
+    'Output: array of {code, label, group_count, keycloak_role}. ' +
+    'Use for audits, role-selection UIs, "what roles exist". ' +
+    'Differs from get_employee_permissions (the caller\'s OWN roles only) and employee_get (one specific employee\'s assigned roles).',
     {},
     async (_args, context) => {
       const ctx = extractAuthContext(context.authInfo);

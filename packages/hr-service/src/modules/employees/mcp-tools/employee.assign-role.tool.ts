@@ -11,7 +11,13 @@ import { ok, refused } from './_envelope.js';
 export function registerEmployeeAssignRole(server: McpServer): void {
   server.tool(
     'employee_assign_role',
-    'Assign a Keycloak realm role to an employee (HR only).',
+    'Grant a Keycloak realm role (`hr` or `employee`) to a specific employee. ' +
+    'Scope: one employee, one realm role. ' +
+    'Audience: HR only (gated on the `hr` realm role). ' +
+    'Output: {employeeId, role} on success. Side effect: writes to hr_actions audit log + Keycloak. ' +
+    'Required args: employeeId (UUID), role ("hr" | "employee"). ' +
+    'Use for "make Jane an HR admin", "promote to HR". ' +
+    'Differs from employee_grant_permission (grants an individual permission code, not a realm role) and employee_revoke_role (the inverse operation).',
     {
       employeeId: z.string().uuid(),
       role:       z.enum(['hr', 'employee']),

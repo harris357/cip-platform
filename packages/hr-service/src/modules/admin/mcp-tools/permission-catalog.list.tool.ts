@@ -14,7 +14,13 @@ import { ok } from '../../employees/mcp-tools/_envelope.js';
 export function registerPermissionCatalogList(server: McpServer): void {
   server.tool(
     'permission_catalog_list',
-    'List every permission code defined in the platform catalog. Read-only.',
+    'List every permission CODE defined in the platform catalog (read-only metadata about what permissions EXIST). ' +
+    'Scope: platform-wide catalog (not tenant-scoped — these are the defined codes, e.g. "cert.approve", "employee.create"). ' +
+    'Audience: every authenticated employee (no gate; read-only metadata). ' +
+    'Output: {entries[], total, filter} — entries are {service, module, code, label, description}. ' +
+    'Optional filters: service, module. ' +
+    'Use for "what permission codes exist", "what could a role have", or designing custom groups. ' +
+    'Differs from group_list (lists GROUPS that bundle permissions in a tenant) and permission_holders (lists employees holding a specific permission).',
     {
       service: z.string().min(1).optional(),
       module:  z.string().min(1).optional(),

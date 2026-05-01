@@ -13,7 +13,7 @@ import { renderResponse } from './teams-protocol/card-renderer.js';
 import { discoverTools } from './mcp/tool-discovery.js';
 import { routeIntent } from './intent/router.js';
 import { classify } from './intent/classifier.js';
-import { filterToolsByCategory, buildMetaResponse, PURPOSE_FOR_CATEGORY } from './intent/tool-categories.js';
+import { composeMetaReply } from './intent/meta-compose.js';
 import { maybeSendDebugBanner, sendResponseTime } from './intent/debug-banner.js';
 import { executeTool } from './mcp/tool-executor.js';
 
@@ -182,37 +182,27 @@ export class CIPTeamsBot extends TeamsActivityHandler {
     const tools = await discoverTools(ctx);
     const tDiscover = Date.now();
 
-    // Slice 39B Stage 1: classify intent. chitchat/meta short-circuit with
-    // inline_reply (no Stage-2 LLM call). Anything else falls through to
-    // category-filtered tool selection.
-    //
-    // Slice 41: pass `tools` so the classifier can derive per-category
-    // availability and the Jinja2 prompt can omit categories the user
-    // can't actually use.
+    // Slice 43: classify intent into chitchat | meta | proceed.
+    // Pass `tools` so the classifier prompt can suppress `proceed` for
+    // a user with zero permitted tools.
     const { classification, alias: classifierAlias } = await classify(text, ctx, tools);
     const tClassify = Date.now();
     const classifierFell = classification === null;
 
-    // Inline-only categories (chitchat, meta) skip Stage 2 entirely — they
-    // carry no PURPOSE_FOR_CATEGORY mapping, so falling through to routeIntent
-    // would crash. Compose the reply deterministically when we own it (meta:
-    // the available-tools menu); use the LLM's inline_reply when the model
-    // produced one (chitchat: free-form social pleasantries, variance is fine);
-    // fall back to a generic acknowledgement when neither is available
-    // (chitchat with the inline_reply field omitted — observed crash mode).
-    if (classification && PURPOSE_FOR_CATEGORY[classification.category] === null) {
-      let reply: string;
-      if (classification.category === 'meta') {
-        reply = buildMetaResponse(tools);
-      } else if (classification.inline_reply) {
-        reply = classification.inline_reply;
-      } else {
-        reply = 'Hi — how can I help?';
-      }
+    // Slice 43: 3-intent flow.
+    //   chitchat → send LLM-authored inline_reply (free-form), short-circuit
+    //   meta     → call composeMetaReply (dedicated LLM call), short-circuit
+    //   proceed  → routeIntent over full permitted catalog (no category filter)
+    // Classifier failure (classification === null) falls through to proceed
+    // — the safe default that hands off to the router.
+    const intent = classification?.intent ?? 'proceed';
+
+    if (intent === 'chitchat') {
+      const reply = classification?.inline_reply ?? 'Hi — how can I help?';
       await context.sendActivity(reply);
       await sendResponseTime(context, Date.now() - tStart, {
         classifierAlias,
-        category:   classification.category,
+        intent:     'chitchat',
         classifyMs: tClassify - tDiscover,
       });
       await maybeSendDebugBanner(context, {
@@ -221,19 +211,42 @@ export class CIPTeamsBot extends TeamsActivityHandler {
         tool:  null,
         timings: { classify: tClassify - tDiscover, total: Date.now() - tStart },
       });
-      console.log(`[turn] tenantId=${ctx.tenantId} mode=inline category=${classification.category} typing=${tTyping - tStart}ms auth=${tAuth - tTyping}ms registry=${tRegistry - tAuth}ms discover=${tDiscover - tRegistry}ms classify=${tClassify - tDiscover}ms total=${Date.now() - tStart}ms`);
+      console.log(`[turn] tenantId=${ctx.tenantId} mode=inline intent=chitchat typing=${tTyping - tStart}ms auth=${tAuth - tTyping}ms registry=${tRegistry - tAuth}ms discover=${tDiscover - tRegistry}ms classify=${tClassify - tDiscover}ms total=${Date.now() - tStart}ms`);
       return;
     }
 
-    // Slice 39B Stage 2: classifier failed → use full catalog under
-    // 'reasoning' as safety net. Otherwise filter by category.
-    const category = classification?.category ?? 'reasoning';
-    const filteredTools = filterToolsByCategory(tools, category);
+    if (intent === 'meta') {
+      const meta = await composeMetaReply(ctx, tools);
+      const tMeta = Date.now();
+      await context.sendActivity(meta.reply);
+      await sendResponseTime(context, Date.now() - tStart, {
+        classifierAlias,
+        routerAlias: meta.alias,
+        intent:      'meta',
+        classifyMs:  tClassify - tDiscover,
+        routeMs:     tMeta - tClassify,
+      });
+      await maybeSendDebugBanner(context, {
+        classification,
+        alias: meta.alias,
+        tool:  null,
+        timings: {
+          classify: tClassify - tDiscover,
+          route:    tMeta - tClassify,
+          total:    Date.now() - tStart,
+        },
+      });
+      console.log(`[turn] tenantId=${ctx.tenantId} mode=meta typing=${tTyping - tStart}ms auth=${tAuth - tTyping}ms registry=${tRegistry - tAuth}ms discover=${tDiscover - tRegistry}ms classify=${tClassify - tDiscover}ms meta=${tMeta - tClassify}ms total=${Date.now() - tStart}ms`);
+      return;
+    }
 
-    const routeResult = await routeIntent({ message: text, category, tools: filteredTools, ctx });
+    // intent === 'proceed' (or classifier fell back). Route over the full
+    // permission-filtered catalog — no category filter, the LLM picks via
+    // tool descriptions.
+    const routeResult = await routeIntent({ message: text, tools, ctx });
     const tRoute = Date.now();
     const selected = routeResult.selected;
-    const stage2Alias = routeResult.alias;
+    const routerAlias = routeResult.alias;
 
     if (selected) {
       const result = await executeTool(selected.name, selected.args, ctx);
@@ -241,17 +254,17 @@ export class CIPTeamsBot extends TeamsActivityHandler {
       await renderResponse(context, result);
       await sendResponseTime(context, Date.now() - tStart, {
         classifierAlias,
-        routerAlias: stage2Alias,
+        routerAlias,
         tool:        selected.name,
         classifierFell,
-        category,
+        intent:      'proceed',
         classifyMs:  tClassify - tDiscover,
         routeMs:     tRoute - tClassify,
         execMs:      tExec - tRoute,
       });
       await maybeSendDebugBanner(context, {
         classification,
-        alias: stage2Alias,
+        alias: routerAlias,
         tool:  selected.name,
         timings: {
           classify: tClassify - tDiscover,
@@ -260,21 +273,21 @@ export class CIPTeamsBot extends TeamsActivityHandler {
           total:    Date.now() - tStart,
         },
       });
-      console.log(`[turn] tenantId=${ctx.tenantId} mode=tool category=${category} fallback=${classifierFell ? 'yes' : 'no'} typing=${tTyping - tStart}ms auth=${tAuth - tTyping}ms registry=${tRegistry - tAuth}ms discover=${tDiscover - tRegistry}ms classify=${tClassify - tDiscover}ms route=${tRoute - tClassify}ms exec=${tExec - tRoute}ms render=${Date.now() - tExec}ms total=${Date.now() - tStart}ms tool=${selected.name}`);
+      console.log(`[turn] tenantId=${ctx.tenantId} mode=tool intent=proceed fallback=${classifierFell ? 'yes' : 'no'} typing=${tTyping - tStart}ms auth=${tAuth - tTyping}ms registry=${tRegistry - tAuth}ms discover=${tDiscover - tRegistry}ms classify=${tClassify - tDiscover}ms route=${tRoute - tClassify}ms exec=${tExec - tRoute}ms render=${Date.now() - tExec}ms total=${Date.now() - tStart}ms tool=${selected.name}`);
     } else {
-      await context.sendActivity(buildNoToolMessage(filteredTools));
+      await context.sendActivity(buildNoToolMessage(tools));
       await sendResponseTime(context, Date.now() - tStart, {
         classifierAlias,
-        routerAlias: stage2Alias,
+        routerAlias,
         tool:        null,
         classifierFell,
-        category,
+        intent:      'proceed',
         classifyMs:  tClassify - tDiscover,
         routeMs:     tRoute - tClassify,
       });
       await maybeSendDebugBanner(context, {
         classification,
-        alias: stage2Alias,
+        alias: routerAlias,
         tool:  null,
         timings: {
           classify: tClassify - tDiscover,
@@ -282,7 +295,7 @@ export class CIPTeamsBot extends TeamsActivityHandler {
           total:    Date.now() - tStart,
         },
       });
-      console.log(`[turn] tenantId=${ctx.tenantId} mode=no-tool category=${category} fallback=${classifierFell ? 'yes' : 'no'} typing=${tTyping - tStart}ms auth=${tAuth - tTyping}ms registry=${tRegistry - tAuth}ms discover=${tDiscover - tRegistry}ms classify=${tClassify - tDiscover}ms route=${tRoute - tClassify}ms reply=${Date.now() - tRoute}ms total=${Date.now() - tStart}ms`);
+      console.log(`[turn] tenantId=${ctx.tenantId} mode=no-tool intent=proceed fallback=${classifierFell ? 'yes' : 'no'} typing=${tTyping - tStart}ms auth=${tAuth - tTyping}ms registry=${tRegistry - tAuth}ms discover=${tDiscover - tRegistry}ms classify=${tClassify - tDiscover}ms route=${tRoute - tClassify}ms reply=${Date.now() - tRoute}ms total=${Date.now() - tStart}ms`);
     }
   }
 

@@ -22,7 +22,12 @@ import { ok, refused } from './_envelope.js';
 export function registerEmployeeGet(server: McpServer): void {
   server.tool(
     'employee_get',
-    'Get an employee\'s full detail: identity, assigned roles, effective permissions.',
+    'Get a specific employee\'s full detail: identity row, assigned roles, effective permissions (glob-expanded). ' +
+    'Scope: one specific OTHER employee (not the caller). For the caller\'s own roles, use get_employee_permissions instead. ' +
+    'Audience: HR-level admins (gated on `employee.find` permission). ' +
+    'Output: {employee, roles[], permissions[]}. ' +
+    'Required arg: employeeId (UUID). ' +
+    'Differs from get_employee_permissions (caller\'s own roles, no admin gate), employee_find (lookup by email, identity row only), employee_list (tenant-wide list).',
     { employeeId: z.string().uuid() },
     async ({ employeeId }, context) => {
       const ctx = extractAuthContext(context.authInfo);

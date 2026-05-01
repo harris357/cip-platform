@@ -11,7 +11,13 @@ import { buildStaffCertsCard, type StaffCertReport } from './cards/staff-certs-c
 export function registerGetStaffCertifications(server: McpServer): void {
   server.tool(
     'get_staff_certifications',
-    'Get all certifications for a specific employee',
+    'Look up every certification held by ONE specific employee (HR view). ' +
+    'Scope: one specific employee (not the caller — for caller use get_my_certifications). ' +
+    'Audience: HR / compliance (gated on `cert.list_all`). ' +
+    'Output: list of certs with name, issue/expiry dates, status. ' +
+    'Required arg: employeeId (UUID). ' +
+    'Use for "what certs does Jane have", "show John\'s certifications", "audit Sarah\'s compliance". ' +
+    'Differs from get_my_certifications (caller-only) and get_expiring_certifications (cross-employee, expiry-filtered).',
     { employeeId: z.string().uuid().describe('The employee UUID') },
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     { requiredPermission: 'cert.list_all' } as any,

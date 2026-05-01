@@ -8,7 +8,13 @@ import { ok, refused } from './_envelope.js';
 export function registerEmployeeDisable(server: McpServer): void {
   server.tool(
     'employee_disable',
-    'Disable an employee (HR only). Sets KC user enabled=false, invalidates sessions, marks employees.disabled_at.',
+    'Permanently disable a specific employee (off-board). ' +
+    'Scope: one employee. ' +
+    'Audience: HR only (gated on the `hr` realm role). ' +
+    'Output: {employeeId, disabledAt} on success. Side effects: KC user enabled=false, all sessions invalidated, employees.disabled_at set, hr_actions audit row written. ' +
+    'Required arg: employeeId (UUID). Optional: reason (recorded in audit). ' +
+    'Use for "fire", "off-board", "deactivate", "terminate access". ' +
+    'Differs from employee_revoke_role (removes one role; user keeps baseline access). This is the irreversible terminate operation.',
     {
       employeeId: z.string().uuid(),
       reason:     z.string().optional(),

@@ -86,7 +86,30 @@ PENDING:    42A ──► 42C ──► 42B
    selection on a category-filtered catalog routed through `routing_rules`.
    Falls back to legacy single-stage routing if the classifier returns
    malformed JSON. Includes a `BOT_DEBUG_CLASSIFICATION` env-flag debug
-   banner for live visibility.
+   banner for live visibility. **Superseded by Slice 43** — the category
+   layer is being removed in favour of full-catalog function calling.
+
+3. **Slice 43** — Remove the hardcoded category layer. Collapses the
+   six-label intent enum to three (`chitchat`/`meta`/`proceed`), deletes
+   `TOOLS_FOR_CATEGORY` and the per-category Stage-2 aliases, sweeps
+   every hr-service tool description (scope/audience/output format) and
+   adds `requiredPermission` annotations across the catalog. Single
+   `route` alias (mistral-small-latest) handles function calling over
+   the full permitted tool list. Restores LLM-composed meta replies via
+   a dedicated `meta_compose` alias (open-mistral-nemo). Fixes the
+   `discoverTools` cache key bug (was tenant-keyed, now tenant+user).
+   ~2–3 days of work including the description sweep.
+
+4. **Slice 44** — Tool catalog embeddings (vector retrieval pre-filter).
+   Adds `tool_embeddings` table (pgvector, HNSW cosine), an idempotent
+   indexer that runs on hr-service startup (re-embeds only on
+   `description_hash` change — zero API calls on no-op restart), and a
+   top-K retrieval step in `discoverTools` (between the permission filter
+   and the router LLM). Embedding via `cip-embed` alias → `mistral-embed`.
+   Pre-builds vector retrieval before the catalog hits the ~80-tool
+   threshold where wrong-sibling picks degrade. Doesn't replace
+   permission filtering — adds a candidate-narrowing step. ~1–1.5 days
+   of work (most infra is already in place from agent_memory_vectors).
 
 ---
 

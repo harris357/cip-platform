@@ -7,7 +7,14 @@ import { ok, refused } from './_envelope.js';
 export function registerEmployeeCreate(server: McpServer): void {
   server.tool(
     'employee_create',
-    'Provision a new employee (HR only). Creates the employees row and starts EmployeeOnboardingWorkflow.',
+    'Provision a new employee record + kick off the onboarding workflow. ' +
+    'Scope: creates one new employee in the caller\'s tenant. ' +
+    'Audience: HR only (gated on the `hr` realm role). ' +
+    'Output: {employeeId, workflowId} on success, or refusal {code, message}. ' +
+    'Required args: email, fullName, identityType (aad_federated|field_employee). Optional: aadOid, phone, employmentType. ' +
+    'Side effect: starts EmployeeOnboardingWorkflow. ' +
+    'Use for "create employee", "add Jane", "onboard new hire". ' +
+    'Differs from employee_assign_role (assigns a CIP role to an existing employee) and employee_migrate_identity (changes auth federation type).',
     {
       email:          z.string().email(),
       fullName:       z.string().min(1),

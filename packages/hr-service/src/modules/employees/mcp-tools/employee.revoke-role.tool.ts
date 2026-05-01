@@ -11,7 +11,13 @@ import { ok, refused } from './_envelope.js';
 export function registerEmployeeRevokeRole(server: McpServer): void {
   server.tool(
     'employee_revoke_role',
-    'Revoke a Keycloak realm role from an employee (HR only). Cannot revoke the baseline "employee" role — use employee_disable instead.',
+    'Revoke a Keycloak realm role from a specific employee. ' +
+    'Scope: one employee, one realm role. ' +
+    'Audience: HR only (gated on the `hr` realm role). ' +
+    'Output: {employeeId, role} on success. Side effect: writes to hr_actions audit log + Keycloak. ' +
+    'Required args: employeeId (UUID), role ("hr"). NOTE: cannot revoke the baseline "employee" role — use employee_disable instead. ' +
+    'Use for "remove HR admin from Jane", "demote". ' +
+    'Differs from employee_revoke_permission (revokes an individual permission, not a realm role) and employee_assign_role (the inverse).',
     {
       employeeId: z.string().uuid(),
       role:       z.enum(['hr', 'employee']),

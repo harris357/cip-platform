@@ -21,7 +21,12 @@ import { ok, refused } from '../../employees/mcp-tools/_envelope.js';
 export function registerRoleGet(server: McpServer): void {
   server.tool(
     'role_get',
-    'Get a role\'s detail: groups + flattened permissions.',
+    'Drill into one specific role: its composed groups and the flattened, glob-expanded permissions those groups grant. ' +
+    'Scope: one role identified by its code. ' +
+    'Audience: HR admins (gated on `employee.list`). ' +
+    'Output: {role, groups[], permissions[]}. ' +
+    'Required arg: code (role code, e.g. "hr_standard"). ' +
+    'Differs from role_list (every role overview, no group/permission detail) and role_members (which employees hold this role).',
     { code: z.string().min(1) },
     async ({ code }, context) => {
       const ctx = extractAuthContext(context.authInfo);

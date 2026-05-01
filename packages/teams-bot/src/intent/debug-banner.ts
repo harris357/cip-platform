@@ -1,6 +1,8 @@
 // Slice 39B: dev-only classifier debug banner.
+// Slice 43: renamed `category` → `intent` throughout (the field carries
+// chitchat | meta | proceed now, not the legacy 6-label business categories).
 // When BOT_DEBUG_CLASSIFICATION=true, the bot posts an additional Teams
-// message after every reply showing classifier output, Stage 2 alias
+// message after every reply showing classifier output, downstream alias
 // (if any), and per-stage timing. Off by default.
 
 import type { TurnContext } from '@microsoft/agents-hosting';
@@ -8,11 +10,11 @@ import type { Classification } from './classifier.js';
 
 interface DebugInput {
   classification: Classification | null;   // null when classifier failed
-  alias:          string | null;           // Stage 2 alias used; null if inline or no-tool
-  tool:           string | null;           // tool selected; null if inline or no-tool
+  alias:          string | null;           // downstream alias (router or meta_compose); null if chitchat
+  tool:           string | null;           // tool selected; null if inline / meta / no-tool
   timings:        {
     classify: number;
-    route?:   number;
+    route?:   number;   // route or meta_compose duration
     exec?:    number;
     total:    number;
   };
@@ -30,12 +32,12 @@ function responseTimeEnabled(): boolean {
 
 export interface ResponseTimeDetail {
   classifierAlias?: string | null;  // Stage-1 alias (cip-classifier or override)
-  routerAlias?:     string | null;  // Stage-2 alias (null on inline / chitchat)
-  tool?:            string | null;  // tool name selected by Stage 2
-  classifierFell?:  boolean;        // true if classifier failed and we fell back
+  routerAlias?:     string | null;  // Router or meta_compose alias; null on chitchat
+  tool?:            string | null;  // tool name selected by router (proceed path only)
+  classifierFell?:  boolean;        // true if classifier failed and we fell back to proceed
   // Per-stage timing breakdown — surfaced inline so the user can see where
   // a slow turn spent its budget without enabling the full debug banner.
-  category?:        string | null;  // chitchat/meta/hr_admin/...
+  intent?:          string | null;  // chitchat | meta | proceed (Slice 43)
   classifyMs?:      number;
   routeMs?:         number;
   execMs?:          number;
@@ -77,7 +79,7 @@ export async function sendResponseTime(
   }
   const timings = timingParts.length > 0 ? ` (${timingParts.join(' · ')})` : '';
 
-  const category = detail?.category ? ` · ${detail.category}` : '';
+  const intent = detail?.intent ? ` · ${detail.intent}` : '';
 
   const pipelineParts: string[] = [];
   if (detail) {
@@ -88,7 +90,7 @@ export async function sendResponseTime(
   }
   const pipeline = pipelineParts.length > 0 ? ` · ${pipelineParts.join(' → ')}` : '';
 
-  await context.sendActivity(`_⏱ ${seconds}s${timings}${category}${pipeline}_`);
+  await context.sendActivity(`_⏱ ${seconds}s${timings}${intent}${pipeline}_`);
 }
 
 export async function maybeSendDebugBanner(
@@ -101,15 +103,15 @@ export async function maybeSendDebugBanner(
   const lines: string[] = ['🔍 **classifier debug**'];
 
   if (classification === null) {
-    lines.push('• category: _classifier failed — fell back to legacy single-stage routing_');
+    lines.push('• intent: _classifier failed — fell back to proceed (full router)_');
   } else {
-    lines.push(`• category: \`${classification.category}\` (complexity: \`${classification.complexity}\`)`);
+    lines.push(`• intent: \`${classification.intent}\``);
     if (classification.inline_reply) {
-      lines.push('• inline_reply: yes — Stage 2 skipped');
+      lines.push('• inline_reply: yes (chitchat path)');
     }
   }
 
-  if (alias) lines.push(`• stage 2 alias: \`${alias}\``);
+  if (alias) lines.push(`• downstream alias: \`${alias}\``);
   if (tool)  lines.push(`• tool: \`${tool}\``);
 
   const t = `classify=${timings.classify}ms` +

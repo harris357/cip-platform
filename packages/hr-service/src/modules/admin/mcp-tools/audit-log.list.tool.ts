@@ -19,7 +19,13 @@ import { ok, refused } from '../../employees/mcp-tools/_envelope.js';
 export function registerAuditLogList(server: McpServer): void {
   server.tool(
     'audit_log_list',
-    'List recent HR audit events. Filter by actor, target, action type, time range.',
+    'List recent HR audit events from the hr_actions log. ' +
+    'Scope: tenant-wide audit history. ' +
+    'Audience: HR admins (gated on `employee.list`). ' +
+    'Output: {events[], total, filter} — each event records actor, target, action_type, timestamp, payload. ' +
+    'Filterable by actorEmployeeId, targetEmployeeId, actionType, sinceIso, limit. ' +
+    'Use for compliance questions ("who granted admin access last week?", "what changed yesterday?"). ' +
+    'No sibling overlap — this is the only audit-history tool.',
     {
       actorEmployeeId:  z.string().uuid().optional(),
       targetEmployeeId: z.string().uuid().optional(),

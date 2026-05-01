@@ -26,7 +26,13 @@ import { ok, refused } from './_envelope.js'
 export function registerEmployeeRevokePermission(server: McpServer): void {
   server.tool(
     'employee_revoke_permission',
-    'Revoke a role (which bundles permissions) from an employee. HR only. Refuses if it would leave the user with zero roles.',
+    'Revoke a CIP role from a specific employee. ' +
+    'Scope: one employee, one role-by-code. ' +
+    'Audience: HR + employee.revoke_permission permission. ' +
+    'Output: {employeeId, role} on success (idempotent — no-op if not currently held). Refuses if it would leave the employee with zero roles — use employee_disable for full off-board. ' +
+    'Required args: employeeId (UUID), role (CIP role code). ' +
+    'Use for "remove HR admin role from Jane". ' +
+    'Differs from employee_revoke_role (Keycloak realm role) and employee_disable (full off-board).',
     {
       employeeId: z.string().uuid(),
       role:       z.string().min(1),

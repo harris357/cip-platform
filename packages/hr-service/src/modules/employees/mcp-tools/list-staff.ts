@@ -11,7 +11,12 @@ type EmployeeRow = typeof employees.$inferSelect
 export function registerListStaff(server: McpServer): void {
   server.tool(
     'list_staff',
-    'List all employees for the tenant',
+    'List all employees in the tenant in card form (Adaptive Card output for Teams). ' +
+    'Scope: tenant-wide. ' +
+    'Audience: anyone with `employee.list` permission. ' +
+    'Output: {data: employees[], card: AdaptiveCard, message}. ' +
+    'Use when the user wants a quick visual roster — Teams renders the adaptive card. ' +
+    'Differs from employee_list (paginated raw data with filters, no card) and employee_find (single employee by exact email).',
     {},
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     { requiredPermission: 'employee.list' } as any,

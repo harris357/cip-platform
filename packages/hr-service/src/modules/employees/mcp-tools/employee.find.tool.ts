@@ -8,7 +8,12 @@ import { ok, refused } from './_envelope.js';
 export function registerEmployeeFind(server: McpServer): void {
   server.tool(
     'employee_find',
-    'Look up an employee by email (HR only).',
+    'Find a single employee by exact email match. ' +
+    'Scope: one specific employee in the caller\'s tenant. ' +
+    'Audience: HR only (gated on the `hr` realm role). ' +
+    'Output: {employee} row or not_found refusal. ' +
+    'Required arg: email (exact, case-insensitive). ' +
+    'Differs from employee_list (paginated tenant-wide list with filters) and employee_get (returns full detail including roles + permissions).',
     { email: z.string().email() },
     async (args, context) => {
       const ctx = extractAuthContext(context.authInfo);

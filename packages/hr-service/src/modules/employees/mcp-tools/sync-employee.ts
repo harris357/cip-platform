@@ -102,7 +102,12 @@ async function maybeAutoElevateAdmin(
 export function registerSyncEmployee(server: McpServer): void {
   server.tool(
     'sync_employee',
-    'Upsert the calling user as an employee record from their JWT claims. Call before get_employee_permissions for first-time users.',
+    'Upsert the calling user as an employee record from their JWT claims. ' +
+    'Scope: the caller only. ' +
+    'Audience: every authenticated user (no gate). ' +
+    'Output: {employeeId}. Idempotent — re-syncs update mutable fields (email, fullName) but never re-trigger first-sync side effects (admin auto-elevation). ' +
+    'Used internally by the bot on every turn before get_employee_permissions; rarely called directly by an LLM. ' +
+    'No sibling overlap.',
     {},
     async (_args, context) => {
       const { tenantId, keycloakId, email, fullName, givenName, surname, aadOid } =

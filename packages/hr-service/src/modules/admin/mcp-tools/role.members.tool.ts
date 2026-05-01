@@ -16,7 +16,13 @@ import { ok, refused } from '../../employees/mcp-tools/_envelope.js';
 export function registerRoleMembers(server: McpServer): void {
   server.tool(
     'role_members',
-    'List employees assigned a given CIP role.',
+    'List employees assigned to one specific role. ' +
+    'Scope: every employee in the tenant who holds the named role. ' +
+    'Audience: HR admins (gated on `employee.list`). ' +
+    'Output: {role, members[], total} — members are {id, email, fullName}. ' +
+    'Use for compliance ("who has the hr-service-admin role?") and audits. ' +
+    'Required arg: code (role code). ' +
+    'Differs from role_list (lists ROLES not members) and permission_holders (lists holders of a specific PERMISSION across roles).',
     { code: z.string().min(1) },
     async ({ code }, context) => {
       const ctx = extractAuthContext(context.authInfo);

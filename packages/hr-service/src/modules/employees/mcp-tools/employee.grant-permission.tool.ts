@@ -24,7 +24,13 @@ import { ok, refused } from './_envelope.js'
 export function registerEmployeeGrantPermission(server: McpServer): void {
   server.tool(
     'employee_grant_permission',
-    'Grant a role (which bundles permissions) to an employee. HR only.',
+    'Grant a CIP role (which bundles permissions) to a specific employee. ' +
+    'Scope: one employee, one role-by-code. ' +
+    'Audience: HR + employee.grant_permission permission. ' +
+    'Output: {employeeId, role} on success (idempotent — duplicate grant is a no-op). Side effect: audit row written. ' +
+    'Required args: employeeId (UUID), role (CIP role code, e.g. "hr_standard", "hr-service-admin"). ' +
+    'Use for "give Jane the HR admin role", "elevate". ' +
+    'Differs from employee_assign_role (assigns Keycloak realm role like `hr` — not a CIP role) and employee_revoke_permission (the inverse).',
     {
       employeeId: z.string().uuid(),
       role:       z.string().min(1),

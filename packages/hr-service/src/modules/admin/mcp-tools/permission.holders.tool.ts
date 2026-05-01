@@ -18,7 +18,13 @@ import { ok, refused } from '../../employees/mcp-tools/_envelope.js';
 export function registerPermissionHolders(server: McpServer): void {
   server.tool(
     'permission_holders',
-    'List employees holding a specific permission (literal + glob coverage).',
+    'List every employee in the tenant who holds a specific permission, accounting for glob expansion. ' +
+    'Scope: tenant-wide (cuts across all roles + groups). ' +
+    'Audience: HR admins (gated on `employee.list`). ' +
+    'Output: {permission, holders[], total} — holders are {id, email, fullName}. ' +
+    'Use for compliance questions ("who can approve certs?") and audits. Note that "cert.approve" is matched literally AND via "cert.*" glob AND via "*" glob. ' +
+    'Required arg: permission (full code, e.g. "cert.approve"). ' +
+    'Differs from role_members (members of a specific ROLE, not a permission).',
     { permission: z.string().min(1) },
     async ({ permission }, context) => {
       const ctx = extractAuthContext(context.authInfo);

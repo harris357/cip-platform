@@ -12,7 +12,12 @@ import { CertificationProcessingWorkflow } from '../workflows/index.js'
 export function registerProcessDocument(server: McpServer): void {
   server.tool(
     'process_document',
-    'Trigger certification processing workflow for an uploaded document',
+    'Submit a new certification document for OCR + matching processing. ' +
+    'Scope: creates one new submission row + kicks off CertificationProcessingWorkflow. ' +
+    'Audience: every employee with `cert.submit` (baseline). ' +
+    'Output: {submissionId} for status tracking via get_submission_status. ' +
+    'Required arg: objectStoreKey (S3 key from a Teams file upload — the bot uploads first, then calls this). ' +
+    'Use when the user uploads a cert document (the bot routes file uploads through here automatically; rarely called by an LLM directly).',
     { objectStoreKey: z.string().describe('Object store key for the uploaded document') },
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     { requiredPermission: 'cert.submit' } as any,

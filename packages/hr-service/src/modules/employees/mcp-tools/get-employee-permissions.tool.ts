@@ -18,7 +18,12 @@ import { extractAuthContext } from '../../../mcp-server/auth.js'
 export function registerGetEmployeePermissions(server: McpServer): void {
   server.tool(
     'get_employee_permissions',
-    'Returns the calling employee\'s permission codes and role codes',
+    'Return the CALLING user\'s own roles and effective permissions. ' +
+    'Use when the user asks "what are my roles", "what permissions do I have", "what can I do" — questions about themselves. ' +
+    'Scope: the caller only (never another employee). ' +
+    'Audience: every authenticated employee (no permission gate; you can always see your own). ' +
+    'Output: {roles[], permissions[]} (permissions are glob-expanded). ' +
+    'Differs from employee_get (returns ANOTHER specific employee\'s detail, HR-only) and role_list (returns every role in the tenant, not the caller\'s assignments).',
     {},
     async (_args, context) => {
       const ctx = extractAuthContext(context.authInfo)

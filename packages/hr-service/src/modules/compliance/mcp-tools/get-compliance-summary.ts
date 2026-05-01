@@ -9,7 +9,13 @@ import { buildComplianceSummaryCard, type ComplianceSummary } from './cards/comp
 export function registerGetComplianceSummary(server: McpServer): void {
   server.tool(
     'get_compliance_summary',
-    'Get aggregate compliance statistics across all employees in the tenant',
+    'Aggregate compliance statistics across all employees in the tenant (dashboard-style). ' +
+    'Scope: tenant-wide aggregates (no per-employee detail). ' +
+    'Audience: HR / compliance (gated on `compliance.view`). ' +
+    'Output: counts by status (current, expiring soon, expired, missing), totals, percentages. ' +
+    'No required args. ' +
+    'Use for "what\'s our compliance status", "compliance dashboard", "are we good on certs". ' +
+    'Differs from get_expiring_certifications (per-employee cert detail in a window) and get_staff_certifications (one specific employee).',
     {},
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     { requiredPermission: 'compliance.view' } as any,

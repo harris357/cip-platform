@@ -12,7 +12,13 @@ import { hitlDecisionSignal } from '../workflows/index.js'
 export function registerResolveHitl(server: McpServer): void {
   server.tool(
     'resolve_hitl',
-    'Send a HITL decision signal to the certification processing workflow',
+    'Resolve a stuck certification submission that requires human review. ' +
+    'Scope: one submission awaiting HITL (human-in-the-loop) resolution. ' +
+    'Audience: HR / approver (gated on `cert.approve`). ' +
+    'Output: signal sent to workflow. The workflow continues processing once resolved. ' +
+    'Required args: submissionId (UUID), approved (bool). Optional: correctedFields (key→value), notes. ' +
+    'Use for "approve cert submission X", "reject the upload", "fix the OCR data and continue". ' +
+    'Differs from process_document (creates a new submission) and get_submission_status (read-only inspection).',
     {
       submissionId: z.string().uuid().describe('The submission UUID awaiting HITL resolution'),
       approved: z.boolean().describe('Whether the certification is approved'),

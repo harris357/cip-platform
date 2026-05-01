@@ -12,7 +12,12 @@ type CertRow = typeof certifications.$inferSelect
 export function registerGetMyCertifications(server: McpServer): void {
   server.tool(
     'get_my_certifications',
-    "Get the current employee's certifications and expiry dates",
+    'Return the CALLER\'s own certifications and expiry dates. ' +
+    'Scope: caller-only. ' +
+    'Audience: every employee (gated on `cert.view_own`, baseline `employee` role permission). ' +
+    'Output: list of certs with name, issue date, expiry date, status. Includes adaptive card for Teams. ' +
+    'Use for "show my certs", "what certs do I have", "when does my X expire". ' +
+    'Differs from get_staff_certifications (HR view of someone else\'s certs) and get_expiring_certifications (caller-scoped expiry-only filter).',
     {},
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     { requiredPermission: 'cert.view_own' } as any,

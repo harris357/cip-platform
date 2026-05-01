@@ -8,7 +8,11 @@ import { extractAuthContext } from '../../../mcp-server/auth.js'
 export function registerGetTenantChannelConfig(server: McpServer): void {
   server.tool(
     'get_tenant_channel_config',
-    'Returns the channel_config JSONB for the calling tenant (called by Teams Bot)',
+    'Return tenant-level Teams channel mappings (which Teams channel routes to which tenant). ' +
+    'Scope: caller\'s tenant only. ' +
+    'Audience: every authenticated user (no gate; called internally by the bot). ' +
+    'Output: {channelConfig} JSONB blob. ' +
+    'Used internally by the bot\'s channel registry on every turn; rarely invoked directly by an LLM.',
     {},
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     { requiredPermission: '' } as any,

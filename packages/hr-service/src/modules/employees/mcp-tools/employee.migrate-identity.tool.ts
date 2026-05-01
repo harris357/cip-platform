@@ -8,7 +8,13 @@ import { ok, refused } from './_envelope.js';
 export function registerEmployeeMigrateIdentity(server: McpServer): void {
   server.tool(
     'employee_migrate_identity',
-    'Switch an employee between aad_federated and field_employee identity (HR only). For AAD target requires aadOid; for field target requires phone.',
+    'Switch an employee between AAD-federated and field (OTP) identity types. ' +
+    'Scope: one employee, identity-type swap. ' +
+    'Audience: HR only (gated on the `hr` realm role). ' +
+    'Output: {employeeId, identityType} on success. ' +
+    'Required args: employeeId (UUID), targetIdentityType ("aad_federated"|"field_employee"). For AAD target also aadOid; for field target also phone. ' +
+    'Use for "convert to field worker", "Jane is now in our Entra tenant — re-link". Rare operation. ' +
+    'No sibling overlap.',
     {
       employeeId:         z.string().uuid(),
       targetIdentityType: z.enum(['aad_federated', 'field_employee']),
