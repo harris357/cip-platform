@@ -95,92 +95,97 @@ export async function seedToolEmbeddings(
     return { embedded: 0, skipped: 0, orphans: 0 };
   }
 
-  const client = await pool.connect();
   let embedded = 0;
   let skipped  = 0;
   let orphans  = 0;
-  try {
-    await client.query('BEGIN');
 
-    // Pull all existing hashes for this service in one query.
-    const existing = await client.query<{ tool_name: string; description_hash: string }>(
+  // Pull all existing hashes for this service in one query — short-lived
+  // connection from the pool, returned immediately. Don't hold across the
+  // long embedding API loop or postgres' idle_in_transaction_timeout fires
+  // and pg.Client emits an unhandled 'error' that crashes node.
+  let existingRows: Array<{ tool_name: string; description_hash: string }> = [];
+  try {
+    const result = await pool.query<{ tool_name: string; description_hash: string }>(
       `SELECT tool_name, description_hash FROM tool_embeddings WHERE service = $1`,
       [SERVICE],
     );
-    const existingHashes = new Map(existing.rows.map(r => [r.tool_name, r.description_hash]));
-    const currentNames = new Set(tools.map(t => t.name));
+    existingRows = result.rows;
+  } catch (err) {
+    console.warn(`[tool-embeddings] existing-row scan failed: ${err instanceof Error ? err.message : String(err)} — assuming empty`);
+  }
+  const existingHashes = new Map(existingRows.map(r => [r.tool_name, r.description_hash]));
+  const currentNames = new Set(tools.map(t => t.name));
 
-    // LiteLLM client is reusable across embedding calls. Virtual key is
-    // the platform-wide one used by hr-service for its own LLM calls.
-    const llmClient = createLiteLLMClient({
-      tenantId:   SYSTEM_TENANT_ID,
-      virtualKey: process.env['LITELLM_VIRTUAL_KEY'] ?? '',
-    });
+  // LiteLLM client is reusable across embedding calls. Virtual key is
+  // the platform-wide one used by hr-service for its own LLM calls.
+  const llmClient = createLiteLLMClient({
+    tenantId:   SYSTEM_TENANT_ID,
+    virtualKey: process.env['LITELLM_VIRTUAL_KEY'] ?? '',
+  });
 
-    for (const tool of tools) {
-      const hash = computeHash(tool);
-      if (existingHashes.get(tool.name) === hash) {
-        skipped++;
+  // Per-tool: embed (slow, HTTP) → upsert (fast, single statement). Each
+  // upsert is its own implicit transaction via pool.query — no BEGIN/COMMIT
+  // held across the embedding call.
+  for (const tool of tools) {
+    const hash = computeHash(tool);
+    if (existingHashes.get(tool.name) === hash) {
+      skipped++;
+      continue;
+    }
+    try {
+      const embedText = `${tool.name}\n${tool.description}`;
+      const [vec] = await callEmbed(llmClient, {
+        model:    EMBED_MODEL,
+        input:    embedText,
+        purpose:  'hr-service.tool_embed',
+        tenantId: SYSTEM_TENANT_ID,
+      });
+      if (!vec || vec.length === 0) {
+        console.warn(`[tool-embeddings] empty embedding for ${tool.name} — skipping`);
         continue;
       }
-      try {
-        const embedText = `${tool.name}\n${tool.description}`;
-        const [vec] = await callEmbed(llmClient, {
-          model:    EMBED_MODEL,
-          input:    embedText,
-          purpose:  'hr-service.tool_embed',
-          tenantId: SYSTEM_TENANT_ID,
-        });
-        if (!vec || vec.length === 0) {
-          console.warn(`[tool-embeddings] empty embedding for ${tool.name} — skipping`);
-          continue;
-        }
-        if (vec.length !== 1024) {
-          console.warn(
-            `[tool-embeddings] unexpected dim for ${tool.name}: ${vec.length} (expected 1024). ` +
-            `Skipping. Check LiteLLM cip-embed alias resolves to a 1024-dim model.`,
-          );
-          continue;
-        }
-        // pgvector accepts the literal '[v1,v2,...]' string format.
-        const vecLiteral = `[${vec.join(',')}]`;
-        await client.query(
-          `INSERT INTO tool_embeddings (service, tool_name, description_hash, embedding, embedded_at)
-           VALUES ($1, $2, $3, $4::vector, NOW())
-           ON CONFLICT (service, tool_name) DO UPDATE
-             SET description_hash = EXCLUDED.description_hash,
-                 embedding        = EXCLUDED.embedding,
-                 embedded_at      = NOW()`,
-          [SERVICE, tool.name, hash, vecLiteral],
-        );
-        embedded++;
-      } catch (err) {
+      if (vec.length !== 1024) {
         console.warn(
-          `[tool-embeddings] failed to embed ${tool.name}: ${err instanceof Error ? err.message : String(err)}`,
+          `[tool-embeddings] unexpected dim for ${tool.name}: ${vec.length} (expected 1024). ` +
+          `Skipping. Check LiteLLM cip-embed alias resolves to a 1024-dim model.`,
         );
+        continue;
       }
+      const vecLiteral = `[${vec.join(',')}]`;
+      await pool.query(
+        `INSERT INTO tool_embeddings (service, tool_name, description_hash, embedding, embedded_at)
+         VALUES ($1, $2, $3, $4::vector, NOW())
+         ON CONFLICT (service, tool_name) DO UPDATE
+           SET description_hash = EXCLUDED.description_hash,
+               embedding        = EXCLUDED.embedding,
+               embedded_at      = NOW()`,
+        [SERVICE, tool.name, hash, vecLiteral],
+      );
+      embedded++;
+    } catch (err) {
+      console.warn(
+        `[tool-embeddings] failed to embed ${tool.name}: ${err instanceof Error ? err.message : String(err)}`,
+      );
     }
+  }
 
-    // Orphan cleanup — same transaction as the upserts so a partial registry
-    // never leaves the table in an inconsistent half-purged state.
-    for (const row of existing.rows) {
-      if (!currentNames.has(row.tool_name)) {
-        await client.query(
+  // Orphan cleanup — separate from the embed loop because the upsert pass
+  // doesn't need to be in the same transaction. A partial registry just
+  // leaves a few stale rows; the next pod restart catches them.
+  for (const row of existingRows) {
+    if (!currentNames.has(row.tool_name)) {
+      try {
+        await pool.query(
           `DELETE FROM tool_embeddings WHERE service = $1 AND tool_name = $2`,
           [SERVICE, row.tool_name],
         );
         orphans++;
+      } catch (err) {
+        console.warn(`[tool-embeddings] orphan delete failed for ${row.tool_name}: ${err instanceof Error ? err.message : String(err)}`);
       }
     }
-
-    await client.query('COMMIT');
-    console.log(`[tool-embeddings] embedded=${embedded} skipped=${skipped} orphans=${orphans}`);
-    return { embedded, skipped, orphans };
-  } catch (err) {
-    await client.query('ROLLBACK').catch(() => undefined);
-    console.warn(`[tool-embeddings] seed failed: ${err instanceof Error ? err.message : String(err)}`);
-    return { embedded, skipped, orphans };
-  } finally {
-    client.release();
   }
+
+  console.log(`[tool-embeddings] embedded=${embedded} skipped=${skipped} orphans=${orphans}`);
+  return { embedded, skipped, orphans };
 }
