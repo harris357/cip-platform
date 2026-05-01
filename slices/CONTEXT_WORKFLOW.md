@@ -69,7 +69,10 @@ PENDING:    42A ──► 42C ──► 42B
    Migrates employee assignments from groups → roles. Moves
    `keycloak_role` column from groups to roles. Resolver chains
    employee → role → groups → permissions. After 42C, every
-   permission_group is single-module. ~1.5 days of work.
+   permission_group is single-module. **Admin management MCP tools
+   ship here**: `role_list`, `role_get`, `group_list`, `employee_get`
+   — read-only discoverability so admins manage users via natural-
+   language commands without knowing codes. ~1.5 days of work.
 3. **Slice 42B** — Admin User Bootstrap. Migration 013 seeds an
    `hr-service-admin` role per tenant (with 4 glob-permission module-
    admin groups). Bootstrap.sh + provision-tenant.sh + sync_employee

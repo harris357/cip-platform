@@ -79,7 +79,9 @@ packages/hr-service/src/
     employee.grant-permission.tool.ts         ← MOD: queries against permission_groups (no rename)
     employee.revoke-permission.tool.ts        ← MOD: queries against permission_groups
     get-employee-permissions.tool.ts          ← MOD: queries against permission_groups
-  index.ts                                    ← MOD: invoke catalog seed at startup
+  modules/admin/mcp-tools/                    ← NEW directory: admin/audit management tools
+    permission-catalog.list.tool.ts           ← NEW: list permissions in the catalog (read-only)
+  index.ts                                    ← MOD: invoke catalog seed at startup; register admin MCP tools
 
 packages/platform-core/src/
   activities/
@@ -331,6 +333,34 @@ The function names will become semantically-correct again after Slice 42C (when 
 
 ---
 
+## Admin/audit MCP tool: `permission_catalog_list`
+
+For admins to discover what permissions exist via natural-language commands ("what permissions can I grant?"), the catalog needs to be reachable through the bot — not just via direct SQL.
+
+```typescript
+// packages/hr-service/src/modules/admin/mcp-tools/permission-catalog.list.tool.ts
+server.tool(
+  'permission_catalog_list',
+  'List every permission code defined in the platform catalog. Read-only.',
+  { service: z.string().optional(), module: z.string().optional() },
+  async (args) => {
+    // No requiredPermission annotation — catalog is reference metadata, not sensitive.
+    // Filter optionally by service and/or module.
+    const rows = await listCatalogEntries(client, { service: args.service, module: args.module });
+    return ok({
+      entries: rows,    // [{ service, module, permission, description }, ...]
+      total:   rows.length,
+    });
+  },
+);
+```
+
+No permission gate — it's read-only metadata about the platform's capabilities. Helpful for HR doing audit ("what could a hr_admin do?") and for operators designing custom groups.
+
+Register from `modules/admin/mcp-tools/index.ts`, mounted alongside the existing employee tools.
+
+---
+
 ## Drizzle schema update
 
 ```typescript
@@ -413,6 +443,7 @@ Slice 42C will rewrite this activity to seed per-module groups + a role that com
 - [ ] `pnpm -r run typecheck` passes.
 - [ ] All Slice 38/CS-021 functionality preserved: `get_employee_permissions` MCP tool returns the same permission set for the dev tenant's existing user.
 - [ ] Cross-slice note CS-022 unchanged (still OPEN; 42A doesn't address cip_hr → cip_platform refactor).
+- [ ] **Admin MCP tool `permission_catalog_list` is registered and callable.** Returns the seeded catalog. Filtering by `module: 'cert'` returns the 4 cert permissions; by `module: 'employee'` returns 9. Bot can discover and call it without permission gate.
 
 ---
 
@@ -427,6 +458,7 @@ Slice 42C will rewrite this activity to seed per-module groups + a role that com
 - **Per-permission descriptions richer than catalog seed text.** Catalog has `description`; can be enriched later.
 - **Glob-of-globs / patterns more complex than `prefix.*` and `*`** — keep glob syntax minimal.
 - **Per-tenant permission catalog** (different tenants disabling specific permissions). Today the catalog is global. Easy to add via a `tenant_id` column later.
+- **CRUD MCP tools for permission groups** (group_create, group_update, group_delete). 42A only adds the read-only `permission_catalog_list` tool. Group management today is migration-driven (system groups) + platform-core seed (per-tenant defaults). Future Slice 42D may add operator-facing CRUD if needed; for now SQL is the interface.
 
 ---
 

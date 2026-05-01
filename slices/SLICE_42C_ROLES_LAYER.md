@@ -87,6 +87,11 @@ packages/hr-service/src/
     employee.grant-permission.tool.ts         ← MOD: now assigns a ROLE (parameter name 'role' is now accurate)
     employee.revoke-permission.tool.ts        ← MOD: revokes a ROLE
     get-employee-permissions.tool.ts          ← MOD: queries through role layer
+    employee.get.tool.ts                      ← NEW: HR-only; returns target employee's roles + groups + permissions
+  modules/admin/mcp-tools/
+    role.list.tool.ts                         ← NEW: list roles in calling user's tenant
+    role.get.tool.ts                          ← NEW: details for a role (groups + flattened permissions)
+    group.list.tool.ts                        ← NEW: list permission_groups in tenant (advanced)
 
 packages/platform-core/src/
   activities/
@@ -370,9 +375,92 @@ export const employeeRoleAssignments = pgTable('employee_role_assignments', {
 
 ---
 
-## MCP tool updates
+## Admin/management MCP tools — NEW
 
-The three affected tools' MCP-level args don't change (they take a `role` parameter — which is now accurate). Internal implementation switches to roles helpers.
+For admins to manage users via the bot ("show me available roles", "what does
+the hr_manager role contain?", "what does Alice currently have?") without
+knowing codes by heart, four read-only tools land in this slice:
+
+### `role_list` (admin module)
+
+```typescript
+server.tool(
+  'role_list',
+  'List roles available in the calling user\'s tenant.',
+  {},
+  // requiredPermission: 'employee.list' — same gate as listing employees;
+  // anyone managing roles can already see employees.
+  { requiredPermission: 'employee.list' } as any,
+  async (_args, context) => {
+    const ctx = extractAuthContext(context.authInfo);
+    const rows = await listRolesByTenant(client, ctx.tenantId);
+    // [{ code, label, description, keycloakRole, groupCount, isSystemRole }, ...]
+    return ok({ roles: rows, total: rows.length });
+  },
+);
+```
+
+### `role_get` (admin module)
+
+```typescript
+server.tool(
+  'role_get',
+  'Get a role\'s full detail: its groups (per module) and flattened permissions.',
+  { code: z.string().min(1) },
+  { requiredPermission: 'employee.list' } as any,
+  async ({ code }, context) => {
+    const ctx = extractAuthContext(context.authInfo);
+    const role   = await findRoleByCode(client, ctx.tenantId, code);
+    if (!role) return refused('not_found', `role '${code}' not found`);
+    const groups = await listGroupsForRole(client, role.id);  // joins role_groups → permission_groups
+    // flatten + glob-expand against catalog
+    const permissions = await flattenAndExpand(client, groups);
+    return ok({ role, groups, permissions });
+  },
+);
+```
+
+### `group_list` (admin module)
+
+```typescript
+server.tool(
+  'group_list',
+  'List permission groups available in the tenant. Filter by module.',
+  { module: z.string().optional() },
+  { requiredPermission: 'employee.list' } as any,
+  async ({ module }, context) => {
+    const ctx = extractAuthContext(context.authInfo);
+    const rows = await listGroupsByTenant(client, ctx.tenantId, module);
+    return ok({ groups: rows, total: rows.length });
+  },
+);
+```
+
+### `employee_get` (employees module)
+
+The existing `get_employee_permissions` returns the *calling user's* permissions.
+For HR to manage another user, we need cross-employee read access:
+
+```typescript
+server.tool(
+  'employee_get',
+  'Get an employee\'s full detail: identity, assigned roles, effective permissions.',
+  { employeeId: z.string().uuid() },
+  { requiredPermission: 'employee.find' } as any,
+  async ({ employeeId }, context) => {
+    const ctx = extractAuthContext(context.authInfo);
+    const employee     = await findEmployeeById(client, ctx.tenantId, employeeId);
+    if (!employee) return refused('not_found', `employee ${employeeId} not found`);
+    const roles        = await getRoleCodesForEmployee(client, employeeId);
+    const permissions  = await getPermissionsForEmployee(client, employeeId);
+    return ok({ employee, roles, permissions });
+  },
+);
+```
+
+Together with the existing `employee.list`, `employee.find`, `employee.create`,
+`employee.disable`, `employee.grant_permission`, and `employee.revoke_permission`
+tools, an admin can now manage users end-to-end via natural-language commands.
 
 ### `employee.grant-permission.tool.ts`
 
@@ -446,6 +534,12 @@ The activity now creates tenant-scoped roles + module groups for new tenants. Th
 - [ ] MCP tools `employee.grant-permission`, `employee.revoke-permission`, `get-employee-permissions` work end-to-end. Their output shapes are unchanged.
 - [ ] Re-running migration 012 on a fully-migrated DB is a no-op (zero rows changed, zero errors).
 - [ ] platform-core's init-tenant-database.activity seeds the new shape (groups + role + role_groups) for a freshly-provisioned tenant.
+- [ ] **Admin management MCP tools work end-to-end** for an HR-permitted user:
+  - `role_list` returns every role in the tenant with `groupCount` populated
+  - `role_get { code: 'hr_standard' }` returns its groups (split per module from 42A migration) and flattened permissions
+  - `group_list { module: 'cert' }` returns only cert-module groups
+  - `employee_get { employeeId }` returns the target employee's roles + flattened permissions
+- [ ] All four management tools refuse callers without `employee.list` (or `employee.find` for `employee_get`) permission.
 - [ ] `pnpm -r run typecheck` passes.
 
 ---
@@ -460,6 +554,7 @@ The activity now creates tenant-scoped roles + module groups for new tenants. Th
 - **Hierarchical role inheritance** (NIST RBAC1 — role A "is-a" role B). Not needed; composition via `role_groups` is enough.
 - **Mutually-exclusive roles** (NIST RBAC2 — separation of duties). Not in current requirements.
 - **Negative grants / deny rules.** Permissions union is positive-only.
+- **CRUD MCP tools for roles and groups** (`role_create`, `role_update`, `role_delete`, `role_add_group`, `role_remove_group`, `group_create`, `group_update`, `group_delete`). 42C lands READ tools only (`role_list`, `role_get`, `group_list`, `employee_get`). Operators define new roles + groups today via the platform-core seed activity (per-tenant defaults) or hand-written SQL (one-off customizations). Future Slice 42D may add operator-facing CRUD if the hand-written SQL pattern becomes painful — current scale doesn't warrant it.
 
 ---
 

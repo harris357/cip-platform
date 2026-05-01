@@ -388,6 +388,7 @@ export PLATFORM_ADMIN_EMAIL="aharris@idlevice.ca"
 - **Cross-tenant super-admin** for CIP staff. Per-tenant scope is a hard rule. If we eventually need cross-tenant read access for support, separate `super_admins` platform-scoped table — its own slice with audit story.
 - **First-broker-login auto-default-role.** When a non-admin user first federates from AAD into KC, they currently land with NO realm role. Slice 42B doesn't change that — the `bot-auto-create` flow could be extended to assign `employee` by default, but that's a separate Keycloak-flow change. Defer.
 - **MCP tool rename** (`employee_grant_permission` → `employee_assign_role`). Tool args are already `role` (accurate post-42C). The MCP tool NAME changes are a coordinated bot+hr-service rename for a future slice.
+- **Admin role/group/permission CRUD MCP tools.** 42A adds read-only `permission_catalog_list`. 42C adds read-only `role_list`, `role_get`, `group_list`, `employee_get`. With the existing `employee_grant_permission`, `employee_revoke_permission`, `employee_create`, `employee_disable`, `employee_assign_role`, etc., that's enough for admins to manage users end-to-end via natural-language bot commands. CRUD tools for *defining new roles and groups* (`role_create`, `group_update`, `role_add_group`, …) are deferred to a future Slice 42D — today operators define roles via platform-core seed + ad-hoc SQL. Add 42D when SQL becomes painful.
 
 ---
 
