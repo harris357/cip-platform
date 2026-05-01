@@ -65,7 +65,16 @@ export function makePlanNode(ctx: BotAuthContext) {
     const systemMsg: SystemMessage = new SysMsg(systemContent);
 
     // Trim history to the last N messages, then prepend the system message.
-    const trimmed = state.messages.slice(-maxRecent);
+    // After the slice, drop any leading ToolMessages: their parent
+    // AIMessage(tool_calls) may have been sliced out, leaving the tool_call_id
+    // reference dangling. Mistral rejects this with
+    //   "Unexpected role 'tool' after role 'system'"
+    // because the canonical chat-completion shape requires every tool message
+    // to follow an assistant message that carries the matching tool_calls.
+    let trimmed = state.messages.slice(-maxRecent);
+    while (trimmed.length > 0 && trimmed[0]!.getType() === 'tool') {
+      trimmed = trimmed.slice(1);
+    }
     const messages = messagesToOpenAI([systemMsg, ...trimmed]);
 
     const tools = state.candidateTools.map(toChatTool);

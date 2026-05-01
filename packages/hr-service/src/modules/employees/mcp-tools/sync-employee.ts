@@ -102,11 +102,13 @@ async function maybeAutoElevateAdmin(
 export function registerSyncEmployee(server: McpServer): void {
   server.tool(
     'sync_employee',
-    'Upsert the calling user as an employee record from their JWT claims. ' +
+    'Internal identity sync only — re-reads the caller\'s JWT (Keycloak/AAD) and upserts their employee row. ' +
+    'Takes NO arguments and IGNORES any args supplied by an LLM. ' +
+    'CANNOT be used to change a user\'s name, email, or any profile field — those come from corporate identity (AAD/Keycloak) and this tool only mirrors them. ' +
     'Scope: the caller only. ' +
     'Audience: every authenticated user (no gate). ' +
-    'Output: {employeeId}. Idempotent — re-syncs update mutable fields (email, fullName) but never re-trigger first-sync side effects (admin auto-elevation). ' +
-    'Used internally by the bot on every turn before get_employee_permissions; rarely called directly by an LLM. ' +
+    'Output: {employeeId}. Idempotent — re-syncs update mutable fields (email, fullName) from JWT but never re-trigger first-sync side effects (admin auto-elevation). ' +
+    'Used internally by the bot on every turn before get_employee_permissions. ' +
     'No sibling overlap.',
     {},
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -117,7 +119,9 @@ export function registerSyncEmployee(server: McpServer): void {
         'Internal — called by the bot on every turn before get_employee_permissions',
       ],
       whenNotToUse: [
-        'Never call this directly from a user request',
+        'Never call this in response to a user request',
+        'User asked to change their name, email, or any profile field — sync_employee CANNOT do that. The user\'s name and email come from their AAD/Keycloak identity. Decline and explain the source of truth is corporate identity.',
+        'User asked to update their record with a specific value — args are IGNORED; this tool only mirrors JWT claims',
       ],
       commonNextTools: ['get_employee_permissions'],
       outputSchema: {

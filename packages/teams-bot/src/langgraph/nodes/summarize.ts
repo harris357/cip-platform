@@ -18,7 +18,7 @@
 //   - Failure is non-fatal: the turn already responded; we just don't
 //     compress this time. Log + continue.
 
-import { SystemMessage, type BaseMessage } from '@langchain/core/messages';
+import { SystemMessage, RemoveMessage, type BaseMessage } from '@langchain/core/messages';
 import { callLLM, createLiteLLMClient, getPrompt } from '@cip/shared';
 import { resolveAlias } from '../../intent/alias-resolver.js';
 import { getTunables, getTunable } from '../tunables.js';
@@ -39,9 +39,17 @@ export function makeSummarizeNode(ctx: BotAuthContext) {
       if (summarizeAt <= 0 || state.messages.length <= summarizeAt) return {};
       if (state.messages.length <= keepRecent) return {};
 
-      const cutoff = state.messages.length - keepRecent;
+      // Adjust the cutoff so `recent` doesn't start with a ToolMessage
+      // (orphaned tool result whose parent AIMessage just got summarized
+      // away — that combo trips Mistral's
+      // "Unexpected role 'tool' after role 'system'" check on the next
+      // planner call).
+      let cutoff = state.messages.length - keepRecent;
+      while (cutoff < state.messages.length && state.messages[cutoff]!.getType() === 'tool') {
+        cutoff++;
+      }
+      if (cutoff >= state.messages.length) return {};
       const olderMessages = state.messages.slice(0, cutoff);
-      const recent       = state.messages.slice(cutoff);
 
       const excerpt = olderMessages
         .map(m => `${roleOf(m)}: ${stringContent(m)}`)
@@ -78,11 +86,20 @@ export function makeSummarizeNode(ctx: BotAuthContext) {
 
       const merged = mergeSummary(state.summary, newPara, maxChars);
 
+      // messagesStateReducer in LangGraph 1.x APPENDS by default. To trim
+      // the older tail we must emit a RemoveMessage(id) for each older
+      // message; the recent tail stays in place untouched. We then append
+      // a single SystemMessage to mark the seam.
+      // (Returning [SystemMessage, ...recent] would just duplicate recent.)
+      const removals = olderMessages
+        .filter(m => m.id)
+        .map(m => new RemoveMessage({ id: m.id! }));
+
       return {
         summary:  merged,
         messages: [
-          new SystemMessage(`[Earlier conversation summarized]`),
-          ...recent,
+          ...removals,
+          new SystemMessage('[Earlier conversation summarized]'),
         ],
       };
     } catch (err) {

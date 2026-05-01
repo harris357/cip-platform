@@ -6,6 +6,7 @@ import { adminEmployeesRouter } from './routes/admin-employees.js';
 import { adminRoutingRouter } from './routes/admin-routing.js';
 import { adminToolRetrievalRouter } from './routes/admin-tool-retrieval.js';
 import { adminBotTunablesRouter } from './routes/admin-bot-tunables.js';
+import { adminToolMetadataRouter } from './routes/admin-tool-metadata.js';
 
 export function createApp(): Express {
   const app = express();
@@ -32,6 +33,13 @@ export function createApp(): Express {
   // LangGraph runtime. Per-tenant overrides shadow global defaults. Same
   // platform-admin token; mounted before the tenant JWT middleware.
   app.use(adminBotTunablesRouter);
+
+  // Hotfix (post-Slice 46): the MCP SDK strips non-spec annotation fields
+  // on the wire, so the bot can't see sideEffectLevel/requiredPermission/
+  // whenToUse/whenNotToUse via listTools(). This endpoint exposes the
+  // server's internal registry directly so the bot can merge metadata
+  // back in. Same platform-admin token.
+  app.use(adminToolMetadataRouter);
 
   // All other routes require a valid tenant JWT
   app.use(tenantAuthMiddleware);

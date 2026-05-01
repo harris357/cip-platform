@@ -1,6 +1,7 @@
 import type { Tool as McpTool } from '@modelcontextprotocol/sdk/types.js';
 import { getMcpClient } from './client.js';
 import { fetchTopKTools } from '../intent/embed-cache.js';
+import { getToolMetadata } from './tool-metadata.js';
 import type { BotAuthContext } from '../auth/resolve-context.js';
 
 interface CacheEntry {
@@ -58,7 +59,17 @@ export async function discoverTools(
   if (!permitted || Date.now() >= permitted.expiresAt) {
     const client = await getMcpClient(ctx.bearerToken);
     const result = await client.listTools();
-    const filtered = result.tools.filter(t => isToolPermitted(t, ctx.permissions));
+    // Hotfix: the MCP SDK strips non-spec annotation fields on the wire.
+    // Fetch the full annotation map from hr-service's side channel and
+    // merge so isToolPermitted (and downstream gateWriteAction +
+    // tool-reference rendering) see sideEffectLevel / requiredPermission /
+    // whenToUse / whenNotToUse / commonNextTools / outputSchema.
+    const metadata = await getToolMetadata();
+    const enriched = result.tools.map(t => ({
+      ...t,
+      annotations: { ...(t.annotations ?? {}), ...(metadata[t.name] ?? {}) },
+    })) as McpTool[];
+    const filtered = enriched.filter(t => isToolPermitted(t, ctx.permissions));
     permitted = { tools: filtered, expiresAt: Date.now() + TTL };
     cache.set(key, permitted);
   }
