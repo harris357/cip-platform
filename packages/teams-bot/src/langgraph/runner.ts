@@ -1,7 +1,6 @@
-// Slice 45 + 46b: LangGraph runtime entry point.
+// Slice 45 + 46b + 48: LangGraph runtime entry point.
 //
-// Slice 46b introduced native interrupt() for the write-action confirm
-// gate. The runner now does:
+// Slice 46b: native interrupt() for the write-action confirm gate.
 //   1. Read the persisted thread state. If it carries an active
 //      interrupt (graph suspended at confirm), invoke with
 //      `new Command({ resume: text })` so confirm resumes from where
@@ -10,15 +9,29 @@
 //      turn produced a write that needs confirmation), render the
 //      interrupt's `summary` as the user-facing prompt. Otherwise pick
 //      the latest AIMessage and send it.
+//
+// Slice 48: Langfuse `CallbackHandler` wired in via `callbacks: [...]`
+// and `bot_turn_metrics` Postgres write. Both best-effort: trace
+// upload or DB write failure must not fail the user-visible turn.
 
 import { randomUUID } from 'node:crypto';
 import { TurnContext } from '@microsoft/agents-hosting';
 import { AIMessage } from '@langchain/core/messages';
 import { Command } from '@langchain/langgraph';
+import { CallbackHandler } from '@langfuse/langchain';
 import { buildGraph } from './graph.js';
 import { sendResponseTime } from '../intent/debug-banner.js';
+import { writeTurnMetric } from './util/turn-metrics.js';
 import type { ConfirmInterruptPayload } from './nodes/confirm.js';
 import type { BotAuthContext } from '../auth/resolve-context.js';
+
+// Slice 48: process-wide Langfuse callback handler. Langfuse 5.x is
+// OTEL-based — the CallbackHandler attaches to whatever OTEL/Langfuse
+// SDK is already initialized via env (LANGFUSE_PUBLIC_KEY/SECRET_KEY/
+// HOST). If env is missing the handler still constructs cleanly but
+// emits no traces. We pass per-handler defaults below; per-invoke
+// metadata layered on top via config.metadata.
+const langfuseHandler = new CallbackHandler();
 
 /**
  * Short turn identifier for log/footer correlation. 8-char hex slice of
@@ -64,7 +77,22 @@ export async function runLangGraph(args: {
   const turnId = newTurnId();
 
   const graph = buildGraph(ctx);
-  const config = { configurable: { thread_id: threadId } };
+  // Slice 48: callbacks + metadata flow through to Langfuse so a single
+  // turn produces ONE trace tree keyed by turnId. Pasting `turn=<id>`
+  // from the Teams footer locates the trace.
+  const config = {
+    configurable: { thread_id: threadId },
+    callbacks:    [langfuseHandler],
+    metadata: {
+      turnId,
+      tenantId:   ctx.tenantId,
+      employeeId: ctx.employeeId,
+      threadId,
+      langfuseSessionId:  threadId,    // groups turns by Teams thread in the Langfuse UI
+      langfuseTraceId:    turnId,
+    },
+    runName: `turn-${turnId}`,
+  };
 
   // Step 1: detect a suspended interrupt from a prior turn. If present,
   // this turn is a resume — feed the user's text to confirm via Command.
@@ -118,10 +146,24 @@ export async function runLangGraph(args: {
 
   // Compact LangGraph footer mirroring the legacy debug-banner format.
   const totalMs = Date.now() - tStart;
+  const graphMs = tDone - tInvoke;
   const messages = result.messages ?? [];
   const tools  = (messages
     .filter(m => m instanceof AIMessage && m.tool_calls?.length)
     .flatMap(m => (m as AIMessage).tool_calls?.map(tc => tc.name) ?? []));
+
+  // Slice 48: tools_refused — extracted from ToolMessage payloads where
+  // the bot's hallucination guard or the tool itself returned a refusal.
+  const ToolMessageCtor = (await import('@langchain/core/messages')).ToolMessage;
+  const refusedTools: string[] = [];
+  for (const m of messages) {
+    if (m instanceof ToolMessageCtor && typeof m.content === 'string') {
+      try {
+        const parsed = JSON.parse(m.content) as { refused?: string; name?: string };
+        if (parsed.refused && parsed.name) refusedTools.push(parsed.name);
+      } catch { /* not JSON, ignore */ }
+    }
+  }
   const intent = result.triageSignals
     ? (result.triageSignals.needsClarification
        ? 'ask'
@@ -137,21 +179,43 @@ export async function runLangGraph(args: {
     tool:            tools[tools.length - 1] ?? null,
     classifierFell:  false,
     intent:          `langgraph:${intent}`,
-    routeMs:         tDone - tInvoke,
+    routeMs:         graphMs,
     turnId,
   });
 
   // Structured turn log — turn= prefix lets a user paste the ID back
   // and we can grep/locate the exact turn + correlated Langfuse traces.
+  const stepCount = result.stepCount ?? 0;
+  const triageConfidence = result.triageSignals?.confidence ?? null;
+  const clarificationFired = result.triageSignals?.needsClarification ?? false;
   console.log(
     `[turn] turn=${turnId} engine=langgraph tenantId=${ctx.tenantId} threadId=${threadId} ` +
     `intent=${intent} ` +
     `toolsAttempted=[${tools.join(',')}] ` +
-    `stepCount=${result.stepCount ?? 0} ` +
-    `triageConfidence=${result.triageSignals?.confidence ?? 'na'} ` +
-    `clarificationFired=${result.triageSignals?.needsClarification ?? false} ` +
+    `stepCount=${stepCount} ` +
+    `triageConfidence=${triageConfidence ?? 'na'} ` +
+    `clarificationFired=${clarificationFired} ` +
     `confirmationFired=${confirmationFired} ` +
     `resumed=${priorInterrupt !== null} ` +
-    `totalMs=${totalMs} graphMs=${tDone - tInvoke}`,
+    `totalMs=${totalMs} graphMs=${graphMs}`,
   );
+
+  // Slice 48: best-effort metric write. Failures only log; the [turn]
+  // line above is the durable backup if the DB is down.
+  void writeTurnMetric({
+    turnId,
+    tenantId:           ctx.tenantId,
+    threadId,
+    employeeId:         ctx.employeeId,
+    intent,
+    toolsAttempted:     tools,
+    toolsRefused:       refusedTools,
+    stepCount,
+    triageConfidence,
+    clarificationFired,
+    confirmationFired,
+    resumed:            priorInterrupt !== null,
+    totalMs,
+    graphMs,
+  });
 }

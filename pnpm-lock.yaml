@@ -234,6 +234,9 @@ importers:
       '@langchain/langgraph-checkpoint-postgres':
         specifier: ^1.0.1
         version: 1.0.1(@langchain/core@1.1.42(@opentelemetry/api@1.9.1)(openai@6.35.0(ws@8.20.0)(zod@3.25.76))(ws@8.20.0))(@langchain/langgraph-checkpoint@1.0.1(@langchain/core@1.1.42(@opentelemetry/api@1.9.1)(openai@6.35.0(ws@8.20.0)(zod@3.25.76))(ws@8.20.0)))
+      '@langfuse/langchain':
+        specifier: ^5.0.0
+        version: 5.2.0(@langchain/core@1.1.42(@opentelemetry/api@1.9.1)(openai@6.35.0(ws@8.20.0)(zod@3.25.76))(ws@8.20.0))(@opentelemetry/api@1.9.1)
       '@microsoft/agents-activity':
         specifier: ^1.4.2
         version: 1.4.2
@@ -252,6 +255,9 @@ importers:
       openai:
         specifier: ^6.0.0
         version: 6.35.0(ws@8.20.0)(zod@3.25.76)
+      pg:
+        specifier: ^8.11.0
+        version: 8.20.0
       zod:
         specifier: ^3.25.76
         version: 3.25.76
@@ -259,6 +265,9 @@ importers:
       '@types/express':
         specifier: ^4.17.0
         version: 4.17.25
+      '@types/pg':
+        specifier: ^8.11.0
+        version: 8.20.0
       tsx:
         specifier: ^4.0.0
         version: 4.21.0
