@@ -26,6 +26,12 @@ import { callEmbed, createLiteLLMClient } from '@cip/shared';
 
 const SERVICE = 'hr-service';
 const EMBED_MODEL = 'mistral-embed';
+// The seed runs at pod startup, before any user request — no caller
+// tenant exists. This sentinel UUID is used solely for Langfuse
+// observability tagging so seed-time embedding traces are recognisable
+// (filterable as `tenantId = system`). Embeddings + tools themselves
+// are global; per-tenant scoping happens upstream in permission filtering.
+const SYSTEM_TENANT_ID = '00000000-0000-0000-0000-0000000000ff';
 
 interface RegisteredTool {
   name:        string;
@@ -103,7 +109,7 @@ export async function seedToolEmbeddings(
     // LiteLLM client is reusable across embedding calls. Virtual key is
     // the platform-wide one used by hr-service for its own LLM calls.
     const llmClient = createLiteLLMClient({
-      tenantId:   '00000000-0000-0000-0000-000000000000',
+      tenantId:   SYSTEM_TENANT_ID,
       virtualKey: process.env['LITELLM_VIRTUAL_KEY'] ?? '',
     });
 
@@ -119,7 +125,7 @@ export async function seedToolEmbeddings(
           model:    EMBED_MODEL,
           input:    embedText,
           purpose:  'hr-service.tool_embed',
-          tenantId: '00000000-0000-0000-0000-000000000000',
+          tenantId: SYSTEM_TENANT_ID,
         });
         if (!vec || vec.length === 0) {
           console.warn(`[tool-embeddings] empty embedding for ${tool.name} — skipping`);

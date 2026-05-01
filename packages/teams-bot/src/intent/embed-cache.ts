@@ -38,13 +38,16 @@ function lruEvict(): void {
  * to fall back to the full permission-filtered list (graceful degradation).
  */
 export async function fetchTopKTools(
-  _ctx: BotAuthContext,
+  ctx: BotAuthContext,
   text: string,
   k: number = DEFAULT_K,
 ): Promise<string[] | null> {
   if (!text.trim()) return null;
 
-  const key = `${k}:${hashText(text)}`;
+  // Cache key includes tenant + employee so retrieval results aren't shared
+  // across users (top-K is the same for everyone today, but if we ever add
+  // per-tenant tool overrides, the cache won't have to be invalidated).
+  const key = `${ctx.tenantId}:${ctx.employeeId}:${k}:${hashText(text)}`;
   const cached = cache.get(key);
   if (cached && Date.now() < cached.expiresAt) {
     return cached.tools;
@@ -64,7 +67,7 @@ export async function fetchTopKTools(
         'content-type': 'application/json',
         'x-platform-admin-token': token,
       },
-      body: JSON.stringify({ text, k }),
+      body: JSON.stringify({ text, k, tenantId: ctx.tenantId }),
     });
     if (!resp.ok) {
       console.warn(`[tool-retrieval] HTTP ${resp.status} — falling back`);

@@ -37,8 +37,9 @@ adminToolRetrievalRouter.use((req: Request, res: Response, next: NextFunction): 
 });
 
 const RequestSchema = z.object({
-  text: z.string().min(1).max(2000),
-  k:    z.number().int().min(1).max(50).optional(),
+  text:     z.string().min(1).max(2000),
+  k:        z.number().int().min(1).max(50).optional(),
+  tenantId: z.string().uuid(),  // caller's tenant — used only for observability tagging.
 });
 
 adminToolRetrievalRouter.post(
@@ -49,7 +50,7 @@ adminToolRetrievalRouter.post(
       res.status(400).json({ error: 'invalid_body', issues: parsed.error.issues });
       return;
     }
-    const { text, k = 15 } = parsed.data;
+    const { text, k = 15, tenantId } = parsed.data;
 
     const pool = getPool();
     const client = await pool.connect();
@@ -57,15 +58,19 @@ adminToolRetrievalRouter.post(
       // Resolve `bot.embed` alias (defaults to mistral-embed via migration 015).
       const alias = (await getRoutingRule(client, 'bot', 'embed')) ?? 'mistral-embed';
 
+      // tenantId here is purely for Langfuse observability — tools and
+      // their embeddings are global (not tenant-scoped), but tagging the
+      // caller's tenant lets us filter retrieval traces in Langfuse by
+      // who triggered them. The virtual key is platform-wide.
       const llmClient = createLiteLLMClient({
-        tenantId:   '00000000-0000-0000-0000-000000000000',
+        tenantId,
         virtualKey: process.env['LITELLM_VIRTUAL_KEY'] ?? '',
       });
       const [vec] = await callEmbed(llmClient, {
         model:    alias,
         input:    text,
         purpose:  'hr-service.tool_retrieval',
-        tenantId: '00000000-0000-0000-0000-000000000000',
+        tenantId,
       });
       if (!vec || vec.length === 0) {
         res.json({ tools: [] });
