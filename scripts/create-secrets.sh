@@ -87,6 +87,7 @@ kubectl create secret generic teams-bot-credentials \
   --from-literal=LANGFUSE_PUBLIC_KEY="${LANGFUSE_PUBLIC_KEY:-}" \
   --from-literal=LANGFUSE_SECRET_KEY="${LANGFUSE_SECRET_KEY:-}" \
   --from-literal=LANGFUSE_HOST="${LANGFUSE_HOST:-https://cloud.langfuse.com}" \
+  --from-literal=DATABASE_URL_HR="${DATABASE_URL_HR}" \
   --dry-run=client -o yaml | kubectl apply -f -
 
 # Langfuse credentials (DATABASE_URL, NEXTAUTH_SECRET, SALT)
