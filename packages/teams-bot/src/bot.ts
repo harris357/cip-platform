@@ -13,7 +13,7 @@ import { renderResponse } from './teams-protocol/card-renderer.js';
 import { discoverTools } from './mcp/tool-discovery.js';
 import { routeIntent } from './intent/router.js';
 import { classify } from './intent/classifier.js';
-import { filterToolsByCategory } from './intent/tool-categories.js';
+import { filterToolsByCategory, buildMetaResponse } from './intent/tool-categories.js';
 import { maybeSendDebugBanner, sendResponseTime } from './intent/debug-banner.js';
 import { executeTool } from './mcp/tool-executor.js';
 
@@ -193,21 +193,33 @@ export class CIPTeamsBot extends TeamsActivityHandler {
     const tClassify = Date.now();
     const classifierFell = classification === null;
 
-    if (classification?.inline_reply) {
-      await context.sendActivity(classification.inline_reply);
-      await sendResponseTime(context, Date.now() - tStart, {
-        classifierAlias,
-        category:   classification.category,
-        classifyMs: tClassify - tDiscover,
-      });
-      await maybeSendDebugBanner(context, {
-        classification,
-        alias: null,
-        tool:  null,
-        timings: { classify: tClassify - tDiscover, total: Date.now() - tStart },
-      });
-      console.log(`[turn] tenantId=${ctx.tenantId} mode=inline category=${classification.category} typing=${tTyping - tStart}ms auth=${tAuth - tTyping}ms registry=${tRegistry - tAuth}ms discover=${tDiscover - tRegistry}ms classify=${tClassify - tDiscover}ms total=${Date.now() - tStart}ms`);
-      return;
+    // Meta replies are composed deterministically from the available-tools
+    // catalog rather than trusting the LLM's free-form inline_reply. The
+    // model kept producing partial responses ("Here are the tools you can
+    // use:" with nothing after) or enumerating tools verbatim despite the
+    // prompt forbidding it. Chitchat keeps the LLM-authored inline_reply
+    // (free-form social pleasantries — variance is fine there).
+    if (classification) {
+      const reply = classification.category === 'meta'
+        ? buildMetaResponse(tools)
+        : classification.inline_reply;
+
+      if (reply) {
+        await context.sendActivity(reply);
+        await sendResponseTime(context, Date.now() - tStart, {
+          classifierAlias,
+          category:   classification.category,
+          classifyMs: tClassify - tDiscover,
+        });
+        await maybeSendDebugBanner(context, {
+          classification,
+          alias: null,
+          tool:  null,
+          timings: { classify: tClassify - tDiscover, total: Date.now() - tStart },
+        });
+        console.log(`[turn] tenantId=${ctx.tenantId} mode=inline category=${classification.category} typing=${tTyping - tStart}ms auth=${tAuth - tTyping}ms registry=${tRegistry - tAuth}ms discover=${tDiscover - tRegistry}ms classify=${tClassify - tDiscover}ms total=${Date.now() - tStart}ms`);
+        return;
+      }
     }
 
     // Slice 39B Stage 2: classifier failed → use full catalog under

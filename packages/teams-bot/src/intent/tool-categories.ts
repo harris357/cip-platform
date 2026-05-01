@@ -145,3 +145,35 @@ export function categoryListForClassifier(
     description: CATEGORY_DESCRIPTIONS[name],
   }));
 }
+
+/**
+ * User-facing summary for the meta path. Bot composes this directly when
+ * the classifier returns category=meta — the LLM kept producing partial
+ * or hallucinated lists ("Here are the tools you can use:" with nothing
+ * after, or enumerating individual tools verbatim despite the prompt
+ * forbidding it). Deterministic composition removes the variance.
+ *
+ * `null` = excluded from the meta listing. chitchat/meta refer to the
+ * bot itself; reasoning is a fallback users don't pick on purpose.
+ */
+const CATEGORY_USER_HELP: Record<Category, { label: string; help: string; example: string } | null> = {
+  chitchat:    null,
+  meta:        null,
+  cert_query:  { label: 'Certifications',    help: 'Look up your or your team\'s certs and compliance.', example: 'Show me my certifications' },
+  cert_action: { label: 'Cert uploads',      help: 'Submit a new certificate document.',                  example: 'Upload this cert' },
+  hr_admin:    { label: 'HR administration', help: 'Manage employees, roles, groups, and permissions.',   example: 'List employees' },
+  reasoning:   null,
+};
+
+export function buildMetaResponse(tools: McpTool[]): string {
+  const cats = availableCategories(tools);
+  const bullets = cats
+    .map(cat => CATEGORY_USER_HELP[cat])
+    .filter((v): v is NonNullable<typeof v> => v !== null)
+    .map(({ label, help, example }) => `- **${label}** — ${help} _Example: "${example}"_`);
+
+  if (bullets.length === 0) {
+    return "I don't have any tools available for your account right now. Please contact your administrator.";
+  }
+  return `Here's what I can help with:\n\n${bullets.join('\n')}\n\nYou can use these examples or ask in your own words.`;
+}
