@@ -38,6 +38,7 @@ export interface TurnRow {
   resumed:             boolean;
   total_ms:            number;
   graph_ms:            number;
+  langfuse_trace_id:   string | null;
 }
 
 export async function getTurn(

@@ -232,6 +232,15 @@ export async function runLangGraph(args: {
     `totalMs=${totalMs} graphMs=${graphMs}`,
   );
 
+  // Slice 46e follow-up: capture the actual Langfuse trace_id (UUID
+  // assigned by OTEL when the root span was created) so /turn can
+  // produce a direct deep-link instead of a broken search URL. The
+  // CallbackHandler exposes this on `last_trace_id` after spans end.
+  // At low traffic this is reliable; at high concurrent traffic two
+  // turns could clobber the field — acceptable for now, tracked for
+  // a future refinement that uses OTEL context propagation.
+  const langfuseTraceId = (langfuseHandler as unknown as { last_trace_id: string | null }).last_trace_id;
+
   // Slice 48: best-effort metric write. Failures only log; the [turn]
   // line above is the durable backup if the DB is down.
   void writeTurnMetric({
@@ -249,5 +258,6 @@ export async function runLangGraph(args: {
     resumed:            priorInterrupt !== null,
     totalMs,
     graphMs,
+    langfuseTraceId:    langfuseTraceId ?? null,
   });
 }

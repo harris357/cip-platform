@@ -25,12 +25,26 @@ import {
 
 const REQUIRED = 'bot.metrics.read';
 
-function langfuseTraceUrl(turnId: string): string {
-  // Langfuse 5.x trace IDs aren't our turnIds; the cleanest deep-link is
-  // a search by metadata.turnId. Falls back to the bare host if env is
-  // missing.
-  const host = process.env['LANGFUSE_HOST'] ?? 'https://cloud.langfuse.com';
-  return `${host}/traces?search=${encodeURIComponent(turnId)}`;
+function langfuseTraceUrl(args: {
+  turnId:          string;
+  langfuseTraceId: string | null;
+}): string {
+  const host      = process.env['LANGFUSE_HOST']        ?? 'https://cloud.langfuse.com';
+  const projectId = process.env['LANGFUSE_PROJECT_ID']  ?? '';
+
+  // Best case: we captured the Langfuse trace UUID at invoke time AND
+  // we know the project id. Direct-link to the trace.
+  if (args.langfuseTraceId && projectId) {
+    return `${host}/project/${projectId}/traces/${args.langfuseTraceId}`;
+  }
+  // Project known but trace id missing (e.g., turn was written before
+  // migration 023, or the callback handler didn't fire) — link to the
+  // traces list, the operator can search by turnId metadata.
+  if (projectId) {
+    return `${host}/project/${projectId}/traces`;
+  }
+  // Last resort — bare host. Configure LANGFUSE_PROJECT_ID to fix.
+  return host;
 }
 
 async function gate(authInfo: unknown): Promise<{ tenantId: string } | { refusal: ReturnType<typeof refused> }> {
@@ -84,7 +98,10 @@ export function registerBotMetricsGetTurn(server: McpServer): void {
       if (!row) return refused('not_found', `turn ${turn_id} not found in this tenant's metrics`);
       return ok({
         ...row,
-        langfuse_url: langfuseTraceUrl(turn_id),
+        langfuse_url: langfuseTraceUrl({
+          turnId:          turn_id,
+          langfuseTraceId: row.langfuse_trace_id,
+        }),
       }, `Turn ${turn_id}`);
     },
   );
