@@ -39,6 +39,7 @@ export interface TurnRow {
   total_ms:            number;
   graph_ms:            number;
   langfuse_trace_id:   string | null;
+  session_id:          string | null;
 }
 
 export async function getTurn(

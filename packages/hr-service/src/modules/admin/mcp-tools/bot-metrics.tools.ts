@@ -22,29 +22,28 @@ import {
   getToolUsage,
   getOutliers,
 } from '../../../db/queries/bot-turn-metrics.js';
+import { fetchTraceCost, fetchSessionCost } from '../../../services/langfuse-cost.js';
 
 const REQUIRED = 'bot.metrics.read';
 
-function langfuseTraceUrl(args: {
-  turnId:          string;
-  langfuseTraceId: string | null;
-}): string {
-  const host      = process.env['LANGFUSE_HOST']        ?? 'https://cloud.langfuse.com';
-  const projectId = process.env['LANGFUSE_PROJECT_ID']  ?? '';
+function langfuseHost(): string {
+  return process.env['LANGFUSE_HOST'] ?? 'https://cloud.langfuse.com';
+}
 
-  // Best case: we captured the Langfuse trace UUID at invoke time AND
-  // we know the project id. Direct-link to the trace.
-  if (args.langfuseTraceId && projectId) {
-    return `${host}/project/${projectId}/traces/${args.langfuseTraceId}`;
-  }
-  // Project known but trace id missing (e.g., turn was written before
-  // migration 023, or the callback handler didn't fire) — link to the
-  // traces list, the operator can search by turnId metadata.
-  if (projectId) {
-    return `${host}/project/${projectId}/traces`;
-  }
-  // Last resort — bare host. Configure LANGFUSE_PROJECT_ID to fix.
-  return host;
+function langfuseProjectId(): string {
+  return process.env['LANGFUSE_PROJECT_ID'] ?? '';
+}
+
+function traceUrl(traceId: string | null): string | null {
+  const projectId = langfuseProjectId();
+  if (!traceId || !projectId) return null;
+  return `${langfuseHost()}/project/${projectId}/traces/${traceId}`;
+}
+
+function sessionUrl(sessionId: string | null): string | null {
+  const projectId = langfuseProjectId();
+  if (!sessionId || !projectId) return null;
+  return `${langfuseHost()}/project/${projectId}/sessions/${sessionId}`;
 }
 
 async function gate(authInfo: unknown): Promise<{ tenantId: string } | { refusal: ReturnType<typeof refused> }> {
@@ -96,12 +95,27 @@ export function registerBotMetricsGetTurn(server: McpServer): void {
       if ('refusal' in g) return g.refusal;
       const row = await getTurn(getPool(), { tenantId: g.tenantId, turnId: turn_id });
       if (!row) return refused('not_found', `turn ${turn_id} not found in this tenant's metrics`);
+
+      // Best-effort enrichment from Langfuse — failures return null
+      // and the renderer simply omits the cost lines.
+      const [traceCost, sessionCost] = await Promise.all([
+        row.langfuse_trace_id ? fetchTraceCost(row.langfuse_trace_id) : Promise.resolve(null),
+        row.session_id ? fetchSessionCost({
+          sessionId:     row.session_id,
+          // Window the metrics query so the API is happy. Wide enough to
+          // cover any session length we'd encounter (lg.session_timeout_minutes
+          // default 60). Uses the row's emitted_at as the anchor.
+          fromTimestamp: new Date(row.emitted_at.getTime() - 24 * 60 * 60 * 1000).toISOString(),
+          toTimestamp:   new Date(row.emitted_at.getTime() +  6 * 60 * 60 * 1000).toISOString(),
+        }) : Promise.resolve(null),
+      ]);
+
       return ok({
         ...row,
-        langfuse_url: langfuseTraceUrl({
-          turnId:          turn_id,
-          langfuseTraceId: row.langfuse_trace_id,
-        }),
+        trace_url:        traceUrl(row.langfuse_trace_id),
+        session_url:      sessionUrl(row.session_id),
+        langfuse_trace:   traceCost,        // { totalCost, latency } | null
+        langfuse_session: sessionCost,      // { totalCost, traceCount } | null
       }, `Turn ${turn_id}`);
     },
   );

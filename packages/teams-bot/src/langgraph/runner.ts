@@ -243,6 +243,12 @@ export async function runLangGraph(args: {
 
   // Slice 48: best-effort metric write. Failures only log; the [turn]
   // line above is the durable backup if the DB is down.
+  // Slice 46e follow-up: pull final sessionId from post-invoke state
+  // (ingest may have rotated it on this turn) so /turn can deep-link
+  // to the Langfuse session.
+  const finalState = await graph.getState(config);
+  const finalSessionId = ((finalState?.values ?? {}) as { sessionId?: string }).sessionId
+                       ?? sessionId;
   void writeTurnMetric({
     turnId,
     tenantId:           ctx.tenantId,
@@ -259,5 +265,6 @@ export async function runLangGraph(args: {
     totalMs,
     graphMs,
     langfuseTraceId:    langfuseTraceId ?? null,
+    sessionId:          finalSessionId,
   });
 }

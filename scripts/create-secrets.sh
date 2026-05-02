@@ -60,6 +60,7 @@ kubectl create secret generic hr-service-credentials \
   --from-literal=LANGFUSE_PUBLIC_KEY="${LANGFUSE_PUBLIC_KEY:-}" \
   --from-literal=LANGFUSE_SECRET_KEY="${LANGFUSE_SECRET_KEY:-}" \
   --from-literal=LANGFUSE_HOST="${LANGFUSE_HOST:-https://cloud.langfuse.com}" \
+  --from-literal=LANGFUSE_PROJECT_ID="${LANGFUSE_PROJECT_ID:-}" \
   --dry-run=client -o yaml | kubectl apply -f -
 
 # Platform Core credentials

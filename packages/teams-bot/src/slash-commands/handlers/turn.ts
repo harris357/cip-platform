@@ -50,6 +50,16 @@ export async function turnHandler(args: SlashCommandHandlerArgs): Promise<SlashC
   }
 }
 
+function fmtCostUsd(v: unknown): string | null {
+  if (typeof v !== 'number' || !Number.isFinite(v)) return null;
+  // Langfuse returns USD with high precision. Two formats:
+  //   < $0.01   → micro-dollars to keep it readable
+  //   ≥ $0.01   → standard 4-dp
+  if (v === 0) return '$0';
+  if (v < 0.01) return `$${(v * 1000).toFixed(3)}m`;
+  return `$${v.toFixed(4)}`;
+}
+
 function renderTurnCard(turnId: string, row: Record<string, unknown>): string {
   const intent       = String(row['intent'] ?? '?');
   const totalMs      = Number(row['total_ms'] ?? 0);
@@ -62,7 +72,10 @@ function renderTurnCard(turnId: string, row: Record<string, unknown>): string {
   const confirmation  = !!row['confirmation_fired'];
   const resumed       = !!row['resumed'];
   const emittedAt     = String(row['emitted_at'] ?? '');
-  const langfuseUrl   = String(row['langfuse_url'] ?? '');
+  const traceUrl      = row['trace_url']   ? String(row['trace_url'])   : null;
+  const sessionUrl    = row['session_url'] ? String(row['session_url']) : null;
+  const traceMeta     = row['langfuse_trace']   as { totalCost?: number | null; latency?: number | null } | null;
+  const sessionMeta   = row['langfuse_session'] as { totalCost?: number | null; traceCount?: number }     | null;
 
   const lines: string[] = [];
   lines.push(`### Turn \`${turnId}\``);
@@ -85,9 +98,25 @@ function renderTurnCard(turnId: string, row: Record<string, unknown>): string {
   if (flags.length > 0) {
     lines.push(`Flags: ${flags.join(', ')}`);
   }
-  if (langfuseUrl) {
+
+  // Cost lines — show what Langfuse returned, gracefully omit nulls.
+  const traceCost = traceMeta ? fmtCostUsd(traceMeta.totalCost) : null;
+  if (traceCost !== null) lines.push(`Trace cost: ${traceCost}`);
+  if (sessionMeta) {
+    const sessionCost = fmtCostUsd(sessionMeta.totalCost);
+    const tc          = typeof sessionMeta.traceCount === 'number' ? sessionMeta.traceCount : null;
+    const parts: string[] = [];
+    if (sessionCost !== null) parts.push(sessionCost);
+    if (tc !== null)          parts.push(`${tc} turn${tc === 1 ? '' : 's'}`);
+    if (parts.length > 0) lines.push(`Session: ${parts.join(' · ')}`);
+  }
+
+  if (traceUrl || sessionUrl) {
     lines.push('');
-    lines.push(`[Open in Langfuse](${langfuseUrl})`);
+    const links: string[] = [];
+    if (traceUrl)   links.push(`[Open Trace](${traceUrl})`);
+    if (sessionUrl) links.push(`[Open Session](${sessionUrl})`);
+    lines.push(links.join(' · '));
   }
   return lines.join('\n');
 }
