@@ -99,15 +99,26 @@ function renderTurnCard(turnId: string, row: Record<string, unknown>): string {
     lines.push(`Flags: ${flags.join(', ')}`);
   }
 
-  // Cost lines — show what Langfuse returned, gracefully omit nulls.
-  const traceCost = traceMeta ? fmtCostUsd(traceMeta.totalCost) : null;
-  if (traceCost !== null) lines.push(`Trace cost: ${traceCost}`);
+  // Langfuse-derived lines. Latency is always available once the trace
+  // is ingested; cost only when Langfuse has finished its async cost
+  // computation AND has pricing for the model. Render both
+  // independently so the user sees SOMETHING even when cost is pending
+  // or the model isn't in Langfuse's price registry.
+  if (traceMeta) {
+    const parts: string[] = [];
+    if (typeof traceMeta.latency === 'number') {
+      parts.push(`${traceMeta.latency.toFixed(2)}s`);
+    }
+    const cost = fmtCostUsd(traceMeta.totalCost);
+    if (cost !== null) parts.push(cost);
+    if (parts.length > 0) lines.push(`Langfuse trace: ${parts.join(' · ')}`);
+  }
   if (sessionMeta) {
     const sessionCost = fmtCostUsd(sessionMeta.totalCost);
     const tc          = typeof sessionMeta.traceCount === 'number' ? sessionMeta.traceCount : null;
     const parts: string[] = [];
-    if (sessionCost !== null) parts.push(sessionCost);
     if (tc !== null)          parts.push(`${tc} turn${tc === 1 ? '' : 's'}`);
+    if (sessionCost !== null) parts.push(sessionCost);
     if (parts.length > 0) lines.push(`Session: ${parts.join(' · ')}`);
   }
 
