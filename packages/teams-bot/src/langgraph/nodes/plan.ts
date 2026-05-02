@@ -93,6 +93,7 @@ export function makePlanNode(ctx: BotAuthContext) {
       purpose:      'bot.plan',
       promptHandle: prompt,
       tenantId:     state.tenantId,
+      sessionId:    state.sessionId,
     });
 
     const choice = resp.choices[0]?.message;

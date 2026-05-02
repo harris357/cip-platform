@@ -79,6 +79,7 @@ export function makeSummarizeNode(ctx: BotAuthContext) {
         purpose:      'bot.summarize',
         promptHandle: prompt,
         tenantId:     state.tenantId,
+        sessionId:    state.sessionId,
       });
 
       const newPara = (resp.choices[0]?.message.content ?? '').trim();

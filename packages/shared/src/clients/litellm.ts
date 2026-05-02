@@ -3,6 +3,7 @@ import type {
   ChatCompletion,
   ChatCompletionCreateParamsNonStreaming,
 } from 'openai/resources/chat/completions';
+import { trace } from '@opentelemetry/api';
 import type { PromptHandle } from './langfuse.js';
 
 export interface LiteLLMClientOptions {
@@ -28,20 +29,42 @@ export function createLiteLLMClient(opts: LiteLLMClientOptions): OpenAI {
  * `purpose` is dot-namespaced — '<service>.<purpose>' (e.g. 'bot.route_simple',
  * 'hr-service.ocr_document'). Surfaces in Langfuse as a filterable tag via
  * the OpenAI metadata field — LiteLLM forwards it to the langfuse callback.
+ *
+ * Slice 46e follow-up: also forwards `session_id` (from caller) and
+ * `trace_id` (read from OTEL active span context, set by our LangChain
+ * CallbackHandler at handleChainStart). LiteLLM's Langfuse plugin uses
+ * these as the `sessionId` / parent trace for its own generation spans
+ * — without them, LLM-cost data lives in disconnected `litellm-acompletion`
+ * traces and never appears in our session aggregate.
  */
 export async function callLLM(
   client: OpenAI,
   args: ChatCompletionCreateParamsNonStreaming & {
     purpose:       string;
     tenantId:      string;
+    sessionId?:    string;                           // Slice 46e: links cost to session
     promptHandle?: PromptHandle;                     // Slice 41: prompt provenance
     extraMeta?:    Record<string, string | number | boolean>;
   },
 ): Promise<ChatCompletion> {
-  const { purpose, tenantId, promptHandle, extraMeta, ...rest } = args;
+  const { purpose, tenantId, sessionId, promptHandle, extraMeta, ...rest } = args;
+
+  // Slice 46e follow-up: pull the OTEL active trace id (set when the
+  // LangChain CallbackHandler started the root chain). When present,
+  // pass to LiteLLM as `metadata.trace_id` so its Langfuse plugin
+  // attaches generations to OUR trace tree instead of creating a
+  // sibling `litellm-acompletion` trace. NoopTracerProvider returns an
+  // empty traceId — gracefully omitted.
+  const activeTraceId = trace.getActiveSpan()?.spanContext().traceId;
+  const linkedTraceId = activeTraceId && activeTraceId !== '00000000000000000000000000000000'
+    ? activeTraceId
+    : undefined;
+
   const metadata: Record<string, string> = {
     purpose,
     tenantId,
+    ...(sessionId       ? { session_id: sessionId }     : {}),
+    ...(linkedTraceId   ? { trace_id:   linkedTraceId } : {}),
     ...(promptHandle ? {
       prompt_name:    promptHandle.name,
       prompt_version: String(promptHandle.version ?? 'fallback'),

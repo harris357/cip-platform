@@ -167,6 +167,9 @@ importers:
       '@nats-io/transport-node':
         specifier: ^3.0.0
         version: 3.3.1
+      '@opentelemetry/api':
+        specifier: ^1.9.0
+        version: 1.9.1
       '@temporalio/activity':
         specifier: ^1.17.0
         version: 1.17.0

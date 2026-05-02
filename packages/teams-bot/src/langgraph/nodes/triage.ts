@@ -70,6 +70,7 @@ export function makeTriageNode(ctx: BotAuthContext) {
         purpose:         'bot.triage',
         promptHandle:    prompt,
         tenantId:        state.tenantId,
+        sessionId:       state.sessionId,
       });
 
       const text = resp.choices[0]?.message.content ?? '';
