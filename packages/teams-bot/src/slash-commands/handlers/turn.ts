@@ -52,11 +52,12 @@ export async function turnHandler(args: SlashCommandHandlerArgs): Promise<SlashC
 
 function fmtCostUsd(v: unknown): string | null {
   if (typeof v !== 'number' || !Number.isFinite(v)) return null;
-  // Langfuse returns USD with high precision. Two formats:
-  //   < $0.01   → micro-dollars to keep it readable
-  //   ≥ $0.01   → standard 4-dp
-  if (v === 0) return '$0';
-  if (v < 0.01) return `$${(v * 1000).toFixed(3)}m`;
+  // Plain decimal USD with enough precision for sub-cent values.
+  // Langfuse returns up to ~9-decimal precision; we cap at 6dp for
+  // small values so a $0.000541 cost reads as "$0.000541" not
+  // "$0.000541123…". Larger values use 4dp like a normal currency.
+  if (v === 0)     return '$0';
+  if (v < 0.01)    return `$${v.toFixed(6)}`;
   return `$${v.toFixed(4)}`;
 }
 
