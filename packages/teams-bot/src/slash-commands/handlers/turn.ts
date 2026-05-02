@@ -102,17 +102,17 @@ function renderTurnCard(turnId: string, row: Record<string, unknown>): string {
 
   // Langfuse-derived lines. Latency is always available once the trace
   // is ingested; cost only when Langfuse has finished its async cost
-  // computation AND has pricing for the model. Render both
-  // independently so the user sees SOMETHING even when cost is pending
-  // or the model isn't in Langfuse's price registry.
+  // computation AND has pricing for the model. When cost is null on a
+  // trace we have, show "(pending)" — disambiguates "Langfuse couldn't
+  // compute it yet / model not priced" from "we never asked".
   if (traceMeta) {
     const parts: string[] = [];
     if (typeof traceMeta.latency === 'number') {
       parts.push(`${traceMeta.latency.toFixed(2)}s`);
     }
     const cost = fmtCostUsd(traceMeta.totalCost);
-    if (cost !== null) parts.push(cost);
-    if (parts.length > 0) lines.push(`Langfuse trace: ${parts.join(' · ')}`);
+    parts.push(cost !== null ? cost : '(pending)');
+    lines.push(`Langfuse trace: ${parts.join(' · ')}`);
   }
   if (sessionMeta) {
     const sessionCost = fmtCostUsd(sessionMeta.totalCost);

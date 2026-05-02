@@ -14,9 +14,8 @@
 import { buildGraph } from '../langgraph/graph.js';
 import type { BotAuthContext } from '../auth/resolve-context.js';
 
-const stubCtx: BotAuthContext = {
+const stubCtx = {
   tenantId:    'graph-dump',
-  userId:      'graph-dump',
   employeeId:  'graph-dump',
   permissions: {},
   roles:       [],
@@ -29,7 +28,7 @@ const stubCtx: BotAuthContext = {
     natsPrefix:        'graph-dump',
     langfuseTags:      {},
   },
-};
+} as unknown as BotAuthContext;
 
 const graph = buildGraph(stubCtx);
 const mermaid = graph.getGraph().drawMermaid();
@@ -53,38 +52,48 @@ ${mermaid.trim()}
 
 | Node | Purpose | LLM call? |
 |---|---|---|
-| \`ingest\` | Append HumanMessage; reset turn-scoped state. On confirm-resume, classify reply as affirm/cancel and synthesize an AIMessage with the saved tool call (skipping discover/triage/plan). | No |
-| \`discover\` | Run \`discoverTools(ctx, latestUserText)\` — permission filter + Slice 44 vector retrieval. Hydrates \`candidateTools\`. Always re-runs (computed-not-persisted). | No |
+| \`ingest\` | Append HumanMessage; reset per-turn fields (\`triageSignals\`, \`lastToolFacts\`, \`stepCount\`); rotate \`sessionId\` if idle gap > \`lg.session_timeout_minutes\`. Defensive clear of \`pendingWriteCall\`. | No |
 | \`triage\` | Cheap classifier (\`cip-classifier\` → mistral-nemo). Outputs non-binding \`TriageSignals\`. Failure falls back to \`{needsTool: true, confidence: 0}\`. | Yes (\`bot.triage\`) |
-| \`plan\` | Strong planner (\`cip-router-careful\` → mistral-small). Native function-calling over the candidate set. Reads recent messages + summary + tool-reference markdown. | Yes (\`bot.plan\`) |
-| \`gateWrite\` | For each tool call, look up \`sideEffectLevel\`. Write/external + not explicitly authorized → stage \`pendingWriteCall\`, route to \`confirm\`. | No |
-| \`confirm\` | Emit "About to: X. Reply yes/no." AIMessage. Graph ends; next user message resumes via \`ingest\`. | No |
-| \`execute\` | Wraps \`executeTool()\`. Validates name against current \`candidateTools\` (rejects hallucinated names). Distills 1-line fact via \`distillFact()\`. | No (MCP call) |
-| \`respond\` | Surface final AIMessage. Runner sends it to Teams + appends footer with \`turn=<id>\`. | No |
+| \`plan\` | Strong planner (\`cip-router-careful\` → mistral-small). Calls \`discoverTools(ctx, latestUserText)\` directly (cached 5-min) for the candidate set. Native function-calling over those tools. Reads recent messages + summary + tool-reference markdown. | Yes (\`bot.plan\`) |
+| \`gateWrite\` | For each tool call, look up \`sideEffectLevel\` via \`discoverTools\`. Write/external + not explicitly authorized → stage \`pendingWriteCall\`, route to \`confirm\`. | No |
+| \`confirm\` | Calls \`interrupt(payload)\` — graph SUSPENDS. On resume (next user message via \`Command({resume})\`), classify reply as affirm/cancel via \`classifyConfirmReply\`. Affirm → emit AIMessage(tool_calls). Cancel → emit "Cancelled.". Unrecognized → emit safety message; cancel. | No |
+| \`execute\` | Runs all tool_calls in parallel via \`Promise.all\`. Validates each name against current \`discoverTools\` cache (rejects hallucinated names). Distills 1-line fact via \`distillFact()\`. | No (MCP call) |
+| \`respond\` | Surface final AIMessage. Runner sends it to Teams + adaptive-card footer with \`turn=<id>\` and a "🔍 Inspect" action that fires \`/turn <id>\` via messageBack. | No |
+| \`summarize\` | Compresses older messages into \`state.summary\` once \`messages.length > lg.summarize_at\` (default 12). Emits \`RemoveMessage\` for trimmed messages so the reducer actually drops them. | Yes (\`bot.summarize\`) |
 
 ## Conditional edges
 
 | From → branches | Routing logic | Tunable |
 |---|---|---|
-| \`ingest\` → \`execute\` / \`discover\` | If latest AIMessage has \`tool_calls\` (synthesized from \`pendingWriteCall\` resume) → \`execute\`. Else → \`discover\`. | — |
 | \`triage\` → \`respond\` / \`plan\` | If \`triage.needsClarification\` AND \`triage.confidence ≥ lg.triage_clarify_threshold\` AND \`triage.clarificationQuestion\` set → \`respond\`. Else → \`plan\`. | \`lg.triage_clarify_threshold\` |
 | \`gateWrite\` → \`confirm\` / \`execute\` / \`respond\` | \`pendingWriteCall\` set → \`confirm\`. AIMessage has \`tool_calls\` → \`execute\`. Else → \`respond\`. | \`lg.authorized_write_verbs\` |
 | \`execute\` → \`plan\` / \`respond\` | \`stepCount ≥ lg.max_steps\` → \`respond\`. Else → \`plan\` (loop). | \`lg.max_steps\` |
+| \`confirm\` → \`execute\` / END | After interrupt resume: latest AIMessage has \`tool_calls\` (affirm path) → \`execute\`. Else (cancel / unrecognized) → END. | — |
+| \`respond\` → \`summarize\` / END | \`messages.length > lg.summarize_at\` → \`summarize\`. Else → END. | \`lg.summarize_at\` |
+
+## Confirm-resume mechanics (Slice 46b)
+
+Native LangGraph 1.x \`interrupt()\` replaces the previous hand-rolled \`pendingWriteCall\` + ingest-resume dance. The \`confirm\` node calls \`interrupt(payload)\`; the graph suspends in place. PostgresSaver records the suspension point. The runner detects it via \`graph.getState(config).tasks[*].interrupts\`, renders the "About to:" prompt, and on the next user message invokes with \`new Command({resume: userText})\`. Execution continues from inside \`confirm\` from the line after \`interrupt()\` — \`classifyConfirmReply\` decides affirm/cancel/unrecognized, and the conditional edge routes to \`execute\` or END accordingly.
 
 ## State persistence
 
-In-process \`MemorySaver\` keyed by Teams \`thread_id\`. Survives node-to-node + successive turns within a pod's lifetime. Lost on restart, lost across replicas. **Slice 46** swaps to \`PostgresSaver\`.
+\`PostgresSaver\` (Slice 46) keyed by Teams \`thread_id\`, in \`cip_hr.checkpoints\` / \`checkpoint_blobs\` / \`checkpoint_writes\`. Multi-replica + restart-safe. Async durability default in LG 1.x (Slice 46c) — \`interrupt()\` forces sync at suspension points so the resume path stays safe. Nightly retention CronJob (Slice 46d) keeps the last 10 checkpoints per thread + last 24h, plus 90 days of \`bot_turn_metrics\`.
 
-\`candidateTools\` is computed-not-persisted — re-derived from the live MCP catalog on every turn entry AND on resume from a confirm interrupt. This guarantees a confirm→resume cycle uses the user's CURRENT permitted tool set.
+\`candidateTools\` was removed from state in Slice 46d — each consumer node calls \`discoverTools(ctx, latestUserText)\` directly. The cached lookup is sub-ms after warmup; net: zero bytes serialized for the tool catalog per checkpoint.
 
-## Trace correlation
+## Trace + session correlation (Slice 48 + follow-ups)
 
-Each turn generates an 8-char hex \`turnId\` at runner entry. It's:
-- Surfaced in the Teams response footer as \`turn=\\\`<id>\\\`\`
-- Included in the \`[turn]\` log line as \`turn=<id>\`
-- Passed as Langfuse \`trace_id\` metadata on every LLM call (Slice 48 wires this into the Langfuse trace tree)
+Each turn:
+- Generates an 8-char hex \`turnId\` (response footer + \`[turn]\` log + \`bot_turn_metrics\`).
+- Has a Langfuse session id rotated by \`ingest\` on idle > \`lg.session_timeout_minutes\` (default 60). Persisted in state as \`sessionId\`.
+- Captures the OTEL-assigned \`langfuse_trace_id\` after \`graph.invoke\` from the \`@langfuse/langchain\` CallbackHandler's \`last_trace_id\` and persists it.
+- Passes \`metadata.session_id\` and \`metadata.trace_id\` into every \`callLLM\` so LiteLLM's Langfuse plugin attaches LLM generations to OUR trace + session (Slice 46e follow-up). Trace ID comes from OTEL's active-span context inside the node.
 
-To debug a turn: copy the \`turn=<id>\` from the user's footer, grep pod logs for \`turn=<id>\`, and (Slice 48) jump to the Langfuse trace.
+\`/turn <id>\` slash command (admin, gated on \`bot.metrics.read\`) reads from \`bot_turn_metrics\`, fetches latency + cost from Langfuse public API, and renders a card with two deep-links: trace and session.
+
+## OTEL bootstrap
+
+\`packages/teams-bot/src/instrumentation.ts\` initializes a NodeSDK with \`LangfuseSpanProcessor\` BEFORE any LangChain import. Without this, \`@langfuse/langchain\`'s \`CallbackHandler\` constructs cleanly but emits nothing — the SDK is OTEL-based and doesn't auto-init from env vars alone.
 `;
 
 console.log(out);
