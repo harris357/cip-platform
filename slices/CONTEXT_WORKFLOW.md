@@ -197,17 +197,30 @@ Recommended order: **46d → 46e → 49 → 51**.
   state-shape change; same `interrupt()` mechanism as 46b.
   See `slices/SLICE_53_CARD_CONFIRM.md`.
 
-- **Slice 55** — Sklearn intent router with deterministic arg
-  extraction. New `intent-classifier` Python service (FastAPI +
-  TfidfVectorizer + LogisticRegression). New `classify` graph node
-  before triage. Per-tool extractor framework + templated
-  clarification + disambiguation card. Five-way routing decision
+- **Slice 55** — Per-tool argument extraction framework + grammar
+  router. **Ships before Slice 56.** TypeScript `Extractor` interface
+  + registry. Auth-derived helpers (caller_id), DB-resolution helpers
+  (employee name → id, role lookup). Concrete extractors for the top
+  ~10 high-volume tools. Deterministic regex grammar router as a
+  graph node before triage — templated requests skip the planner
+  entirely. Disambiguation card (multi-match DB resolution) +
+  templated clarification (missing args). Three low-effort training-
+  data entry paths: committed CSV in repo, `/teach` admin slash
+  command, "Add to training set" action on `/turn` cards. Nine new
+  Make commands for extractor + training-data lifecycle. Per-tenant
+  kill switch via `lg.grammar_router_enabled = false`.
+  See `slices/SLICE_55_ARG_EXTRACTION_FRAMEWORK.md`.
+
+- **Slice 56** — Sklearn intent router (depends on Slice 55). New
+  `intent-classifier` Python service (FastAPI + TfidfVectorizer +
+  LogisticRegression). New `classify` graph node before triage.
+  Reuses Slice 55's extractor framework. Five-way routing decision
   (fallthrough / clarify / skip / disambiguate / narrow_plan).
-  Phased rollout: shadow → clarify+disambiguate → narrow_plan → skip.
-  Captures `(text, intent, was_correct)` for retraining via the
-  `correction_in_next_turn` analyzer. Per-tenant kill switch via
+  Phased rollout: shadow → clarify+disambiguate → narrow_plan →
+  skip. Captures `(text, intent, was_correct)` for retraining via
+  the `correction_in_next_turn` analyzer. Per-tenant kill switch via
   `lg.classifier_enabled = false`.
-  See `slices/SLICE_55_SKLEARN_INTENT_ROUTER.md`.
+  See `slices/SLICE_56_SKLEARN_INTENT_ROUTER.md`.
 
 ### Proposed (not yet drafted)
 
