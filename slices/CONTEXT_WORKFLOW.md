@@ -186,9 +186,37 @@ Recommended order: **46d → 46e → 49 → 51**.
   kill switch via `lg.streaming_mode = 'none'`.
   See `slices/SLICE_52_TEAMS_STREAMING.md`.
 
+- **Slice 53** — Card-driven write-action confirm + invoke router.
+  Replaces the Slice 46b text "Reply yes/no." with an Adaptive Card
+  (`Action.Execute` `[Confirm] [Cancel]`). Lays the verb-dispatched
+  invoke router that future card flows (cert submit dialog,
+  employee-detail action panel) will register against. Three new
+  tunables (`lg.confirm_render_mode` default `"card"`,
+  `lg.confirm_card_ttl_seconds`, `lg.confirm_card_max_arg_chars`).
+  Per-tenant kill switch back to text via render-mode tunable. No
+  state-shape change; same `interrupt()` mechanism as 46b.
+  See `slices/SLICE_53_CARD_CONFIRM.md`.
+
+- **Slice 55** — Sklearn intent router with deterministic arg
+  extraction. New `intent-classifier` Python service (FastAPI +
+  TfidfVectorizer + LogisticRegression). New `classify` graph node
+  before triage. Per-tool extractor framework + templated
+  clarification + disambiguation card. Five-way routing decision
+  (fallthrough / clarify / skip / disambiguate / narrow_plan).
+  Phased rollout: shadow → clarify+disambiguate → narrow_plan → skip.
+  Captures `(text, intent, was_correct)` for retraining via the
+  `correction_in_next_turn` analyzer. Per-tenant kill switch via
+  `lg.classifier_enabled = false`.
+  See `slices/SLICE_55_SKLEARN_INTENT_ROUTER.md`.
+
 ### Proposed (not yet drafted)
 
-(None currently.)
+- **Slice 54** — Rich-UI follow-on to 53: cert-submission Dialog
+  (`task/fetch` + `task/submit`) and employee-detail card with
+  `[Disable] [Reassign role] [View certs]` `Action.Execute` panel.
+  Reuses the Slice 53 invoke router by registering new verbs.
+  Domain card definitions live in
+  `packages/hr-service/src/modules/{certifications,employees}/cards/`.
 
 #### Earlier upcoming slices (legacy, may already be obsolete)
 
