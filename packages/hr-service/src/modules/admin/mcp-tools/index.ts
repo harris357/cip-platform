@@ -14,6 +14,10 @@ import {
   registerBotMetricsTools,
   registerBotMetricsOutliers,
 } from './bot-metrics.tools.js';
+import {
+  registerBotIntentExampleAdd,
+  registerBotIntentExamplesListUnreviewed,
+} from './bot-intent-examples.tools.js';
 
 // Slice 42A + 42C + 46e: admin / audit MCP tools — read-only
 // discoverability and compliance surface for HR + operators. 46e adds
@@ -34,4 +38,7 @@ export function registerAdminTools(server: McpServer): void {
   registerBotMetricsTopN(server);
   registerBotMetricsTools(server);
   registerBotMetricsOutliers(server);
+  // Slice 55
+  registerBotIntentExampleAdd(server);
+  registerBotIntentExamplesListUnreviewed(server);
 }

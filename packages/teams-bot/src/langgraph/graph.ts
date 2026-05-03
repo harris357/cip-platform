@@ -13,6 +13,7 @@ import { StateGraph, START, END } from '@langchain/langgraph';
 import { StateAnnotation, type State } from './state.js';
 import { checkpointer } from './checkpointer.js';
 import { ingestNode } from './nodes/ingest.js';
+import { makeGrammarRouteNode, routeAfterGrammar } from './nodes/grammar-route.js';
 import { makeTriageNode } from './nodes/triage.js';
 import { makePlanNode } from './nodes/plan.js';
 import { makeGateWriteActionNode, routeAfterGate } from './nodes/gate-write.js';
@@ -76,20 +77,31 @@ async function shouldContinue(state: State): Promise<'plan' | 'respond'> {
 
 export function buildGraph(ctx: BotAuthContext) {
   const graph = new StateGraph(StateAnnotation)
-    .addNode('ingest',     ingestNode)
-    .addNode('triage',     makeTriageNode(ctx))
-    .addNode('plan',       makePlanNode(ctx))
-    .addNode('gateWrite',  makeGateWriteActionNode(ctx))
-    .addNode('confirm',    confirmNode)
-    .addNode('execute',    makeExecuteToolNode(ctx))
-    .addNode('respond',    respondNode)
-    .addNode('summarize',  makeSummarizeNode(ctx))
+    .addNode('ingest',       ingestNode)
+    .addNode('grammarRoute', makeGrammarRouteNode(ctx))
+    .addNode('triage',       makeTriageNode(ctx))
+    .addNode('plan',         makePlanNode(ctx))
+    .addNode('gateWrite',    makeGateWriteActionNode(ctx))
+    .addNode('confirm',      confirmNode)
+    .addNode('execute',      makeExecuteToolNode(ctx))
+    .addNode('respond',      respondNode)
+    .addNode('summarize',    makeSummarizeNode(ctx))
 
     // 46d: discover node removed. plan / gateWrite / execute each call
     // discoverTools(ctx, latestUserText) directly — cached 5-min per
     // (tenant, employee) so subsequent calls in the same turn are sub-ms.
+    //
+    // 55: grammarRoute runs FIRST after ingest. It either:
+    //   - synthesizes an AIMessage(tool_calls) → execute (skip planner)
+    //   - sets extractionResult to ambiguous/missing → respond (card/clarify)
+    //   - returns no_match → triage (existing path)
     .addEdge(START, 'ingest')
-    .addEdge('ingest', 'triage')
+    .addEdge('ingest', 'grammarRoute')
+    .addConditionalEdges('grammarRoute', routeAfterGrammar, {
+      execute: 'execute',
+      respond: 'respond',
+      triage:  'triage',
+    })
     .addConditionalEdges('triage', routeOnSignals, {
       respond: 'respond',
       plan:    'plan',

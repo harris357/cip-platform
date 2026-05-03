@@ -170,7 +170,16 @@ export async function runLangGraph(args: {
     }
   }
 
-  if (outbound) {
+  // Slice 55: when respond emitted an adaptive card (e.g., disambiguation),
+  // send it as an attachment instead of the plain-text fallback.
+  if ((result as { outboundCard?: unknown }).outboundCard) {
+    await context.sendActivity(Activity.fromObject({
+      type: 'message',
+      attachments: [
+        { contentType: 'application/vnd.microsoft.card.adaptive', content: (result as { outboundCard: unknown }).outboundCard },
+      ],
+    }));
+  } else if (outbound) {
     await context.sendActivity(outbound);
   } else {
     await context.sendActivity('_(I had nothing to say — try rephrasing?)_');
@@ -249,6 +258,10 @@ export async function runLangGraph(args: {
   const finalState = await graph.getState(config);
   const finalSessionId = ((finalState?.values ?? {}) as { sessionId?: string }).sessionId
                        ?? sessionId;
+  // Slice 55: grammar router + extractor outcomes for telemetry.
+  const grammarMatch     = ((finalState?.values ?? {}) as { grammarMatch?: { name: string; toolName: string } | null }).grammarMatch ?? null;
+  const extractionResult = ((finalState?.values ?? {}) as { extractionResult?: { kind?: string } | null }).extractionResult ?? null;
+
   void writeTurnMetric({
     turnId,
     tenantId:           ctx.tenantId,
@@ -266,5 +279,9 @@ export async function runLangGraph(args: {
     graphMs,
     langfuseTraceId:    langfuseTraceId ?? null,
     sessionId:          finalSessionId,
+    grammarMatched:     grammarMatch !== null,
+    grammarPattern:     grammarMatch?.name ?? null,
+    extractionOutcome:  extractionResult?.kind ?? null,
+    extractionTool:     grammarMatch?.toolName ?? null,
   });
 }

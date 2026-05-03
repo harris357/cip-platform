@@ -1,0 +1,10 @@
+text,intent,tool,next_action,source,added_by,added_at,notes
+"off-board jdoe@acme.com",disable_employee,employee_disable,call_tool,manual_csv,bootstrap,2026-05-03,seed example
+"deactivate Sarah Mendez",disable_employee,employee_disable,call_tool,manual_csv,bootstrap,2026-05-03,seed example — name resolution
+"fire the new contractor",disable_employee,employee_disable,clarify,manual_csv,bootstrap,2026-05-03,clarify path — vague subject
+"show my certs",view_certs,get_my_certifications,call_tool,manual_csv,bootstrap,2026-05-03,self-scoped
+"what are my certifications",view_certs,get_my_certifications,call_tool,manual_csv,bootstrap,2026-05-03,self-scoped
+"show me Sarah's certs",view_certs,get_staff_certifications,call_tool,manual_csv,bootstrap,2026-05-03,other-scoped
+"list staff",list_employees,employee_list,call_tool,manual_csv,bootstrap,2026-05-03,
+"show all employees",list_employees,employee_list,call_tool,manual_csv,bootstrap,2026-05-03,
+"find jdoe@acme.com",find_employee,employee_find,call_tool,manual_csv,bootstrap,2026-05-03,by email

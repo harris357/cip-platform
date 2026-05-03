@@ -3,7 +3,7 @@
 
 .DEFAULT_GOAL := help
 
-.PHONY: help start stop bootstrap bootstrap-infra create-secrets status forward logs deploy redeploy redeploy-all ship provision-tenant verify typecheck build lint
+.PHONY: help start stop bootstrap bootstrap-infra create-secrets status forward logs deploy redeploy redeploy-all ship provision-tenant verify typecheck build lint extractor-test extractor-coverage extractor-add training-data-add training-data-stats training-data-review training-data-mark-reviewed training-data-export classifier-train classifier-eval classifier-deploy
 
 # ── Daily cycle ──────────────────────────────────────────────────────────────
 
@@ -184,3 +184,44 @@ help:         ## Show this help message
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
 		| awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2}'
 	@printf '\n'
+
+# ── Intent extraction layer (Slice 55) ──────────────────────────────────────
+
+extractor-test: ## Run unit tests for all per-tool extractors (placeholder until tests land)
+	@echo "TODO: pnpm test for src/intent/extractors — tests not yet authored"
+
+extractor-coverage: ## Show which tools have an extractor (vs which only have planner support)
+	@bash scripts/extractor-coverage.sh
+
+extractor-add: ## Scaffold a new extractor file. Usage: make extractor-add tool=foo_bar
+	@[ -n "$(tool)" ] || (echo "Error: tool=<name> required"; exit 1)
+	@bash scripts/extractor-scaffold.sh $(tool)
+
+# ── Training data — works without sklearn (Slice 55) ────────────────────────
+
+training-data-add: ## Interactive: append a row to manual_examples.csv
+	@bash scripts/training-data-add.sh
+
+training-data-stats: ## Per-intent example counts across all sources
+	@bash scripts/training-data-stats.sh
+
+training-data-review: ## List unreviewed bot_intent_examples (rows from /teach + turn-label)
+	@bash scripts/training-data-review.sh
+
+training-data-mark-reviewed: ## Mark example IDs as reviewed. Usage: make training-data-mark-reviewed ids='id1,id2'
+	@[ -n "$(ids)" ] || (echo "Error: ids=<comma-list> required"; exit 1)
+	@bash scripts/training-data-mark-reviewed.sh "$(ids)"
+
+training-data-export: ## Merge all sources into packages/intent-classifier/training/training_data.csv
+	@bash scripts/training-data-export.sh
+
+# ── Classifier (Slice 56) — stubs in 55, implemented in 56 ──────────────────
+
+classifier-train: ## (Slice 56) Train sklearn pipeline on training_data.csv
+	@echo "Not implemented yet — ships with Slice 56"
+
+classifier-eval: ## (Slice 56) Held-out eval against current production artifact
+	@echo "Not implemented yet — ships with Slice 56"
+
+classifier-deploy: ## (Slice 56) Push artifact to S3 + restart classifier pods
+	@echo "Not implemented yet — ships with Slice 56"

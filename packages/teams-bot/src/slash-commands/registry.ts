@@ -16,6 +16,7 @@ import type { BotAuthContext } from '../auth/resolve-context.js';
 import { helpHandler } from './handlers/help.js';
 import { aboutHandler } from './handlers/about.js';
 import { turnHandler } from './handlers/turn.js';
+import { teachHandler } from './handlers/teach.js';
 
 export interface SlashCommandResult {
   reply: string;
@@ -64,6 +65,12 @@ export const REGISTRY: SlashCommand[] = [
     description: 'Inspect a specific turn — usage: `/turn <8-char-id>`',
     requires:    'bot.metrics.read',
     handler:     turnHandler,
+  },
+  {
+    command:     '/teach',
+    description: 'Label a training example — usage: `/teach intent=X next_action=Y text="..."`',
+    requires:    'bot.metrics.read',
+    handler:     teachHandler,
   },
 ];
 

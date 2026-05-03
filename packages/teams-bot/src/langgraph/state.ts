@@ -129,6 +129,30 @@ export const StateAnnotation = Annotation.Root({
     reducer: (_prev, next) => next,
     default: () => 0,
   }),
+
+  /**
+   * Slice 55: grammar router + extractor outcomes. `grammarMatch` is
+   * which pattern fired (or null); `extractionResult` is the per-tool
+   * extractor's verdict. Both are reset each turn — no cross-turn
+   * persistence beyond the single-turn duration.
+   */
+  grammarMatch: Annotation<{ name: string; toolName: string } | null>({
+    reducer: (_prev, next) => next,
+    default: () => null,
+  }),
+  extractionResult: Annotation<import('../intent/extractors/types.js').ExtractionResult | null>({
+    reducer: (_prev, next) => next,
+    default: () => null,
+  }),
+  /**
+   * Slice 55: when respond needs to send an adaptive card (e.g.,
+   * disambiguation), it sets this. Runner detects + sends as an
+   * attachment instead of a plain-text AIMessage.content.
+   */
+  outboundCard: Annotation<unknown | null>({
+    reducer: (_prev, next) => next,
+    default: () => null,
+  }),
 });
 
 export type State = typeof StateAnnotation.State;
