@@ -579,6 +579,223 @@ slices/SLICE_56_SKLEARN_INTENT_ROUTER.md                            this file
 
 ---
 
+## Operational integration — every script touch-point
+
+Adding a new in-cluster service means updating the daily/cycle scripts so first-time bootstrap AND subsequent reboots both bring it up correctly. Here's the full inventory of changes needed for the `intent-classifier` Python service.
+
+### 1. Image build pipeline
+
+**`packages/intent-classifier/Dockerfile`** (NEW — already in Files in scope):
+- `FROM python:3.12-slim AS base`
+- Install requirements via `pip install --no-cache-dir -r requirements.txt`
+- COPY `src/` and `models/` (model artifact baked into the image at build time — promotion = new image tag, see "Model artifact lifecycle" below)
+- `CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000"]`
+
+**`.github/workflows/build-and-push.yaml`** — add matrix entry:
+```yaml
+- name: intent-classifier
+  context: ./packages/intent-classifier
+  dockerfile: ./packages/intent-classifier/Dockerfile
+```
+This auto-tags the image with the same SHA as the rest. `make deploy svc=intent-classifier TAG=<sha>` works for free because the existing Make target auto-discovers `packages/*/helm/Chart.yaml`.
+
+### 2. Helm chart
+
+**`packages/intent-classifier/helm/`** (NEW — already in Files in scope):
+- `Chart.yaml`, `values.yaml`, `templates/{deployment,service}.yaml`
+- Resource limits: 256Mi RAM / 250m CPU (sklearn models are tiny)
+- `replicaCount: 2` (HA + load-spreading; classifier is stateless)
+- `imagePullPolicy: Always`
+- `envFrom: [secretRef: intent-classifier-credentials]`
+- `containerPort: 8000`
+- Liveness + readiness probes on `GET /healthz` (returns `{ok: true, model_version: "..."}`)
+
+### 3. Cluster bring-up (`packages/infra/src/start.ts`)
+
+Add to `APP_CHARTS` array (after `litellm`, before `hr-service` so the classifier is healthy when the bot starts asking it questions):
+
+```ts
+const APP_CHARTS: HelmRelease[] = [
+  { name: 'litellm',           chart: './infra/helm/litellm',                namespace: 'cip-app',     values: './infra/helm/litellm-values.yaml' },
+  { name: 'intent-classifier', chart: './packages/intent-classifier/helm',   namespace: 'cip-app' },   // NEW (Slice 56)
+  ...(LANGFUSE_SELF_HOSTED ? [...] : []),
+  { name: 'hr-service',        chart: './packages/hr-service/helm',          namespace: 'cip-app' },
+  { name: 'platform-core',     chart: './packages/platform-core/helm',       namespace: 'cip-app' },
+  { name: 'teams-bot',         chart: './packages/teams-bot/helm',           namespace: 'cip-app' },
+];
+```
+
+`helmInstall` already retries on first-attempt failure; nothing else changes. The `--wait` flag (already present) blocks until the classifier's readinessProbe passes, so downstream services see it healthy.
+
+### 4. Cluster shutdown (`packages/infra/src/stop.ts`)
+
+Add to `APP_RELEASES` array (in REVERSE order — bot first, classifier last, before litellm):
+
+```ts
+const APP_RELEASES: HelmRelease[] = [
+  { name: 'teams-bot',         namespace: 'cip-app' },
+  { name: 'platform-core',     namespace: 'cip-app' },
+  { name: 'hr-service',        namespace: 'cip-app' },
+  { name: 'intent-classifier', namespace: 'cip-app' },   // NEW (Slice 56)
+  ...(LANGFUSE_SELF_HOSTED ? [...] : []),
+  { name: 'litellm',           namespace: 'cip-app' },
+];
+```
+
+### 5. Secrets (`scripts/create-secrets.sh`)
+
+New `intent-classifier-credentials` secret. The classifier needs:
+- `LANGFUSE_PUBLIC_KEY` / `LANGFUSE_SECRET_KEY` / `LANGFUSE_HOST` — for OTEL tracing of `/classify` calls
+- `LANGFUSE_PROJECT_ID` — for trace URL construction (consistency with bot)
+- `MODEL_S3_BUCKET` / `MODEL_S3_KEY` — IF using S3-pull mode for artifacts (see "Model artifact lifecycle"). Skip if image-baked.
+- `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` — IF S3-pull mode
+
+```bash
+# scripts/create-secrets.sh — addition
+kubectl create secret generic intent-classifier-credentials \
+  --namespace cip-app \
+  --from-literal=LANGFUSE_PUBLIC_KEY="${LANGFUSE_PUBLIC_KEY:-}" \
+  --from-literal=LANGFUSE_SECRET_KEY="${LANGFUSE_SECRET_KEY:-}" \
+  --from-literal=LANGFUSE_HOST="${LANGFUSE_HOST:-https://cloud.langfuse.com}" \
+  --from-literal=LANGFUSE_PROJECT_ID="${LANGFUSE_PROJECT_ID:-}" \
+  --from-literal=MODEL_S3_BUCKET="${INTENT_CLASSIFIER_MODEL_BUCKET:-}" \
+  --from-literal=MODEL_S3_KEY="${INTENT_CLASSIFIER_MODEL_KEY:-}" \
+  --from-literal=AWS_ACCESS_KEY_ID="${AWS_ACCESS_KEY_ID:-}" \
+  --from-literal=AWS_SECRET_ACCESS_KEY="${AWS_SECRET_ACCESS_KEY:-}" \
+  --dry-run=client -o yaml | kubectl apply -f -
+```
+
+Plus add `LITELLM_BOOTSTRAP_TENANT_ID` to **`teams-bot-credentials`** since the bot needs to know which tenant id to use when warming up its own KNN/classifier dependencies (carryover from earlier slices that touched this).
+
+Add to `.envrc.example` so operators know to set `INTENT_CLASSIFIER_MODEL_BUCKET` and `INTENT_CLASSIFIER_MODEL_KEY` if using S3-pull mode.
+
+### 6. Bootstrap (`scripts/bootstrap.sh`)
+
+Add **one new step** (call it `[8/8] Verifying classifier model artifact`):
+
+```bash
+echo "[8/8] Verifying classifier model artifact reachable..."
+# Simple smoke check: hit the readiness endpoint of the classifier service.
+# If absent, log a warning but DON'T block bootstrap — bot falls through to
+# planner gracefully when classifier is unreachable.
+if kubectl get deploy -n cip-app intent-classifier &>/dev/null; then
+  kubectl wait --for=condition=available --timeout=60s deploy/intent-classifier -n cip-app \
+    && echo "      Classifier ready." \
+    || echo "      WARNING: classifier not ready within 60s — bot will fall through to planner. Investigate later."
+else
+  echo "      (classifier not yet deployed — first start.ts run will install it)"
+fi
+```
+
+### 7. Smoke test (`scripts/smoke-test.sh`)
+
+After existing health checks, add a `/classify` round-trip:
+
+```bash
+echo "→ Testing intent-classifier /classify..."
+RESP=$(kubectl exec -n cip-app deploy/teams-bot -- node -e "
+  fetch('http://intent-classifier.cip-app.svc.cluster.local:8000/classify', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ text: 'show my certs', tenant_id: '00000000-0000-0000-0000-000000000001', request_id: 'smoke-test' })
+  }).then(r => r.json()).then(d => console.log(JSON.stringify(d))).catch(e => console.error('ERR', e.message));
+" 2>&1)
+
+INTENT=$(echo "$RESP" | jq -r '.intent // \"missing\"')
+if [[ "$INTENT" != "missing" && "$INTENT" != "" ]]; then
+  echo "  ✓ classifier returned intent=$INTENT"
+else
+  echo "  ✗ classifier did not return a valid intent. Response: $RESP"
+  exit 1
+fi
+```
+
+### 8. Cycle test (`scripts/cycle-test.sh`)
+
+Existing `kubectl wait` block waits for all `cip-app` pods. The new classifier deployment will be picked up automatically — nothing to add.
+
+### 9. Readiness verifier (`scripts/verify-readiness.sh`)
+
+Add classifier to the per-pod check loop:
+
+```bash
+echo "→ intent-classifier..."
+kubectl wait --for=condition=ready pod -l app=intent-classifier -n cip-app --timeout=120s \
+  && echo "  ✓ Ready" \
+  || echo "  ✗ NOT READY — bot will fall through to planner; classifier wins disabled until fixed"
+```
+
+### 10. Makefile
+
+`make deploy svc=intent-classifier` works automatically because the existing `make deploy` target auto-discovers `packages/*/helm/Chart.yaml`. No new Make targets needed for the deploy itself.
+
+The classifier-management Make commands stubbed in Slice 55 get fleshed out here:
+```makefile
+classifier-train:        ## Train sklearn pipeline on training_data.csv → joblib artifact
+	@bash scripts/classifier-train.sh
+
+classifier-eval:         ## Held-out eval against current production artifact
+	@bash scripts/classifier-eval.sh
+
+classifier-deploy:       ## Build + push intent-classifier image with the new model baked in
+	@bash scripts/classifier-deploy.sh
+```
+
+`scripts/classifier-deploy.sh`: copies the new joblib into `packages/intent-classifier/models/`, runs `make ship svc=intent-classifier`, restarts pods.
+
+### 11. Model artifact lifecycle — IMAGE-BAKED (the recommended default)
+
+**Decision**: model artifact lives INSIDE the container image, not S3-pulled at runtime.
+
+Why image-baked:
+- Model rev = image tag. One source of truth.
+- Promotion is the existing `make ship` flow — no separate model-deploy mechanism.
+- Rollback is `make deploy svc=intent-classifier TAG=<previous-sha>` — same as any other service.
+- No S3 dependency at runtime; classifier is fully self-contained.
+- Eval gate runs in CI (rejects the PR if macro F1 regresses by ≥1pp).
+
+What this means for the workflow:
+1. Engineer runs `make classifier-train` locally → produces `models/classifier-<date>.joblib`
+2. `make classifier-eval` → confirms it beats the prior artifact on held-out data
+3. PR with the new artifact (and updated training_data.csv if applicable)
+4. CI runs `make classifier-eval` again on the runner as a hard gate
+5. PR merged → CI builds the image with the new model → `make deploy svc=intent-classifier TAG=<sha>` → pods restart → new model live
+
+The S3 path stays as a future option for "rotate model without rebuilding image" but isn't needed for v1.
+
+### 12. CronJobs
+
+No new cron needed in v1 (`bot.metrics.read`-required commands are run on demand). When auto-retraining ships in a future slice, a `classifier-retrain-cronjob.yaml` will land in `packages/intent-classifier/helm/templates/`.
+
+---
+
+## First-time bring-up sequence (verifies the script chain)
+
+After all script changes land, verify with:
+
+```bash
+# Cluster doesn't exist yet (fresh first-time setup)
+make bootstrap-infra        # Terraform: cluster, node pool, infra Helm charts (postgres, nats, keycloak), K8s namespaces
+make create-secrets         # All app credentials AND new intent-classifier-credentials
+make start                  # Scales node pool to 1, runs bootstrap.sh, deploys app charts INCLUDING intent-classifier
+make smoke-test             # Verifies all services + new /classify round-trip
+```
+
+Result: classifier pod is running on the new node pool from the very first `make start`, no separate manual steps.
+
+## Subsequent reboots (verifies the daily cycle)
+
+```bash
+make stop                   # Uninstalls all 5 app releases (teams-bot, platform-core, hr-service, intent-classifier, litellm); scales node to 0
+# (overnight gap — node pool destroyed; PVCs persist)
+make start                  # Scales back up; bootstrap.sh runs; all 5 charts re-installed including intent-classifier
+make smoke-test             # /classify round-trip passes again
+```
+
+Same sequence works for `make cycle-test`.
+
+---
+
 ## Out of scope (still deferred)
 
 - Per-tenant model variants (one global model in v1).
