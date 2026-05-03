@@ -141,25 +141,33 @@ PENDING:    42A ──► 42C ──► 42B
   for long turns. New `lg.streaming_mode` tunable (default `typing`).
   See `slices/SLICE_52_TEAMS_STREAMING.md`.
 
+- **Slice 46d** (2026-05-01, `1b3585f`) — Ephemeral `candidateTools`
+  (removed from state — Option B path: discoverTools called per-node
+  with cache instead of UntrackedValue migration) + nightly retention
+  CronJob (`gc.ts`) for `checkpoints`, `checkpoint_writes`, and
+  `bot_turn_metrics` (90-day retention). Verified: first GC run
+  trimmed checkpoints 252→10.
+
+- **Slice 46e** (2026-05-01, `1b3585f` + followups) — Admin MCP tools
+  for `bot_turn_metrics` + clickable turn footer. Five tools shipped:
+  `bot_metrics_get_turn`, `_summary`, `_top_n`, `_tools`, `_outliers`,
+  gated on new `bot.metrics.read` permission. `/turn <id>` slash
+  command live; adaptive-card footer with "🔍 Inspect" Action.Submit.
+  Followups: Langfuse trace + session deep-links via Langfuse public
+  API; `(pending)` rendering for null-cost; sub-cent cost formatting.
+
+- **Slice 48 followups** (2026-05-01, `f0213f1` → `8a7aeb9` →
+  `ec04e76`) — OTEL bootstrap (`@opentelemetry/sdk-node` +
+  `LangfuseSpanProcessor` in `instrumentation.ts`) so Langfuse 5.x
+  traces actually flow. Session-id rotation in `ingest` on idle >
+  `lg.session_timeout_minutes` (default 60). `callLLM` forwards
+  `metadata.session_id` + `metadata.trace_id` so LiteLLM-side LLM
+  generations join our session aggregate. Verified live: per-session
+  cost now non-null in `/turn` output.
+
 ### Drafted, not yet shipped
 
-Recommended order: **46d → 46e → 49 → 51**.
-
-- **Slice 46d** — Ephemeral `candidateTools` (state-schema migration
-  to `UntrackedValue`) + nightly retention CronJob for `checkpoints`
-  and `bot_turn_metrics`. Carved out of 46c because the LG `Annotation`
-  API doesn't expose serde overrides — needs `StateGraph` + Zod schema
-  migration. Cron is a separate build path (Helm CronJob template +
-  `dist/scripts/gc.js`).
-  See `slices/SLICE_46D_EPHEMERAL_STATE_AND_RETENTION.md`.
-
-- **Slice 46e** — Admin MCP tools for `bot_turn_metrics` + clickable
-  turn footer. Five new tools (`bot_metrics_get_turn`, `_summary`,
-  `_top_n`, `_tools`, `_outliers`) gated on a new `bot.metrics.read`
-  permission. New `/turn <id>` slash command. Adaptive-card footer
-  with `messageBack` action so the existing `turn=<id>` text becomes
-  tappable. Productizes the runbook queries inside Teams.
-  See `slices/SLICE_46E_ADMIN_METRICS_TOOLS.md`.
+Recommended order: **55 → 56 → 53 → 49 → 51**.
 
 - **Slice 49 (merged)** — Bot memory (factual + semantic) via LangGraph
   `PostgresStore`. Single store instance with two namespaces per user:
