@@ -2,38 +2,30 @@
 #
 # CPU-only sklearn TfidfVectorizer + LogisticRegression behind FastAPI.
 # Model artifact baked into the image at build time — model rev = image tag.
-# Two stages: builder installs deps + tests; final ships only what's needed.
+#
+# Single-stage: classifier user owns site-packages so non-root can run.
+# (Multi-stage with --user installs broke because /root/.local was 700.)
 
-# ── Builder ─────────────────────────────────────────────────────────────────
-FROM python:3.12-slim AS builder
-
-WORKDIR /build
-
-# System deps (sklearn wheels are pure-python on amd64; nothing extra needed)
-RUN apt-get update && apt-get install -y --no-install-recommends \
-      build-essential \
-    && rm -rf /var/lib/apt/lists/*
-
-COPY packages/intent-classifier/requirements.txt ./
-RUN pip install --no-cache-dir --user -r requirements.txt
-
-# ── Runtime ─────────────────────────────────────────────────────────────────
 FROM python:3.12-slim
+
+# Non-root runtime user (must exist before pip install --user)
+RUN useradd --create-home --uid 1000 classifier
 
 WORKDIR /app
 
-# Copy installed packages from builder
-COPY --from=builder /root/.local /root/.local
-ENV PATH=/root/.local/bin:$PATH
+COPY packages/intent-classifier/requirements.txt ./
+
+# Install as the runtime user so site-packages are readable by it.
+USER classifier
+ENV PATH=/home/classifier/.local/bin:$PATH
+RUN pip install --no-cache-dir --user -r requirements.txt
 
 # Source + model artifact (artifact baked in — model rev = image tag).
-# Note: build context is repo root (see build-and-push.yaml `context: .`),
-# so paths are root-relative.
+# COPY paths are root-relative because CI uses `context: .` (repo root).
+USER root
 COPY packages/intent-classifier/src/    ./src/
 COPY packages/intent-classifier/models/ ./models/
-
-# Non-root for runtime safety
-RUN useradd --no-create-home --uid 1000 classifier && chown -R classifier:classifier /app
+RUN chown -R classifier:classifier /app
 USER classifier
 
 EXPOSE 8000
