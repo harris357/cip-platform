@@ -153,6 +153,30 @@ export const StateAnnotation = Annotation.Root({
     reducer: (_prev, next) => next,
     default: () => null,
   }),
+
+  /**
+   * Slice 56: sklearn classifier prediction + the routing decision the
+   * classify node made. Recorded in bot_turn_metrics for shadow analysis
+   * even when the decision is fallthrough.
+   */
+  classifierPrediction: Annotation<{
+    intent:             string;
+    next_action:        string;
+    tool:               string | null;
+    confidence:         number;
+    scores:             Record<string, number>;
+    normalized:         string;
+    classifier_version: string;
+  } | null>({
+    reducer: (_prev, next) => next,
+    default: () => null,
+  }),
+  classifierDecision: Annotation<
+    'fallthrough' | 'clarify' | 'skip' | 'disambiguate' | 'narrow_plan' | null
+  >({
+    reducer: (_prev, next) => next,
+    default: () => null,
+  }),
 });
 
 export type State = typeof StateAnnotation.State;

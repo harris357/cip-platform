@@ -18,11 +18,12 @@ const LANGFUSE_SELF_HOSTED = process.env['LANGFUSE_SELF_HOSTED'] === 'true';
 // Infra charts (postgres, nats, keycloak, monitoring) are managed by Terraform — never uninstalled here.
 // IMPORTANT: Never delete PVCs — Cinder volumes persist across node restarts.
 const APP_RELEASES: HelmRelease[] = [
-  { name: 'teams-bot',     namespace: 'cip-app' },
-  { name: 'platform-core', namespace: 'cip-app' },
-  { name: 'hr-service',    namespace: 'cip-app' },
+  { name: 'teams-bot',         namespace: 'cip-app' },
+  { name: 'platform-core',     namespace: 'cip-app' },
+  { name: 'hr-service',        namespace: 'cip-app' },
+  { name: 'intent-classifier', namespace: 'cip-app' },   // Slice 56
   ...(LANGFUSE_SELF_HOSTED ? [{ name: 'langfuse', namespace: 'cip-observe' }] : []),
-  { name: 'litellm',       namespace: 'cip-app' },
+  { name: 'litellm',           namespace: 'cip-app' },
 ];
 
 async function main(): Promise<void> {

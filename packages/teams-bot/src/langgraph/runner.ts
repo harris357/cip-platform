@@ -261,6 +261,11 @@ export async function runLangGraph(args: {
   // Slice 55: grammar router + extractor outcomes for telemetry.
   const grammarMatch     = ((finalState?.values ?? {}) as { grammarMatch?: { name: string; toolName: string } | null }).grammarMatch ?? null;
   const extractionResult = ((finalState?.values ?? {}) as { extractionResult?: { kind?: string } | null }).extractionResult ?? null;
+  // Slice 56: classifier shadow + active-routing telemetry.
+  const classifierPrediction = ((finalState?.values ?? {}) as {
+    classifierPrediction?: { intent: string; confidence: number; classifier_version: string } | null
+  }).classifierPrediction ?? null;
+  const classifierDecision = ((finalState?.values ?? {}) as { classifierDecision?: string | null }).classifierDecision ?? null;
 
   void writeTurnMetric({
     turnId,
@@ -283,5 +288,10 @@ export async function runLangGraph(args: {
     grammarPattern:     grammarMatch?.name ?? null,
     extractionOutcome:  extractionResult?.kind ?? null,
     extractionTool:     grammarMatch?.toolName ?? null,
+    // Slice 56
+    classifierIntent:     classifierPrediction?.intent ?? null,
+    classifierConfidence: classifierPrediction?.confidence ?? null,
+    classifierVersion:    classifierPrediction?.classifier_version ?? null,
+    classifierDecision:   classifierDecision ?? null,
   });
 }

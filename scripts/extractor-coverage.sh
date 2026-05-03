@@ -14,8 +14,8 @@ fi
 
 echo "=== Tools with an extractor (Slice 55) ==="
 # Pull the keys of the EXTRACTORS record — they're the tool names.
-grep -oE "^\s+[a-z_]+:\s+[a-z_]+Extractor," "$REGISTRY_FILE" \
-  | sed -E 's/^\s+([a-z_]+):.*/\1/' \
+grep -E "^[[:space:]]+[a-z_]+:[[:space:]]+[a-zA-Z]+Extractor," "$REGISTRY_FILE" \
+  | sed -E 's/^[[:space:]]+([a-z_]+):.*/\1/' \
   | sort -u \
   | sed 's/^/  ✓ /'
 

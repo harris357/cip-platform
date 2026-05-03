@@ -215,13 +215,13 @@ training-data-mark-reviewed: ## Mark example IDs as reviewed. Usage: make traini
 training-data-export: ## Merge all sources into packages/intent-classifier/training/training_data.csv
 	@bash scripts/training-data-export.sh
 
-# ── Classifier (Slice 56) — stubs in 55, implemented in 56 ──────────────────
+# ── Classifier (Slice 56) ───────────────────────────────────────────────────
 
-classifier-train: ## (Slice 56) Train sklearn pipeline on training_data.csv
-	@echo "Not implemented yet — ships with Slice 56"
+classifier-train: ## Train sklearn pipeline on training_data.csv → joblib artifact
+	@cd packages/intent-classifier && python -m training.train
 
-classifier-eval: ## (Slice 56) Held-out eval against current production artifact
-	@echo "Not implemented yet — ships with Slice 56"
+classifier-eval: ## Held-out eval. Optional: baseline=path/to/old.joblib for regression gate
+	@cd packages/intent-classifier && python -m training.eval $(if $(baseline),--baseline $(baseline))
 
-classifier-deploy: ## (Slice 56) Push artifact to S3 + restart classifier pods
-	@echo "Not implemented yet — ships with Slice 56"
+classifier-deploy: ## Build + push intent-classifier image with current model baked in
+	@$(MAKE) ship svc=intent-classifier

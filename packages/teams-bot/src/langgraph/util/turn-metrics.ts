@@ -32,6 +32,11 @@ export interface TurnMetric {
   grammarPattern:     string | null;
   extractionOutcome:  string | null;
   extractionTool:     string | null;
+  // Slice 56 — classifier shadow + active-routing telemetry
+  classifierIntent:     string | null;
+  classifierConfidence: number | null;
+  classifierVersion:    string | null;
+  classifierDecision:   string | null;   // fallthrough|clarify|skip|disambiguate|narrow_plan
 }
 
 export async function writeTurnMetric(m: TurnMetric): Promise<void> {
@@ -47,9 +52,10 @@ export async function writeTurnMetric(m: TurnMetric): Promise<void> {
           tools_attempted, tools_refused, step_count, triage_confidence,
           clarification_fired, confirmation_fired, resumed,
           total_ms, graph_ms, langfuse_trace_id, session_id,
-          grammar_matched, grammar_pattern, extraction_outcome, extraction_tool)
+          grammar_matched, grammar_pattern, extraction_outcome, extraction_tool,
+          classifier_intent, classifier_confidence, classifier_version, classifier_decision)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16,
-               $17, $18, $19, $20)
+               $17, $18, $19, $20, $21, $22, $23, $24)
        ON CONFLICT (turn_id) DO NOTHING`,
       [
         m.turnId, m.tenantId, m.threadId, m.employeeId, m.intent,
@@ -57,6 +63,7 @@ export async function writeTurnMetric(m: TurnMetric): Promise<void> {
         m.clarificationFired, m.confirmationFired, m.resumed,
         m.totalMs, m.graphMs, m.langfuseTraceId, m.sessionId,
         m.grammarMatched, m.grammarPattern, m.extractionOutcome, m.extractionTool,
+        m.classifierIntent, m.classifierConfidence, m.classifierVersion, m.classifierDecision,
       ],
     );
   } catch (err) {

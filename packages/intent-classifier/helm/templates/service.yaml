@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Chart.Name }}
+  namespace: cip-app
+  labels:
+    app: intent-classifier
+spec:
+  type: {{ .Values.service.type }}
+  selector:
+    app: intent-classifier
+  ports:
+    - name: http
+      port: {{ .Values.service.port }}
+      targetPort: http
+      protocol: TCP

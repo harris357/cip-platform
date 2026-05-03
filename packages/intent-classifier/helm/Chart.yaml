@@ -1,0 +1,6 @@
+apiVersion: v2
+name: intent-classifier
+description: CIP intent-classifier — sklearn TF-IDF + LogReg behind FastAPI (Slice 56)
+type: application
+version: 0.1.0
+appVersion: "0.1.0"

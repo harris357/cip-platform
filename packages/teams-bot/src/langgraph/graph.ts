@@ -14,6 +14,7 @@ import { StateAnnotation, type State } from './state.js';
 import { checkpointer } from './checkpointer.js';
 import { ingestNode } from './nodes/ingest.js';
 import { makeGrammarRouteNode, routeAfterGrammar } from './nodes/grammar-route.js';
+import { makeClassifyNode, routeAfterClassify } from './nodes/classify.js';
 import { makeTriageNode } from './nodes/triage.js';
 import { makePlanNode } from './nodes/plan.js';
 import { makeGateWriteActionNode, routeAfterGate } from './nodes/gate-write.js';
@@ -79,6 +80,7 @@ export function buildGraph(ctx: BotAuthContext) {
   const graph = new StateGraph(StateAnnotation)
     .addNode('ingest',       ingestNode)
     .addNode('grammarRoute', makeGrammarRouteNode(ctx))
+    .addNode('classify',     makeClassifyNode(ctx))
     .addNode('triage',       makeTriageNode(ctx))
     .addNode('plan',         makePlanNode(ctx))
     .addNode('gateWrite',    makeGateWriteActionNode(ctx))
@@ -91,15 +93,21 @@ export function buildGraph(ctx: BotAuthContext) {
     // discoverTools(ctx, latestUserText) directly — cached 5-min per
     // (tenant, employee) so subsequent calls in the same turn are sub-ms.
     //
-    // 55: grammarRoute runs FIRST after ingest. It either:
-    //   - synthesizes an AIMessage(tool_calls) → execute (skip planner)
-    //   - sets extractionResult to ambiguous/missing → respond (card/clarify)
-    //   - returns no_match → triage (existing path)
+    // 55: grammarRoute (deterministic regex) runs FIRST after ingest.
+    // 56: classify (sklearn) runs SECOND if grammar didn't match.
+    // Each handles its own happy paths; no_match falls through to the
+    // existing triage → plan path unchanged.
     .addEdge(START, 'ingest')
     .addEdge('ingest', 'grammarRoute')
     .addConditionalEdges('grammarRoute', routeAfterGrammar, {
       execute: 'execute',
       respond: 'respond',
+      triage:  'classify',     // grammar miss → try sklearn classifier next
+    })
+    .addConditionalEdges('classify', routeAfterClassify, {
+      execute: 'execute',
+      respond: 'respond',
+      plan:    'plan',
       triage:  'triage',
     })
     .addConditionalEdges('triage', routeOnSignals, {

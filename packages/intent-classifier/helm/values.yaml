@@ -1,0 +1,45 @@
+# Slice 56: intent-classifier values.
+
+replicaCount: 2          # stateless; HA + load-spreading
+
+image:
+  repository: ghcr.io/harris357/intent-classifier
+  tag: "latest"          # override per-deploy via helm --set image.tag=<sha>
+  pullPolicy: Always
+
+service:
+  type: ClusterIP
+  port: 8000
+
+resources:
+  requests:
+    cpu:    100m
+    memory: 128Mi
+  limits:
+    cpu:    250m          # sklearn predict_proba is microseconds; load is light
+    memory: 256Mi
+
+# No envFrom for v1 — the service doesn't need secrets when running in
+# degraded mode. Once OTEL/Langfuse wiring + S3-pull mode are added in
+# a follow-up, switch to:
+#   envFrom:
+#     - secretRef:
+#         name: intent-classifier-credentials
+
+livenessProbe:
+  httpGet:
+    path: /healthz
+    port: 8000
+  initialDelaySeconds: 10
+  periodSeconds:       30
+  timeoutSeconds:      3
+  failureThreshold:    3
+
+readinessProbe:
+  httpGet:
+    path: /healthz
+    port: 8000
+  initialDelaySeconds: 3
+  periodSeconds:       10
+  timeoutSeconds:      2
+  failureThreshold:    3

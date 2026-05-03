@@ -22,11 +22,14 @@ const LANGFUSE_SELF_HOSTED = process.env['LANGFUSE_SELF_HOSTED'] === 'true';
 // Infrastructure charts (postgres, nats, keycloak, monitoring) are managed by Terraform.
 // start.ts only manages app-layer charts that scale with the node pool.
 const APP_CHARTS: HelmRelease[] = [
-  { name: 'litellm',       chart: './infra/helm/litellm',          namespace: 'cip-app',     values: './infra/helm/litellm-values.yaml' },
+  { name: 'litellm',           chart: './infra/helm/litellm',                namespace: 'cip-app',     values: './infra/helm/litellm-values.yaml' },
+  // Slice 56: intent-classifier installed BEFORE the bot so the bot's
+  // health check sees it ready. helm --wait blocks until readiness.
+  { name: 'intent-classifier', chart: './packages/intent-classifier/helm',   namespace: 'cip-app' },
   ...(LANGFUSE_SELF_HOSTED ? [{ name: 'langfuse', chart: 'langfuse/langfuse', namespace: 'cip-observe', values: './infra/helm/langfuse-self-hosted-values.yaml' }] : []),
-  { name: 'hr-service',    chart: './packages/hr-service/helm',    namespace: 'cip-app' },
-  { name: 'platform-core', chart: './packages/platform-core/helm', namespace: 'cip-app' },
-  { name: 'teams-bot',     chart: './packages/teams-bot/helm',     namespace: 'cip-app' },
+  { name: 'hr-service',        chart: './packages/hr-service/helm',          namespace: 'cip-app' },
+  { name: 'platform-core',     chart: './packages/platform-core/helm',       namespace: 'cip-app' },
+  { name: 'teams-bot',         chart: './packages/teams-bot/helm',           namespace: 'cip-app' },
 ];
 
 function helmInstall(release: HelmRelease): void {
