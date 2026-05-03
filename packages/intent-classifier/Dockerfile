@@ -14,7 +14,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       build-essential \
     && rm -rf /var/lib/apt/lists/*
 
-COPY requirements.txt ./
+COPY packages/intent-classifier/requirements.txt ./
 RUN pip install --no-cache-dir --user -r requirements.txt
 
 # ── Runtime ─────────────────────────────────────────────────────────────────
@@ -26,9 +26,11 @@ WORKDIR /app
 COPY --from=builder /root/.local /root/.local
 ENV PATH=/root/.local/bin:$PATH
 
-# Source + model artifact (artifact baked in — model rev = image tag)
-COPY src/    ./src/
-COPY models/ ./models/
+# Source + model artifact (artifact baked in — model rev = image tag).
+# Note: build context is repo root (see build-and-push.yaml `context: .`),
+# so paths are root-relative.
+COPY packages/intent-classifier/src/    ./src/
+COPY packages/intent-classifier/models/ ./models/
 
 # Non-root for runtime safety
 RUN useradd --no-create-home --uid 1000 classifier && chown -R classifier:classifier /app
