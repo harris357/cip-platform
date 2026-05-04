@@ -114,7 +114,18 @@ def main() -> int:
         "--no-upload", action="store_true",
         help="Skip S3 upload + DB lineage writes (local dry-run).",
     )
+    parser.add_argument(
+        "--tenant-id", type=str, default=None,
+        help="Slice 56D: train a per-tenant model from this tenant's rows only. "
+             "Artifact lands at s3://.../by-tenant/<id>/. Hard-rejects below "
+             "MIN_ROWS_PER_TENANT (50) or MIN_INTENTS_PER_TENANT (3).",
+    )
     args = parser.parse_args()
+
+    # Slice 56D thresholds. Below either, per-tenant training is more harmful
+    # than the platform fallback would be.
+    MIN_ROWS_PER_TENANT    = 50
+    MIN_INTENTS_PER_TENANT = 3
 
     if not args.csv.exists():
         print(f"ERROR: {args.csv} not found. Run `make training-data-export` first.", file=sys.stderr)
@@ -128,6 +139,25 @@ def main() -> int:
     if len(rows) < 5:
         print(f"ERROR: only {len(rows)} training rows — need at least ~5 to train anything.", file=sys.stderr)
         return 1
+
+    # Slice 56D: per-tenant gate. If --tenant-id is set, the CSV should
+    # already be tenant-filtered (export_training_data --tenant-id), but
+    # we double-check the row count + intent diversity here so the trainer
+    # never produces a useless single-class model.
+    if args.tenant_id:
+        if len(rows) < MIN_ROWS_PER_TENANT:
+            print(f"ERROR: tenant {args.tenant_id} has only {len(rows)} rows — "
+                  f"need ≥ {MIN_ROWS_PER_TENANT}. Falling back to platform model.",
+                  file=sys.stderr)
+            return 1
+        distinct_intents = len({r["intent"] for r in rows})
+        if distinct_intents < MIN_INTENTS_PER_TENANT:
+            print(f"ERROR: tenant {args.tenant_id} has only {distinct_intents} distinct intents — "
+                  f"need ≥ {MIN_INTENTS_PER_TENANT}.", file=sys.stderr)
+            return 1
+        # Prefix the version so logs make the scope obvious.
+        if not args.version.startswith("t-"):
+            args.version = f"t-{args.tenant_id[:8]}-{args.version}"
 
     texts   = [r["text"]   for r in rows]
     intents = [r["intent"] for r in rows]
@@ -180,10 +210,15 @@ def main() -> int:
 
     try:
         ensure_bucket()
-        artifact_uri, artifact_sha256 = upload_artifact(args.version, out_path)
+        artifact_uri, artifact_sha256 = upload_artifact(
+            args.version, out_path, tenant_id=args.tenant_id,
+        )
         # Pointer goes LAST so readers never see a CURRENT pointing at a
         # not-yet-uploaded key.
-        update_current_pointer(args.version, f"{artifact_uri.split('/', 3)[-1]}", artifact_sha256)
+        update_current_pointer(
+            args.version, f"{artifact_uri.split('/', 3)[-1]}", artifact_sha256,
+            tenant_id=args.tenant_id,
+        )
     except Exception as e:
         print(f"\nERROR: S3 upload failed: {e}", file=sys.stderr)
         print(f"Artifact remains at {out_path} — you can retry the upload manually.", file=sys.stderr)
@@ -193,6 +228,7 @@ def main() -> int:
     # lineage is still useful (the classifier hot-loads it). Log loudly
     # and let the operator backfill via psql if needed.
     run_id = record_model_run(
+        tenant_id        = args.tenant_id,
         model_version    = args.version,
         corpus_cutoff_at = corpus_cutoff_at,
         train_count      = len(rows),
@@ -203,9 +239,10 @@ def main() -> int:
         artifact_sha256  = artifact_sha256,
     )
     if run_id:
-        record_membership(run_id, corpus_cutoff_at)
+        record_membership(run_id, corpus_cutoff_at, tenant_id=args.tenant_id)
 
     print(f"\n=== Trained, uploaded, recorded ===")
+    print(f"  scope:      {args.tenant_id or 'platform'}")
     print(f"  version:    {args.version}")
     print(f"  artifact:   {artifact_uri}")
     print(f"  cutoff:     {corpus_cutoff_at.isoformat()}")

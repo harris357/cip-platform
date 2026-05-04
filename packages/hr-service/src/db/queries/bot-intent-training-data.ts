@@ -93,6 +93,8 @@ export async function markReviewed(
 
 export interface ModelRunRow {
   id:                string;
+  /** Slice 56D: NULL = platform-wide model; UUID = tenant-specific. */
+  tenant_id:         string | null;
   model_version:     string;
   trained_at:        Date;
   corpus_cutoff_at:  Date;
@@ -109,31 +111,68 @@ export interface ModelRunRow {
 }
 
 /**
- * Latest N model runs, newest first. Platform-wide (no tenant filter).
- * Used by the bot_intent_model_runs_list MCP tool and `make classifier-status`.
+ * Latest N model runs, newest first.
+ *
+ * Slice 56D: tenantId filter:
+ *   - undefined → all rows (platform + per-tenant)
+ *   - null      → only platform-wide rows
+ *   - UUID      → only that tenant's rows
  */
 export async function listModelRuns(
-  pool: pg.Pool, limit = 20,
+  pool: pg.Pool, limit = 20, tenantId?: string | null,
 ): Promise<ModelRunRow[]> {
+  if (tenantId === undefined) {
+    const r = await pool.query<ModelRunRow>(
+      `SELECT * FROM bot_intent_model_runs
+        ORDER BY trained_at DESC
+        LIMIT $1`,
+      [limit],
+    );
+    return r.rows;
+  }
+  if (tenantId === null) {
+    const r = await pool.query<ModelRunRow>(
+      `SELECT * FROM bot_intent_model_runs
+        WHERE tenant_id IS NULL
+        ORDER BY trained_at DESC
+        LIMIT $1`,
+      [limit],
+    );
+    return r.rows;
+  }
   const r = await pool.query<ModelRunRow>(
     `SELECT * FROM bot_intent_model_runs
+      WHERE tenant_id = $1
       ORDER BY trained_at DESC
-      LIMIT $1`,
-    [limit],
+      LIMIT $2`,
+    [tenantId, limit],
   );
   return r.rows;
 }
 
 /**
- * The single most recent model run, or null if none. Used to compute
- * "untrained rows since latest model" and to surface model_version in
- * /healthz cross-checks against the loaded artifact.
+ * The single most recent model run for a given scope, or null if none.
+ *
+ * Slice 56D: tenantId selects platform vs tenant-specific:
+ *   - undefined or null → platform-wide latest (tenant_id IS NULL)
+ *   - UUID              → that tenant's latest
  */
 export async function latestModelRun(
-  pool: pg.Pool,
+  pool: pg.Pool, tenantId?: string | null,
 ): Promise<ModelRunRow | null> {
+  if (tenantId) {
+    const r = await pool.query<ModelRunRow>(
+      `SELECT * FROM bot_intent_model_runs
+        WHERE tenant_id = $1
+        ORDER BY trained_at DESC
+        LIMIT 1`,
+      [tenantId],
+    );
+    return r.rows[0] ?? null;
+  }
   const r = await pool.query<ModelRunRow>(
     `SELECT * FROM bot_intent_model_runs
+      WHERE tenant_id IS NULL
       ORDER BY trained_at DESC
       LIMIT 1`,
   );
@@ -152,7 +191,9 @@ export async function latestModelRun(
 export async function countUntrainedSinceLatest(
   pool: pg.Pool, tenantId?: string,
 ): Promise<{ untrained: number; latestModelVersion: string | null; corpusCutoffAt: Date | null }> {
-  const latest = await latestModelRun(pool);
+  // Slice 56D: when tenantId is provided, compare against that tenant's
+  // latest model. Otherwise compare against the platform-wide latest.
+  const latest = await latestModelRun(pool, tenantId ?? null);
   if (!latest) {
     // No model yet — every reviewed row counts as untrained.
     const r = await pool.query<{ c: string }>(
@@ -185,6 +226,8 @@ export async function countUntrainedSinceLatest(
 }
 
 export interface AddModelRunInput {
+  /** Slice 56D: null (or omitted) = platform-wide; UUID = tenant-specific. */
+  tenantId?:       string | null;
   modelVersion:    string;
   corpusCutoffAt:  Date;
   trainCount:      number;
@@ -207,14 +250,15 @@ export async function addModelRun(
 ): Promise<ModelRunRow> {
   const r = await pool.query<ModelRunRow>(
     `INSERT INTO bot_intent_model_runs
-       (model_version, corpus_cutoff_at, train_count, intents_count,
+       (tenant_id, model_version, corpus_cutoff_at, train_count, intents_count,
         cv_macro_f1, holdout_macro_f1, artifact_uri, artifact_sha256,
         trainer_git_sha, notes)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
      RETURNING *`,
     [
-      input.modelVersion, input.corpusCutoffAt, input.trainCount, input.intentsCount,
-      input.cvMacroF1, input.holdoutMacroF1, input.artifactUri, input.artifactSha256,
+      input.tenantId ?? null, input.modelVersion, input.corpusCutoffAt,
+      input.trainCount, input.intentsCount, input.cvMacroF1, input.holdoutMacroF1,
+      input.artifactUri, input.artifactSha256,
       input.trainerGitSha ?? null, input.notes ?? null,
     ],
   );

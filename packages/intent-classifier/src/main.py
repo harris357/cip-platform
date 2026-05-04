@@ -22,7 +22,10 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException
 
-from .classifier import load_model, predict, is_loaded, get_state, swap_in
+from .classifier import (
+    load_model, predict, is_loaded, get_state, swap_in, set_loader,
+    PER_TENANT_ENABLED,
+)
 from .schema import ClassifyRequest, ClassifyResponse, HealthResponse
 from .s3_loader import S3ModelLoader
 
@@ -41,9 +44,15 @@ async def lifespan(_app: FastAPI):
     # matches the S3 CURRENT pointer.
     loader = S3ModelLoader(on_swap=swap_in)
     state = get_state()
-    loader.set_loaded_version(state.version)
+    loader.set_loaded_version(state.version, tenant_id=None)
+    # Slice 56D: classifier.predict() needs the loader for lazy
+    # per-tenant registration on cache miss.
+    set_loader(loader)
     await loader.start()
-    logger.info("[main] S3 poller started (loaded baseline=%s)", state.version)
+    logger.info(
+        "[main] S3 poller started (loaded baseline=%s per_tenant=%s)",
+        state.version, PER_TENANT_ENABLED,
+    )
 
     try:
         yield
@@ -60,17 +69,20 @@ app = FastAPI(
 
 
 @app.post("/classify", response_model=ClassifyResponse)
-def classify(req: ClassifyRequest) -> dict:
+async def classify(req: ClassifyRequest) -> dict:
+    # Slice 56D: async because predict() may need to lazy-register a
+    # tenant model on cache miss (synchronous /classify can't await).
     t0 = time.perf_counter()
     try:
-        result = predict(req.text)
+        result = await predict(req.text, req.tenant_id)
     except Exception as e:
         logger.exception("[classify] predict failed for request_id=%s", req.request_id)
         raise HTTPException(status_code=500, detail=f"predict failed: {e}")
     elapsed_ms = int((time.perf_counter() - t0) * 1000)
     logger.info(
-        "[classify] request_id=%s tenant=%s intent=%s confidence=%.3f elapsed_ms=%d",
-        req.request_id, req.tenant_id, result["intent"], result["confidence"], elapsed_ms,
+        "[classify] request_id=%s tenant=%s intent=%s confidence=%.3f version=%s elapsed_ms=%d",
+        req.request_id, req.tenant_id, result["intent"], result["confidence"],
+        result["classifier_version"], elapsed_ms,
     )
     return result
 

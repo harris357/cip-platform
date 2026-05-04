@@ -229,7 +229,16 @@ classifier-deploy: ## Build + push intent-classifier image (code changes only �
 classifier-status: ## Slice 56B: latest model run, untrained-row count, live /healthz per pod
 	@bash scripts/classifier-status.sh
 
-classifier-retrain-now: ## Slice 56C: trigger an ad-hoc trainer Job from the CronJob spec (in-cluster)
-	@kubectl create job --from=cronjob/intent-classifier-trainer \
-	  -n cip-app "trainer-manual-$$(date +%s)"
-	@echo "Tail logs with: kubectl logs -n cip-app -f -l job-name=trainer-manual-..."
+classifier-retrain-now: ## Slice 56C/D: ad-hoc trainer Job. Optional: tenant=<uuid> for per-tenant retrain
+	@JOB="trainer-manual-$$(date +%s)"; \
+	if [ -n "$(tenant)" ]; then \
+	  JOB="trainer-tenant-$$(echo $(tenant) | head -c 8)-$$(date +%s)"; \
+	  echo "→ Per-tenant retrain for $(tenant) → job $$JOB"; \
+	  kubectl create job --from=cronjob/intent-classifier-trainer -n cip-app "$$JOB" \
+	    --dry-run=client -o yaml \
+	    | kubectl set env --local -f - --containers='trainer' "TENANT_ID=$(tenant)" -o yaml \
+	    | kubectl apply -f -; \
+	else \
+	  kubectl create job --from=cronjob/intent-classifier-trainer -n cip-app "$$JOB"; \
+	fi; \
+	echo "Tail logs with: kubectl logs -n cip-app -f job/$$JOB"
