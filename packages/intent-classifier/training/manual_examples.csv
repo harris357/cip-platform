@@ -18,6 +18,7 @@ text,intent,tool,next_action,source,added_by,added_at,notes
 "audit Sarah's compliance",get_staff_certifications,get_staff_certifications,call_tool,manual_csv,bootstrap,2026-05-03,
 "check the qualifications of Tom Liu",get_staff_certifications,get_staff_certifications,call_tool,manual_csv,bootstrap,2026-05-03,
 "what's the certification status for jdoe@acme.com",get_staff_certifications,get_staff_certifications,call_tool,manual_csv,bootstrap,2026-05-03,
+"what training has Tom completed",get_staff_certifications,get_staff_certifications,call_tool,manual_csv,bootstrap,2026-05-04,paraphrase using 'training' vocab
 "list staff",employee_list,employee_list,call_tool,manual_csv,bootstrap,2026-05-03,
 "show all employees",employee_list,employee_list,call_tool,manual_csv,bootstrap,2026-05-03,
 "who works here",employee_list,employee_list,call_tool,manual_csv,bootstrap,2026-05-03,paraphrase
@@ -29,6 +30,8 @@ text,intent,tool,next_action,source,added_by,added_at,notes
 "lookup bob@example.com",employee_find,employee_find,call_tool,manual_csv,bootstrap,2026-05-03,
 "search for sarah@acme.com",employee_find,employee_find,call_tool,manual_csv,bootstrap,2026-05-03,
 "who is jane@acme.com",employee_find,employee_find,call_tool,manual_csv,bootstrap,2026-05-03,paraphrase
+"find Sarah Mendez",employee_find,employee_find,call_tool,manual_csv,bootstrap,2026-05-04,bare-name path (resolveEmployeeByNameOrEmail)
+"look up the contractor named Bob",employee_find,employee_find,call_tool,manual_csv,bootstrap,2026-05-04,descriptive subject paraphrase
 "what are my roles",get_employee_permissions,get_employee_permissions,call_tool,manual_csv,bootstrap,2026-05-03,USER REQUESTED EXAMPLE
 "what are my permissions",get_employee_permissions,get_employee_permissions,call_tool,manual_csv,bootstrap,2026-05-03,USER REQUESTED EXAMPLE
 "show my roles",get_employee_permissions,get_employee_permissions,call_tool,manual_csv,bootstrap,2026-05-03,
@@ -45,3 +48,5 @@ text,intent,tool,next_action,source,added_by,added_at,notes
 "hello there",small_talk,,answer_directly,manual_csv,bootstrap,2026-05-03,
 "good morning",small_talk,,answer_directly,manual_csv,bootstrap,2026-05-03,
 "how are you",small_talk,,answer_directly,manual_csv,bootstrap,2026-05-03,
+"thank you",small_talk,,answer_directly,manual_csv,bootstrap,2026-05-04,polite closure variant
+"goodbye",small_talk,,answer_directly,manual_csv,bootstrap,2026-05-04,sign-off (existing examples are all openings)
