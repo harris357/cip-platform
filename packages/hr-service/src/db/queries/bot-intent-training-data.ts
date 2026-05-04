@@ -24,11 +24,20 @@ export interface AddTrainingDataInput {
   intent:       string;
   tool?:        string | null;
   nextAction:   'call_tool' | 'clarify' | 'answer_directly' | 'unknown';
-  source:       'teach' | 'turn_label' | 'manual_csv' | 'trace_export';
+  source:       'teach' | 'turn_label' | 'manual_csv' | 'trace_export'
+              | 'verdict_positive' | 'confusion_correction';
   sourceTurnId?: string | null;
   /** Slice 56E: Langfuse trace UUID (separate from sourceTurnId, which
    *  holds the bot's 8-char hex turnId). Set by import_traces.py. */
   sourceLangfuseTraceId?: string | null;
+  /** Slice 56L: the ORIGINAL predicted intent/tool from the source turn.
+   *  Preserved so an admin relabel of `intent` doesn't destroy the
+   *  confusion-matrix signal. For non-correction sources (manual_csv,
+   *  teach, verdict_positive, trace_export-tier-1/2), predicted_intent
+   *  matches `intent` (no confusion). For confusion_correction rows it
+   *  carries the classifier's wrong guess. */
+  predictedIntent?: string | null;
+  predictedTool?:   string | null;
   notes?:       string | null;
 }
 
@@ -45,6 +54,10 @@ export interface TrainingDataRow {
   source_turn_id:           string | null;
   /** Slice 56E: populated only when source='trace_export'. */
   source_langfuse_trace_id: string | null;
+  /** Slice 56L: original prediction from the source turn. Survives admin
+   *  relabel of `intent`, so confusion-matrix queries stay intact. */
+  predicted_intent:         string | null;
+  predicted_tool:           string | null;
   notes:                    string | null;
   reviewed:                 boolean;
 }
@@ -53,16 +66,23 @@ export async function addTrainingData(
   pool: pg.Pool,
   input: AddTrainingDataInput,
 ): Promise<TrainingDataRow> {
+  // Slice 56L: default predicted_intent/predicted_tool to the inserted
+  // intent/tool when the caller doesn't override. Only confusion_correction
+  // imports pass a different value (the classifier's original wrong guess).
+  const predictedIntent = input.predictedIntent ?? input.intent;
+  const predictedTool   = input.predictedTool   ?? input.tool ?? null;
   const r = await pool.query<TrainingDataRow>(
     `INSERT INTO bot_intent_training_data
        (tenant_id, added_by, text, intent, tool, next_action, source,
-        source_turn_id, source_langfuse_trace_id, notes)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+        source_turn_id, source_langfuse_trace_id,
+        predicted_intent, predicted_tool, notes)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
      RETURNING *`,
     [
       input.tenantId, input.addedBy, input.text, input.intent,
       input.tool ?? null, input.nextAction, input.source,
       input.sourceTurnId ?? null, input.sourceLangfuseTraceId ?? null,
+      predictedIntent, predictedTool,
       input.notes ?? null,
     ],
   );

@@ -148,10 +148,11 @@ SELECT 1
 INSERT_SQL = """
 INSERT INTO bot_intent_training_data
   (tenant_id, added_by, text, intent, tool, next_action, source,
-   source_turn_id, source_langfuse_trace_id, notes, reviewed)
+   source_turn_id, source_langfuse_trace_id,
+   predicted_intent, predicted_tool, notes, reviewed)
 VALUES
   (%s, 'trace_export', %s, %s, %s, 'call_tool', %s,
-   %s, %s, %s, false)
+   %s, %s, %s, %s, %s, false)
 """
 
 
@@ -319,11 +320,33 @@ def main() -> int:
                 inserted += 1
                 continue
 
+            # Slice 56L: predicted_intent / predicted_tool — for tier-3
+            # confusion_correction, this is the classifier's ORIGINAL wrong
+            # prediction (which the import already loaded into `intent`
+            # before any admin relabel). For other tiers, predicted matches
+            # the inserted intent (no confusion).
+            #
+            # Why this matters: if the admin later relabels `intent` to the
+            # correct value, predicted_intent stays put — confusion-matrix
+            # queries can still see "this text was originally predicted as
+            # X but the truth is Y" even after relabel + after the source
+            # bot_turn_metrics row ages out at 90 days.
+            predicted_intent = intent
+            predicted_tool   = tool
+            if tier == 3:
+                # For tier-3: intent above was set to classifier_intent
+                # (the original wrong guess). predicted_intent matches
+                # intent on insert — when admin relabels intent, predicted
+                # stays as-is = the original wrong prediction. Correct.
+                predicted_intent = classifier_intent or intent
+                predicted_tool   = tool
+
             with conn.cursor() as cur:
                 cur.execute(INSERT_SQL, (
                     str(tenant_id), text, intent, tool,
                     source_value,
                     turn_id, trace_id,
+                    predicted_intent, predicted_tool,
                     note_str,
                 ))
             inserted += 1
