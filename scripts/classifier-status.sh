@@ -51,8 +51,15 @@ if [[ -z "$PODS" ]]; then
 else
   for pod in $PODS; do
     printf "  %-50s " "$pod"
-    kubectl exec -n cip-app "$pod" -- wget -qO- --timeout=3 http://localhost:8000/healthz 2>/dev/null \
-      || echo '{"err":"unreachable"}'
+    # Use Python (already in the slim image) — wget isn't.
+    kubectl exec -n cip-app "$pod" -- python -c "
+import urllib.request, json, sys
+try:
+    r = urllib.request.urlopen('http://localhost:8000/healthz', timeout=3)
+    print(json.dumps(json.loads(r.read())))
+except Exception as e:
+    print(json.dumps({'err': str(e)}))
+" 2>/dev/null || echo '{"err":"exec_failed"}'
   done
 fi
 
