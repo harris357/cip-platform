@@ -46,14 +46,24 @@ logger = logging.getLogger("trainer")
 
 # Conservative, hand-curated. Tools not listed → trace skipped.
 # Add an entry alongside any new extractor / grammar pattern.
+#
+# Slice 56G: aligned with the manual_examples.csv intent labels.
+# Existing rows used `find_employee` / `list_employees` (verb-prefix style);
+# manual_examples.csv uses `employee_find` / `employee_list` (tool-name style).
+# We standardize on tool-name-style here so import labels match the
+# manual corpus and the trainer sees one set of intents per tool.
 TOOL_TO_INTENT: dict[str, str] = {
     "employee_disable":         "disable_employee",
-    "employee_find":            "find_employee",
-    "employee_list":            "list_employees",
+    "employee_find":            "employee_find",
+    "employee_list":            "employee_list",
     "get_employee_permissions": "get_employee_permissions",
     "get_my_certifications":    "get_my_certifications",
     "get_staff_certifications": "get_staff_certifications",
 }
+# Note: out_of_scope is intent-only (no tool); it cannot be derived from
+# tools_attempted because OOS turns by definition don't run a tool.
+# OOS examples come from manual curation (manual_examples.csv) and
+# (Slice 56F) explicit user 👎 verdicts on turns the bot tried to route.
 
 
 def _pg_url() -> str:
