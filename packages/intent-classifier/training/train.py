@@ -35,6 +35,7 @@ to the in-cluster postgres):
 from __future__ import annotations
 import argparse
 import csv
+import os
 import sys
 from collections import Counter
 from datetime import date, datetime, timezone
@@ -145,6 +146,17 @@ def main() -> int:
     # we double-check the row count + intent diversity here so the trainer
     # never produces a useless single-class model.
     if args.tenant_id:
+        # Master switch — same env the classifier reads to gate routing.
+        # When false, refuse to even produce a per-tenant artifact so we
+        # don't leave orphan models in S3 that no replica will load.
+        if os.environ.get("CLASSIFIER_PER_TENANT_ENABLED", "false").lower() != "true":
+            print(
+                f"ERROR: --tenant-id requires CLASSIFIER_PER_TENANT_ENABLED=true.\n"
+                f"  Workstation: set it in .envrc and re-source.\n"
+                f"  In-cluster:  set env on the Helm chart's values.yaml.",
+                file=sys.stderr,
+            )
+            return 1
         if len(rows) < MIN_ROWS_PER_TENANT:
             print(f"ERROR: tenant {args.tenant_id} has only {len(rows)} rows — "
                   f"need ≥ {MIN_ROWS_PER_TENANT}. Falling back to platform model.",
