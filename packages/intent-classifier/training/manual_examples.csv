@@ -2,9 +2,46 @@ text,intent,tool,next_action,source,added_by,added_at,notes
 "off-board jdoe@acme.com",disable_employee,employee_disable,call_tool,manual_csv,bootstrap,2026-05-03,seed example
 "deactivate Sarah Mendez",disable_employee,employee_disable,call_tool,manual_csv,bootstrap,2026-05-03,seed example — name resolution
 "fire the new contractor",disable_employee,employee_disable,clarify,manual_csv,bootstrap,2026-05-03,clarify path — vague subject
-"show my certs",view_certs,get_my_certifications,call_tool,manual_csv,bootstrap,2026-05-03,self-scoped
-"what are my certifications",view_certs,get_my_certifications,call_tool,manual_csv,bootstrap,2026-05-03,self-scoped
-"show me Sarah's certs",view_certs,get_staff_certifications,call_tool,manual_csv,bootstrap,2026-05-03,other-scoped
-"list staff",list_employees,employee_list,call_tool,manual_csv,bootstrap,2026-05-03,
-"show all employees",list_employees,employee_list,call_tool,manual_csv,bootstrap,2026-05-03,
-"find jdoe@acme.com",find_employee,employee_find,call_tool,manual_csv,bootstrap,2026-05-03,by email
+"can you off-board Sarah",disable_employee,employee_disable,call_tool,manual_csv,bootstrap,2026-05-03,
+"please disable bob@example.com",disable_employee,employee_disable,call_tool,manual_csv,bootstrap,2026-05-03,
+"terminate access for jane@acme.com",disable_employee,employee_disable,call_tool,manual_csv,bootstrap,2026-05-03,
+"remove Sarah from the system",disable_employee,employee_disable,call_tool,manual_csv,bootstrap,2026-05-03,
+"deactivate the contractor's account",disable_employee,employee_disable,clarify,manual_csv,bootstrap,2026-05-03,vague
+"show my certs",get_my_certifications,get_my_certifications,call_tool,manual_csv,bootstrap,2026-05-03,self-scoped
+"what are my certifications",get_my_certifications,get_my_certifications,call_tool,manual_csv,bootstrap,2026-05-03,
+"list my training credentials",get_my_certifications,get_my_certifications,call_tool,manual_csv,bootstrap,2026-05-03,paraphrase grammar misses
+"do I have any certifications",get_my_certifications,get_my_certifications,call_tool,manual_csv,bootstrap,2026-05-03,paraphrase grammar misses
+"am I certified for anything",get_my_certifications,get_my_certifications,call_tool,manual_csv,bootstrap,2026-05-03,paraphrase
+"my qualifications",get_my_certifications,get_my_certifications,call_tool,manual_csv,bootstrap,2026-05-03,paraphrase
+"show me Sarah's certs",get_staff_certifications,get_staff_certifications,call_tool,manual_csv,bootstrap,2026-05-03,other-scoped
+"what certs does Bob have",get_staff_certifications,get_staff_certifications,call_tool,manual_csv,bootstrap,2026-05-03,
+"audit Sarah's compliance",get_staff_certifications,get_staff_certifications,call_tool,manual_csv,bootstrap,2026-05-03,
+"check the qualifications of Tom Liu",get_staff_certifications,get_staff_certifications,call_tool,manual_csv,bootstrap,2026-05-03,
+"what's the certification status for jdoe@acme.com",get_staff_certifications,get_staff_certifications,call_tool,manual_csv,bootstrap,2026-05-03,
+"list staff",employee_list,employee_list,call_tool,manual_csv,bootstrap,2026-05-03,
+"show all employees",employee_list,employee_list,call_tool,manual_csv,bootstrap,2026-05-03,
+"who works here",employee_list,employee_list,call_tool,manual_csv,bootstrap,2026-05-03,paraphrase
+"give me a roster",employee_list,employee_list,call_tool,manual_csv,bootstrap,2026-05-03,paraphrase
+"show disabled employees",employee_list,employee_list,call_tool,manual_csv,bootstrap,2026-05-03,with status filter
+"list active staff",employee_list,employee_list,call_tool,manual_csv,bootstrap,2026-05-03,
+"who's been off-boarded",employee_list,employee_list,call_tool,manual_csv,bootstrap,2026-05-03,
+"find jdoe@acme.com",employee_find,employee_find,call_tool,manual_csv,bootstrap,2026-05-03,by email
+"lookup bob@example.com",employee_find,employee_find,call_tool,manual_csv,bootstrap,2026-05-03,
+"search for sarah@acme.com",employee_find,employee_find,call_tool,manual_csv,bootstrap,2026-05-03,
+"who is jane@acme.com",employee_find,employee_find,call_tool,manual_csv,bootstrap,2026-05-03,paraphrase
+"what are my roles",get_employee_permissions,get_employee_permissions,call_tool,manual_csv,bootstrap,2026-05-03,USER REQUESTED EXAMPLE
+"what are my permissions",get_employee_permissions,get_employee_permissions,call_tool,manual_csv,bootstrap,2026-05-03,USER REQUESTED EXAMPLE
+"show my roles",get_employee_permissions,get_employee_permissions,call_tool,manual_csv,bootstrap,2026-05-03,
+"what permissions do I have",get_employee_permissions,get_employee_permissions,call_tool,manual_csv,bootstrap,2026-05-03,
+"what can I do",get_employee_permissions,get_employee_permissions,call_tool,manual_csv,bootstrap,2026-05-03,
+"tell me about my access",get_employee_permissions,get_employee_permissions,call_tool,manual_csv,bootstrap,2026-05-03,paraphrase grammar misses
+"what's my access level",get_employee_permissions,get_employee_permissions,call_tool,manual_csv,bootstrap,2026-05-03,paraphrase grammar misses
+"do I have admin",get_employee_permissions,get_employee_permissions,call_tool,manual_csv,bootstrap,2026-05-03,paraphrase grammar misses
+"am I authorized to do anything",get_employee_permissions,get_employee_permissions,call_tool,manual_csv,bootstrap,2026-05-03,paraphrase grammar misses
+"my privileges",get_employee_permissions,get_employee_permissions,call_tool,manual_csv,bootstrap,2026-05-03,paraphrase
+"who am I in the system",get_employee_permissions,get_employee_permissions,call_tool,manual_csv,bootstrap,2026-05-03,paraphrase
+"hi",small_talk,,answer_directly,manual_csv,bootstrap,2026-05-03,negative class
+"thanks",small_talk,,answer_directly,manual_csv,bootstrap,2026-05-03,
+"hello there",small_talk,,answer_directly,manual_csv,bootstrap,2026-05-03,
+"good morning",small_talk,,answer_directly,manual_csv,bootstrap,2026-05-03,
+"how are you",small_talk,,answer_directly,manual_csv,bootstrap,2026-05-03,
