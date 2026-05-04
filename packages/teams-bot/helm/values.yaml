@@ -34,7 +34,11 @@ env:
   BOT_DOMAIN: bot-cip.idlevice.ca
   LITELLM_BASE_URL: http://litellm.cip-app.svc.cluster.local:4000
   NATS_URL: nats://nats.cip-infra.svc.cluster.local:4222
-  KEYCLOAK_URL: http://keycloak-keycloakx-http.cip-auth.svc.cluster.local
+  # Slice 56D follow-up: append /auth path prefix. Service name was
+  # already correct here, but Keycloak serves all endpoints under
+  # /auth/realms/... — JWT validation has been working via JWK cache;
+  # fresh fetches were silently 404'ing.
+  KEYCLOAK_URL: http://keycloak-keycloakx-http.cip-auth.svc.cluster.local/auth
   # Slice 36: bot is multi-tenant. KEYCLOAK_REALM is no longer read by the
   # bot — the realm is resolved per-request via tenant lookup. Kept here for
   # reference / migration only.

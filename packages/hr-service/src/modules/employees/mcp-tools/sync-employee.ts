@@ -44,11 +44,20 @@ function extractSyncClaims(token: string): {
   }
 }
 
-// Slice 42B: auto-elevate the platform admin email on FIRST sync only.
-// Both halves of defense-in-depth fire here:
-//   1. CIP role → INSERT into employee_role_assignments for hr-service-admin
-//   2. KC realm role → POST /role-mappings/realm with `hr` (idempotent)
-// Failures in step 2 are logged but non-fatal (next turn will retry).
+// Slice 42B → Slice 56D follow-up: auto-elevate the platform admin
+// email on EVERY sync (was: first-sync only). Both halves are
+// idempotent (CIP role assignment ON CONFLICT; KC realm role grant
+// returns 204 if already present), so re-running is cheap.
+//
+// Why dropped the first-sync-only guard: if KC was unreachable on
+// first sync (the slice 56D root cause — KEYCLOAK_URL pointed at a
+// non-existent service), step 2 silently failed and there was no
+// recovery path. The user's role would be permanently missing.
+//
+// Trade-off accepted: a manual revoke of the platform admin's roles
+// will be undone on their next sync. PLATFORM_ADMIN_EMAIL is the
+// single source of truth — to drop someone from admin, remove them
+// from .envrc + re-run create-secrets, not by manual KC revoke.
 async function maybeAutoElevateAdmin(
   tenantId: string,
   employeeId: string,
@@ -178,10 +187,14 @@ export function registerSyncEmployee(server: McpServer): void {
         return { employeeId: id, isNewlyCreated: true }
       })
 
-      // Slice 42B: fire admin auto-elevation on FIRST sync only.
-      if (isNewlyCreated) {
-        await maybeAutoElevateAdmin(tenantId, employeeId, keycloakId, email)
-      }
+      // Slice 56D follow-up: fire admin auto-elevation on EVERY sync.
+      // Both steps inside are idempotent. The prior first-sync-only
+      // guard left users permanently un-elevated when first sync's KC
+      // call failed (root cause: misconfigured KEYCLOAK_URL service
+      // name, fixed in this slice). isNewlyCreated is no longer used
+      // for routing but kept above for future telemetry.
+      void isNewlyCreated;
+      await maybeAutoElevateAdmin(tenantId, employeeId, keycloakId, email)
 
       const response: McpModuleResponse<{ employeeId: string }> = {
         data: { employeeId },

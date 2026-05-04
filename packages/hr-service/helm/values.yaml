@@ -13,7 +13,12 @@ env:
   LITELLM_BASE_URL: http://litellm.cip-app.svc.cluster.local:4000
   NATS_URL: nats://nats.cip-infra.svc.cluster.local:4222
   TEMPORAL_TASK_QUEUE: cip-hr-tasks
-  KEYCLOAK_URL: http://keycloak-keycloakx.cip-auth.svc.cluster.local
+  # Slice 56D follow-up: corrected service name + /auth path prefix.
+  # The chart deploys keycloak-keycloakx-http (port 80), and the
+  # Keycloak distribution serves all endpoints under /auth/. Without
+  # the prefix every admin API call returns 404 — silently breaking
+  # sync_employee's auto-elevation.
+  KEYCLOAK_URL: http://keycloak-keycloakx-http.cip-auth.svc.cluster.local/auth
   # Dev: single shared realm. Prod: realm per tenant = tenantId (set at deploy time).
   KEYCLOAK_REALM: cip-dev
   TEAMS_BOT_URL: http://teams-bot.cip-app.svc.cluster.local:3978
