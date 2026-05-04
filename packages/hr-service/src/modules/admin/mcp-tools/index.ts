@@ -20,6 +20,7 @@ import {
   registerBotIntentModelRunsList,
   registerBotIntentClassifierStatus,
 } from './bot-intent-training-data.tools.js';
+import { registerBotTurnFeedbackRecord } from './bot-turn-feedback.tools.js';
 
 // Slice 42A + 42C + 46e: admin / audit MCP tools — read-only
 // discoverability and compliance surface for HR + operators. 46e adds
@@ -46,4 +47,6 @@ export function registerAdminTools(server: McpServer): void {
   // Slice 56B (new — model lifecycle)
   registerBotIntentModelRunsList(server);
   registerBotIntentClassifierStatus(server);
+  // Slice 56F: explicit user verdict recording
+  registerBotTurnFeedbackRecord(server);
 }

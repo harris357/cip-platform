@@ -245,6 +245,10 @@ export async function runLangGraph(args: {
   }).classifierPrediction ?? null;
   const classifierDecision = ((finalState?.values ?? {}) as { classifierDecision?: string | null }).classifierDecision ?? null;
 
+  // Slice 56F: verdict UI master switch. Default true; per-tenant
+  // override via lg.verdict_ui_enabled.
+  const verdictUiEnabled = getTunable<boolean>(tunables, 'lg.verdict_ui_enabled', true);
+
   await sendResponseTime(context, totalMs, {
     classifierAlias: 'cip-classifier',
     routerAlias:     tools.length > 0 ? 'cip-router-careful' : null,
@@ -258,6 +262,7 @@ export async function runLangGraph(args: {
     classifierIntent:      classifierPrediction?.intent ?? null,
     classifierConfidence:  classifierPrediction?.confidence ?? null,
     classifierVersion:     classifierPrediction?.classifier_version ?? null,
+    verdictUiEnabled,
   });
 
   // Structured turn log — turn= prefix lets a user paste the ID back

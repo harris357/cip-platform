@@ -44,6 +44,10 @@ export interface ResponseTimeDetail {
   classifierIntent?:     string | null;
   classifierConfidence?: number | null;
   classifierVersion?:    string | null;
+  /** Slice 56F: when true (or undefined — default on), the footer card
+   *  includes 👍/👎 verdict buttons. Set false per-tenant via the
+   *  lg.verdict_ui_enabled tunable to suppress the buttons. */
+  verdictUiEnabled?:     boolean;
 }
 
 const fmtSeconds = (ms?: number): string => ms === undefined ? '?' : `${(ms / 1000).toFixed(2)}s`;
@@ -120,8 +124,50 @@ export async function sendResponseTime(
 
   // Slice 46e: when a turnId is present, render as an adaptive card so
   // the inline "🔍 Inspect" action can fire `/turn <id>` via messageBack.
+  // Slice 56F: also append 👍/👎 actions when verdictUiEnabled is true,
+  // so the user can record a verdict on the just-finished turn. Same
+  // messageBack-as-slash-command plumbing as the Inspect button.
   // Otherwise fall back to plain markdown.
   if (detail?.turnId) {
+    const actions: unknown[] = [];
+    if (detail.verdictUiEnabled !== false) {
+      actions.push(
+        {
+          type:  'Action.Submit',
+          title: '👍 Helpful',
+          data: {
+            msteams: {
+              type:        'messageBack',
+              displayText: '👍',
+              text:        `/turn-feedback ${detail.turnId} positive`,
+            },
+          },
+        },
+        {
+          type:  'Action.Submit',
+          title: '👎 Wrong',
+          data: {
+            msteams: {
+              type:        'messageBack',
+              displayText: '👎',
+              text:        `/turn-feedback ${detail.turnId} negative`,
+            },
+          },
+        },
+      );
+    }
+    actions.push({
+      type:  'Action.Submit',
+      title: '🔍 Inspect',
+      data: {
+        msteams: {
+          type:        'messageBack',
+          displayText: `/turn ${detail.turnId}`,
+          text:        `/turn ${detail.turnId}`,
+        },
+      },
+    });
+
     const card = {
       type:    'AdaptiveCard',
       $schema: 'http://adaptivecards.io/schemas/adaptive-card.json',
@@ -135,19 +181,7 @@ export async function sendResponseTime(
           isSubtle:  true,
         },
       ],
-      actions: [
-        {
-          type:  'Action.Submit',
-          title: '🔍 Inspect',
-          data: {
-            msteams: {
-              type:        'messageBack',
-              displayText: `/turn ${detail.turnId}`,
-              text:        `/turn ${detail.turnId}`,
-            },
-          },
-        },
-      ],
+      actions,
     };
     await context.sendActivity(Activity.fromObject({
       type:        'message',

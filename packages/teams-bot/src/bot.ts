@@ -180,7 +180,19 @@ export class CIPTeamsBot extends TeamsActivityHandler {
       text,
     });
     if (slash) {
-      await context.sendActivity(slash.reply);
+      // Slice 56F: when the handler returns a card, send it as an
+      // attachment (text reply becomes the non-card-rendering fallback).
+      if (slash.card) {
+        await context.sendActivity(Activity.fromObject({
+          type:        'message',
+          ...(slash.reply ? { text: slash.reply } : {}),
+          attachments: [
+            { contentType: 'application/vnd.microsoft.card.adaptive', content: slash.card },
+          ],
+        }));
+      } else {
+        await context.sendActivity(slash.reply);
+      }
       return;
     }
 

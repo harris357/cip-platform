@@ -17,9 +17,16 @@ import { helpHandler } from './handlers/help.js';
 import { aboutHandler } from './handlers/about.js';
 import { turnHandler } from './handlers/turn.js';
 import { teachHandler } from './handlers/teach.js';
+import { turnFeedbackHandler } from './handlers/turn-feedback.js';
 
 export interface SlashCommandResult {
+  /** Plain markdown reply. Sent verbatim if `card` is unset. */
   reply: string;
+  /** Slice 56F: optional adaptive card. When set, sent as an attachment;
+   *  `reply` is the text fallback for non-card-rendering channels.
+   *  Handlers that need to send a card (verdict follow-up, /turn buttons)
+   *  use this instead of calling context.sendActivity directly. */
+  card?: unknown;
 }
 
 export interface SlashCommandHandlerArgs {
@@ -71,6 +78,17 @@ export const REGISTRY: SlashCommand[] = [
     description: 'Label a training example — usage: `/teach intent=X next_action=Y text="..."`',
     requires:    'bot.metrics.read',
     handler:     teachHandler,
+  },
+  // Slice 56F: verdict commands fired by the response-footer adaptive card
+  // (👍/👎 buttons + the 👎 follow-up correction card). Not user-typed in
+  // practice but registered for /help discoverability and the dispatch
+  // path. Open to all authenticated users — they can only verdict their
+  // own tenant's turns (tenant-scoped DB UPDATE).
+  {
+    command:     '/turn-feedback',
+    description: 'Record verdict on a bot turn — fired by 👍/👎 buttons. Usage: `/turn-feedback <id> positive|negative [correction]`',
+    requires:    null,
+    handler:     turnFeedbackHandler,
   },
 ];
 
