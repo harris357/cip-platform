@@ -30,7 +30,7 @@ import psycopg
 logger = logging.getLogger("trainer")
 
 
-CSV_HEADER = ["text", "intent", "tool", "next_action", "source", "added_by", "added_at", "notes"]
+CSV_HEADER = ["text", "intent", "tool", "next_action", "source", "added_by", "added_at", "notes", "is_synthetic"]
 
 
 def _pg_url() -> str:
@@ -62,7 +62,8 @@ def export(
         writer = csv.writer(fh_out)
         writer.writerow(CSV_HEADER)
 
-        # 1. manual_examples.csv (skip header).
+        # 1. manual_examples.csv (skip header). manual_csv rows are
+        # NEVER synthetic (operator-curated), so is_synthetic='false'.
         if csv_in.exists():
             with csv_in.open(newline="", encoding="utf-8") as fh_in:
                 reader = csv.reader(fh_in)
@@ -70,14 +71,19 @@ def export(
                 for row in reader:
                     if not row:
                         continue
-                    writer.writerow(row)
+                    # Pad row to header length; append is_synthetic=false.
+                    padded = list(row) + [""] * (len(CSV_HEADER) - 1 - len(row))
+                    padded.append("false")
+                    writer.writerow(padded)
                     manual_count += 1
 
-        # 2. DB rows (reviewed only).
+        # 2. DB rows (reviewed only). is_synthetic comes from the column
+        # added in slice 56M; defaults to 'false' for pre-56M rows.
         sql = """
             SELECT text, intent, COALESCE(tool, '') AS tool, next_action,
                    source, added_by, added_at::date::text AS added_at,
-                   COALESCE(notes, '') AS notes
+                   COALESCE(notes, '') AS notes,
+                   CASE WHEN is_synthetic THEN 'true' ELSE 'false' END AS is_synthetic
               FROM bot_intent_training_data
              WHERE reviewed = true
         """

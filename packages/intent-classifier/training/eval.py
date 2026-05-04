@@ -36,8 +36,11 @@ def load_rows(csv_path: Path) -> list[dict]:
         for row in reader:
             text = (row.get("text") or "").strip()
             intent = (row.get("intent") or "").strip()
+            # Slice 56M: is_synthetic flag distinguishes LLM-augmented rows
+            # from human-curated. Default false for pre-56M rows.
+            is_synth = (row.get("is_synthetic") or "false").strip().lower() == "true"
             if text and intent:
-                rows.append({"text": text, "intent": intent})
+                rows.append({"text": text, "intent": intent, "is_synthetic": is_synth})
     return rows
 
 
@@ -59,23 +62,43 @@ def main() -> int:
         return 1
 
     rows = load_rows(args.csv)
-    texts   = [r["text"]   for r in rows]
-    intents = [r["intent"] for r in rows]
-    if len(set(intents)) < 2:
-        print("ERROR: need ≥2 distinct intents to evaluate.", file=sys.stderr)
+
+    # Slice 56M: split synthetic from real BEFORE the train/test split.
+    # The eval gate measures real-world quality, so the holdout (test
+    # set) must be real-only. Synthetic rows always go to train.
+    real_rows = [r for r in rows if not r["is_synthetic"]]
+    synth_rows = [r for r in rows if r["is_synthetic"]]
+    print(f"Loaded {len(rows)} rows: {len(real_rows)} real + {len(synth_rows)} synthetic")
+    if synth_rows:
+        print(f"  Holdout will be drawn from real rows only; synthetic rows always in train.")
+
+    if len(real_rows) < 2:
+        print("ERROR: need ≥2 real (non-synthetic) rows to evaluate.", file=sys.stderr)
+        return 1
+    real_texts   = [r["text"]   for r in real_rows]
+    real_intents = [r["intent"] for r in real_rows]
+    if len(set(real_intents)) < 2:
+        print("ERROR: need ≥2 distinct intents in real rows to evaluate.", file=sys.stderr)
         return 1
 
-    # Stratified split. Skip if any class has fewer than 2 examples.
+    # Stratified split on REAL rows only. Skip if any class has fewer
+    # than 2 real examples (use random split as fallback).
     from collections import Counter
-    if min(Counter(intents).values()) < 2:
-        print("WARN: some intents have <2 examples — using random split, not stratified.", file=sys.stderr)
+    if min(Counter(real_intents).values()) < 2:
+        print("WARN: some intents have <2 real examples — using random split, not stratified.", file=sys.stderr)
         stratify = None
     else:
-        stratify = intents
+        stratify = real_intents
 
-    X_train, X_test, y_train, y_test = train_test_split(
-        texts, intents, test_size=0.2, random_state=42, stratify=stratify,
+    X_train_real, X_test, y_train_real, y_test = train_test_split(
+        real_texts, real_intents, test_size=0.2, random_state=42, stratify=stratify,
     )
+
+    # Append synthetic rows to the train set (never to test).
+    synth_texts   = [r["text"]   for r in synth_rows]
+    synth_intents = [r["intent"] for r in synth_rows]
+    X_train = list(X_train_real) + synth_texts
+    y_train = list(y_train_real) + synth_intents
 
     candidate = build_pipeline()
     candidate.fit(X_train, y_train)

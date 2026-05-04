@@ -3,7 +3,7 @@
 
 .DEFAULT_GOAL := help
 
-.PHONY: help start stop bootstrap bootstrap-infra create-secrets status forward logs deploy redeploy redeploy-all ship provision-tenant verify typecheck build lint extractor-test extractor-coverage extractor-add training-data-add training-data-stats training-data-review training-data-mark-reviewed training-data-export training-data-seed-tenant classifier-train classifier-eval classifier-deploy classifier-status classifier-retrain-now training-data-import-traces trace-import-now
+.PHONY: help start stop bootstrap bootstrap-infra create-secrets status forward logs deploy redeploy redeploy-all ship provision-tenant verify typecheck build lint extractor-test extractor-coverage extractor-add training-data-add training-data-stats training-data-review training-data-mark-reviewed training-data-export training-data-seed-tenant classifier-train classifier-eval classifier-deploy classifier-status classifier-retrain-now training-data-import-traces training-data-augment-from-docs trace-import-now
 
 # ── Daily cycle ──────────────────────────────────────────────────────────────
 
@@ -233,6 +233,14 @@ training-data-import-traces: ## Slice 56E (workstation): import Langfuse traces.
 	@cd packages/intent-classifier && python -m training.import_traces \
 	  $(if $(days),--days $(days)) \
 	  $(if $(tenant),--tenant-id $(tenant)) \
+	  $(if $(dry),--dry-run)
+
+training-data-augment-from-docs: ## Slice 56M: LLM-augment training data from user docs. Required: docs=path/ tenant=<uuid>. Optional: dry=1 max=N
+	@[ -n "$(docs)" ]   || (echo "Error: docs=path/to/docs/ required"; exit 1)
+	@[ -n "$(tenant)" ] || (echo "Error: tenant=<uuid> required"; exit 1)
+	@cd packages/intent-classifier && python -m training.augment_from_docs \
+	  --docs "$(docs)" --tenant-id "$(tenant)" \
+	  $(if $(max),--max-per-chunk $(max)) \
 	  $(if $(dry),--dry-run)
 
 trace-import-now: ## Slice 56E (in-cluster): trigger an ad-hoc trace-import Job from the CronJob spec. No workstation deps needed.
