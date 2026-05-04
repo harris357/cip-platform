@@ -262,16 +262,17 @@ Each slice is a separate commit. Each one is self-contained and ships an end-to-
 capability. Order matters: 56F first because everything else depends on the schema
 and verdict mechanism.
 
-| # | Title | What ships | Migration? |
-|---|---|---|---|
-| 56F | Verdict UX | bot_turn_metrics columns, footer 👍/👎/Inspect, follow-up card on 👎, slash dispatch, MCP tools, source enum extended | 032 |
-| 56G | OOD class | manual_examples.csv +30 out_of_scope rows + bolster to ≥15/class, threshold restore, retrain | none |
-| 56H | Trust-tier import | import_traces.py reads user_verdict, computes trust tier from source, prefers explicit verdicts | none |
-| 56I | Narrow plan | plan.ts filters discoverTools result by classifierPrediction.tool when classifier_decision='narrow_plan' | none |
-| 56J | Eval gate | cron_entrypoint.sh wraps train with eval --baseline; aborts on regression | none |
-| 56K | /turn add-to-training button | extend /turn card with 📚 button; new slash dispatcher; new MCP tool | none |
+| # | Title | What ships | Migration? | Shipped |
+|---|---|---|---|---|
+| 56F | Verdict UX | bot_turn_metrics columns, footer 👍/👎/Inspect, follow-up card on 👎, slash dispatch, MCP tools, source enum extended | 032 | `0c60a1d` |
+| 56G | OOD class | manual_examples.csv +30 out_of_scope rows + bolster to ≥15/class, threshold restore, retrain | 033 | `3d982be` |
+| 56H | Trust-tier import | import_traces.py reads user_verdict, computes trust tier from source, prefers explicit verdicts | none | `a6c98a8` |
+| 56I | Narrow plan | plan.ts filters discoverTools result by classifierPrediction.tool when classifier_decision='narrow_plan' | none | `2cccc1b` |
+| 56J | Eval gate | cron_entrypoint.sh wraps train with eval --baseline; aborts on regression | none | `d4d4818` |
+| 56K | /turn add-to-training button | extend /turn card with 📚 button; new slash dispatcher; new MCP tool | none | `1efa20b` |
+| 56F+ | Diagnostic + lastToolFacts fallback | runner.ts logs detailed turnMessages summary when outbound is null; shows distilled tool facts as last-resort instead of "(I had nothing to say…)" | none | `9fa52f4` |
 
-Total: ~6 commits, 1 migration, no schema breaks, no breaking API changes.
+Total: 6 slices + 1 follow-up. 2 migrations (032 + 033). All deployed 2026-05-04 — see commits column. No schema breaks, no breaking API changes.
 
 ---
 

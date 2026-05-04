@@ -362,7 +362,19 @@ audit and citations.
 
 ---
 
-## 9. What this isn't (yet)
+## 9. Reliability behaviors worth knowing
+
+**Defense-in-depth for "the bot has nothing to say":** if the planner ran tools but the final reply assembly went sideways (a real bug surfaced during testing), the runner's last-resort fallback now surfaces the distilled tool result (e.g. *"employee_get: Susan Smith (3 role(s))"*) instead of returning *"(I had nothing to say — try rephrasing?)"*. The user gets *something* useful even when the response-rendering path silently fails. A diagnostic log fires in that case so engineers can find the root cause from pod logs.
+
+**Per-tenant kill switches everywhere.** Every layer (grammar router, classifier, per-tenant models, verdict UI) has a tunable in `bot_tunables` that defaults the feature ON or OFF per the slice's risk profile. Operators can turn off any layer for a single tenant without redeploying.
+
+**No turn fails because of routing.** Classifier service down, grammar regex erroring, verdict tool unreachable — every error path falls through to the existing planner (or, in the planner's worst case, to the response-time fallback above). The user always gets *some* reply.
+
+**Eval gate before model promotion.** The trainer cron pulls the current production model from S3 as a baseline, evaluates the candidate against it, and **aborts the training run** if the candidate regresses macro-F1 by even a fraction of a point or drops any individual class by more than 5 percentage points. Bad models never go live; the existing model stays serving.
+
+---
+
+## 10. What this isn't (yet)
 
 For honesty's sake, things this architecture does NOT do today:
 
