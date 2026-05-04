@@ -24,6 +24,7 @@
 import { AIMessage, ToolMessage } from '@langchain/core/messages';
 import { CLARIFICATION_BY_TOOL } from '../../intent/clarification-templates.js';
 import { buildDisambiguationCard } from '../../intent/disambiguation-card.js';
+import { isAIMessage, isToolMessage } from '../util/message-types.js';
 import type { State } from '../state.js';
 
 /**
@@ -101,7 +102,7 @@ export async function respondNode(state: State): Promise<Partial<State>> {
   // ─── Triage clarification path (Slice 45) ─────────────────────────
   if (state.triageSignals?.needsClarification && state.triageSignals.clarificationQuestion) {
     const last = state.messages[state.messages.length - 1];
-    if (!(last instanceof AIMessage) || last.content !== state.triageSignals.clarificationQuestion) {
+    if (!isAIMessage(last) || last.content !== state.triageSignals.clarificationQuestion) {
       return {
         messages: [new AIMessage(state.triageSignals.clarificationQuestion)],
       };
@@ -116,7 +117,7 @@ export async function respondNode(state: State): Promise<Partial<State>> {
   if (state.extractionResult?.kind === 'complete') {
     for (let i = state.messages.length - 1; i >= 0; i--) {
       const m = state.messages[i];
-      if (m instanceof ToolMessage && typeof m.content === 'string') {
+      if (isToolMessage(m) && typeof m.content === 'string') {
         const userMessage = extractToolUserMessage(m.content);
         if (userMessage) {
           return { messages: [new AIMessage(userMessage)] };

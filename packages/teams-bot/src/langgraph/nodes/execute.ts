@@ -18,13 +18,16 @@ import { AIMessage, ToolMessage } from '@langchain/core/messages';
 import { executeTool } from '../../mcp/tool-executor.js';
 import { discoverTools } from '../../mcp/tool-discovery.js';
 import { distillFact } from '../util/distill.js';
+import { isAIMessage } from '../util/message-types.js';
 import type { State } from '../state.js';
 import type { BotAuthContext } from '../../auth/resolve-context.js';
 
 export function makeExecuteToolNode(ctx: BotAuthContext) {
   return async function executeToolNode(state: State): Promise<Partial<State>> {
     const last = state.messages[state.messages.length - 1];
-    if (!(last instanceof AIMessage) || !last.tool_calls?.length) {
+    // Slice 56D follow-up: defensive type-check (works on deserialized
+    // messages from checkpoint, where instanceof can fail).
+    if (!isAIMessage(last) || !last.tool_calls?.length) {
       return {};
     }
 

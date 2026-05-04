@@ -17,6 +17,7 @@ import type { Tool as McpTool } from '@modelcontextprotocol/sdk/types.js';
 import { isExplicitlyAuthorized } from '../util/authorize-write.js';
 import { discoverTools } from '../../mcp/tool-discovery.js';
 import { getTunables, getTunable } from '../tunables.js';
+import { isAIMessage } from '../util/message-types.js';
 import type { State, PendingWriteCall } from '../state.js';
 import type { BotAuthContext } from '../../auth/resolve-context.js';
 
@@ -48,7 +49,7 @@ function summarize(toolName: string, args: Record<string, unknown>): string {
 export function makeGateWriteActionNode(ctx: BotAuthContext) {
   return async function gateWriteActionNode(state: State): Promise<Partial<State>> {
   const last = state.messages[state.messages.length - 1];
-  if (!(last instanceof AIMessage) || !last.tool_calls?.length) {
+  if (!isAIMessage(last) || !last.tool_calls?.length) {
     return {};   // No tool calls — nothing to gate.
   }
 
@@ -94,7 +95,7 @@ export function makeGateWriteActionNode(ctx: BotAuthContext) {
 export function routeAfterGate(state: State): 'confirm' | 'execute' | 'respond' {
   if (state.pendingWriteCall) return 'confirm';
   const last = state.messages[state.messages.length - 1];
-  if (last instanceof AIMessage && last.tool_calls && last.tool_calls.length > 0) {
+  if (isAIMessage(last) && last.tool_calls && last.tool_calls.length > 0) {
     return 'execute';
   }
   return 'respond';

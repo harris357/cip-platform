@@ -19,6 +19,7 @@ import { TurnContext } from '@microsoft/agents-hosting';
 import { Activity } from '@microsoft/agents-activity';
 import { AIMessage } from '@langchain/core/messages';
 import { Command } from '@langchain/langgraph';
+import { isAIMessage, isToolMessage } from './util/message-types.js';
 import { CallbackHandler } from '@langfuse/langchain';
 import { buildGraph } from './graph.js';
 import { sendResponseTime } from '../intent/debug-banner.js';
@@ -174,9 +175,11 @@ export async function runLangGraph(args: {
     outbound = `About to: \`${newInterrupt.payload.summary}\`\n\nReply **yes** to confirm or **no** to cancel.`;
   } else {
     // Search ONLY this turn's messages — never echo a prior turn's reply.
+    // Slice 56D follow-up: use isAIMessage helper instead of instanceof
+    // so deserialized messages from the checkpoint are recognized too.
     for (let i = turnMessages.length - 1; i >= 0; i--) {
       const m = turnMessages[i];
-      if (m instanceof AIMessage && typeof m.content === 'string' && m.content.trim().length > 0) {
+      if (isAIMessage(m) && typeof m.content === 'string' && m.content.trim().length > 0) {
         outbound = m.content;
         break;
       }
@@ -205,15 +208,15 @@ export async function runLangGraph(args: {
   // would show "tool_a → tool_b → tool_c" for an N-turn session even on
   // a single-tool turn.
   const tools  = (turnMessages
-    .filter(m => m instanceof AIMessage && m.tool_calls?.length)
+    .filter(m => isAIMessage(m) && (m as AIMessage).tool_calls?.length)
     .flatMap(m => (m as AIMessage).tool_calls?.map(tc => tc.name) ?? []));
 
   // Slice 48: tools_refused — extracted from ToolMessage payloads where
   // the bot's hallucination guard or the tool itself returned a refusal.
-  const ToolMessageCtor = (await import('@langchain/core/messages')).ToolMessage;
+  // Slice 56D follow-up: isToolMessage helper instead of instanceof.
   const refusedTools: string[] = [];
   for (const m of turnMessages) {
-    if (m instanceof ToolMessageCtor && typeof m.content === 'string') {
+    if (isToolMessage(m) && typeof m.content === 'string') {
       try {
         const parsed = JSON.parse(m.content) as { refused?: string; name?: string };
         if (parsed.refused && parsed.name) refusedTools.push(parsed.name);

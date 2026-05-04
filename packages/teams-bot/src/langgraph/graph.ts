@@ -24,6 +24,7 @@ import { respondNode } from './nodes/respond.js';
 import { makeSummarizeNode, shouldSummarize } from './nodes/summarize.js';
 import { getTunables, getTunable } from './tunables.js';
 import { AIMessage } from '@langchain/core/messages';
+import { isAIMessage } from './util/message-types.js';
 import type { BotAuthContext } from '../auth/resolve-context.js';
 
 /**
@@ -36,7 +37,7 @@ import type { BotAuthContext } from '../auth/resolve-context.js';
  */
 function routeAfterConfirm(state: State): 'execute' | 'end' {
   const last = state.messages[state.messages.length - 1];
-  if (last instanceof AIMessage && last.tool_calls && last.tool_calls.length > 0) {
+  if (isAIMessage(last) && last.tool_calls && last.tool_calls.length > 0) {
     return 'execute';
   }
   return 'end';
