@@ -20,16 +20,19 @@ USER classifier
 ENV PATH=/home/classifier/.local/bin:$PATH
 RUN pip install --no-cache-dir --user -r requirements.txt
 
-# Source + model artifact (artifact baked in — model rev = image tag).
+# Source + model artifact + trainer (training/ used by Slice 56C CronJob).
 # COPY paths are root-relative because CI uses `context: .` (repo root).
 USER root
-COPY packages/intent-classifier/src/    ./src/
-COPY packages/intent-classifier/models/ ./models/
-RUN chown -R classifier:classifier /app
+COPY packages/intent-classifier/src/      ./src/
+COPY packages/intent-classifier/models/   ./models/
+COPY packages/intent-classifier/training/ ./training/
+RUN chmod +x /app/training/cron_entrypoint.sh && \
+    chown -R classifier:classifier /app
 USER classifier
 
 EXPOSE 8000
 
-# uvicorn with a single worker — the model is in-memory and stateless,
-# replicas come from k8s, not from worker processes.
+# Default CMD: uvicorn (the service). The Slice 56C CronJob overrides
+# this with `command: ["/app/training/cron_entrypoint.sh"]` to run the
+# trainer instead. One image, two roles.
 CMD ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000", "--log-level", "info"]

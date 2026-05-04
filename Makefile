@@ -3,7 +3,7 @@
 
 .DEFAULT_GOAL := help
 
-.PHONY: help start stop bootstrap bootstrap-infra create-secrets status forward logs deploy redeploy redeploy-all ship provision-tenant verify typecheck build lint extractor-test extractor-coverage extractor-add training-data-add training-data-stats training-data-review training-data-mark-reviewed training-data-export classifier-train classifier-eval classifier-deploy classifier-status
+.PHONY: help start stop bootstrap bootstrap-infra create-secrets status forward logs deploy redeploy redeploy-all ship provision-tenant verify typecheck build lint extractor-test extractor-coverage extractor-add training-data-add training-data-stats training-data-review training-data-mark-reviewed training-data-export classifier-train classifier-eval classifier-deploy classifier-status classifier-retrain-now
 
 # ── Daily cycle ──────────────────────────────────────────────────────────────
 
@@ -228,3 +228,8 @@ classifier-deploy: ## Build + push intent-classifier image (code changes only �
 
 classifier-status: ## Slice 56B: latest model run, untrained-row count, live /healthz per pod
 	@bash scripts/classifier-status.sh
+
+classifier-retrain-now: ## Slice 56C: trigger an ad-hoc trainer Job from the CronJob spec (in-cluster)
+	@kubectl create job --from=cronjob/intent-classifier-trainer \
+	  -n cip-app "trainer-manual-$$(date +%s)"
+	@echo "Tail logs with: kubectl logs -n cip-app -f -l job-name=trainer-manual-..."

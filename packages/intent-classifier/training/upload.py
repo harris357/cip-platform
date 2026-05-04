@@ -66,7 +66,16 @@ def _s3():
 
 
 def _pg_url() -> str:
-    return os.environ.get("DATABASE_URL_HR_LOCAL") or DEFAULT_PG_LOCAL
+    # Slice 56C: in-cluster trainer mounts hr-service-credentials which
+    # provides DATABASE_URL_HR (cluster DNS). Workstation runs override
+    # via DATABASE_URL_HR_LOCAL (typically a port-forward). The default
+    # is the workstation port-forward shape so `make classifier-train`
+    # works after `make forward`.
+    return (
+        os.environ.get("DATABASE_URL_HR")
+        or os.environ.get("DATABASE_URL_HR_LOCAL")
+        or DEFAULT_PG_LOCAL
+    )
 
 
 # ── S3 helpers ────────────────────────────────────────────────────────

@@ -1,0 +1,59 @@
+{{- if .Values.trainer.enabled }}
+# Slice 56C: in-cluster classifier trainer.
+#
+# Schedule + threshold come from values.yaml. The job runs the same
+# image as the service but with a different command — cron_entrypoint.sh
+# checks for new training rows, exits 0 if there are none, otherwise
+# exports the corpus, trains, uploads to S3, and writes the lineage row.
+#
+# Service pods hot-load the new artifact within MODEL_POLL_INTERVAL_SEC
+# (default 60s) — no rollout needed.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: intent-classifier-trainer
+  namespace: cip-app
+  labels:
+    app: intent-classifier
+    component: trainer
+spec:
+  schedule: {{ .Values.trainer.schedule | quote }}
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 5
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      activeDeadlineSeconds: {{ .Values.trainer.timeoutSeconds }}
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: trainer
+              image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+              imagePullPolicy: {{ .Values.image.pullPolicy }}
+              command: ["/app/training/cron_entrypoint.sh"]
+              env:
+                - name: MIN_UNTRAINED
+                  value: {{ .Values.trainer.minUntrained | quote }}
+                # Pull the same S3 + bucket env the service uses so the
+                # trainer writes to the location the service polls.
+                {{- range $k, $v := .Values.env }}
+                - name: {{ $k }}
+                  value: {{ $v | quote }}
+                {{- end }}
+              envFrom:
+                # AWS_* keys for S3 upload.
+                - secretRef:
+                    name: intent-classifier-credentials
+                # DATABASE_URL_HR for psycopg connect.
+                - secretRef:
+                    name: hr-service-credentials
+              resources:
+                requests:
+                  cpu:    200m
+                  memory: 256Mi
+                limits:
+                  cpu:    500m
+                  memory: 512Mi
+{{- end }}
