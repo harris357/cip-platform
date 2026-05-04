@@ -1,5 +1,16 @@
 {{- if .Values.trainer.enabled }}
-# Slice 56C: in-cluster classifier trainer.
+# Slice 56C: in-cluster classifier trainer (cron-bash chain).
+#
+# Slice 56N supersedes this with a Temporal RetrainModelWorkflow. New
+# deployments should set trainer.enabled=false in values.yaml and use
+# the bot_classifier_retrain MCP tool (or temporal-cli) to trigger
+# retrains. The workflow gives durable execution + admin-review signal
+# pause + compensating actions on partial failure.
+#
+# This CronJob remains enabled-by-default for back-compat: existing
+# clusters keep their automated weekly retrain working. Once the
+# workflow path is verified in production, flip trainer.enabled=false
+# and rely on the workflow.
 #
 # Schedule + threshold come from values.yaml. The job runs the same
 # image as the service but with a different command — cron_entrypoint.sh

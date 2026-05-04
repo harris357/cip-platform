@@ -8,3 +8,17 @@ export type { EmployeeIdentityMigrationInput } from '../modules/employees/workfl
 
 export { EmployeeDisableWorkflow } from '../modules/employees/workflows/employee-disable.workflow.js';
 export type { EmployeeDisableInput } from '../modules/employees/workflows/employee-disable.workflow.js';
+
+// Slice 56N: classifier model lifecycle. Replaces the slice-56C cron
+// bash chain with a durable workflow that supports admin-review signal
+// pause and compensating actions on partial failure.
+export {
+  RetrainModelWorkflow,
+  adminApprovalSignal,
+  stepQuery,
+} from '../modules/classifier-lifecycle/workflows/retrain-model.workflow.js';
+export type {
+  RetrainModelWorkflowInput,
+  RetrainModelWorkflowOutput,
+  AdminApprovalSignalPayload,
+} from '../modules/classifier-lifecycle/workflows/retrain-model.workflow.js';

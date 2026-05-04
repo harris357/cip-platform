@@ -264,6 +264,11 @@ export interface AddModelRunInput {
   artifactUri:     string;
   artifactSha256:  string;
   trainerGitSha?:  string | null;
+  /** Slice 56N: Temporal workflow id that produced this model run.
+   *  Lets ops correlate "DB-recorded model" with "Temporal workflow that
+   *  produced it". NULL for cron-script-driven runs (slice 56C-style)
+   *  to maintain back-compat. */
+  workflowId?:     string | null;
   notes?:          string | null;
 }
 
@@ -279,14 +284,16 @@ export async function addModelRun(
     `INSERT INTO bot_intent_model_runs
        (tenant_id, model_version, corpus_cutoff_at, train_count, intents_count,
         cv_macro_f1, holdout_macro_f1, artifact_uri, artifact_sha256,
-        trainer_git_sha, notes)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+        trainer_git_sha, workflow_id, notes)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
      RETURNING *`,
     [
       input.tenantId ?? null, input.modelVersion, input.corpusCutoffAt,
       input.trainCount, input.intentsCount, input.cvMacroF1, input.holdoutMacroF1,
       input.artifactUri, input.artifactSha256,
-      input.trainerGitSha ?? null, input.notes ?? null,
+      input.trainerGitSha ?? null,
+      input.workflowId ?? null,
+      input.notes ?? null,
     ],
   );
   return r.rows[0]!;

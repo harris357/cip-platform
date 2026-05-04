@@ -21,6 +21,10 @@ import {
   registerBotIntentClassifierStatus,
 } from './bot-intent-training-data.tools.js';
 import { registerBotTurnFeedbackRecord } from './bot-turn-feedback.tools.js';
+import {
+  registerBotClassifierRetrain,
+  registerBotClassifierApprove,
+} from '../../classifier-lifecycle/mcp-tools/classifier-retrain.tool.js';
 
 // Slice 42A + 42C + 46e: admin / audit MCP tools — read-only
 // discoverability and compliance surface for HR + operators. 46e adds
@@ -49,4 +53,7 @@ export function registerAdminTools(server: McpServer): void {
   registerBotIntentClassifierStatus(server);
   // Slice 56F: explicit user verdict recording
   registerBotTurnFeedbackRecord(server);
+  // Slice 56N: classifier retrain workflow trigger + admin-approval signal
+  registerBotClassifierRetrain(server);
+  registerBotClassifierApprove(server);
 }

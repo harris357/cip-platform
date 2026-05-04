@@ -28,6 +28,7 @@ from .classifier import (
 )
 from .schema import ClassifyRequest, ClassifyResponse, HealthResponse
 from .s3_loader import S3ModelLoader
+from .admin_api import router as admin_router  # Slice 56N
 
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -66,6 +67,10 @@ app = FastAPI(
     description="Slice 56: TF-IDF + LogReg intent classifier for the CIP teams-bot.",
     lifespan=lifespan,
 )
+
+# Slice 56N: /admin/run-* endpoints invoked by the RetrainModelWorkflow
+# in hr-service (cluster-internal only — no ingress route).
+app.include_router(admin_router)
 
 
 @app.post("/classify", response_model=ClassifyResponse)
