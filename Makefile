@@ -3,7 +3,7 @@
 
 .DEFAULT_GOAL := help
 
-.PHONY: help start stop bootstrap bootstrap-infra create-secrets status forward logs deploy redeploy redeploy-all ship provision-tenant verify typecheck build lint extractor-test extractor-coverage extractor-add training-data-add training-data-stats training-data-review training-data-mark-reviewed training-data-export training-data-seed-tenant classifier-train classifier-eval classifier-deploy classifier-status classifier-retrain-now training-data-import-traces
+.PHONY: help start stop bootstrap bootstrap-infra create-secrets status forward logs deploy redeploy redeploy-all ship provision-tenant verify typecheck build lint extractor-test extractor-coverage extractor-add training-data-add training-data-stats training-data-review training-data-mark-reviewed training-data-export training-data-seed-tenant classifier-train classifier-eval classifier-deploy classifier-status classifier-retrain-now training-data-import-traces trace-import-now
 
 # ── Daily cycle ──────────────────────────────────────────────────────────────
 
@@ -229,11 +229,16 @@ training-data-seed-tenant: ## Slice 56D: import manual_examples.csv into bot_int
 	@[ -n "$(tenant)" ] || (echo "Error: tenant=<uuid> required (e.g. make training-data-seed-tenant tenant=00000000-0000-0000-0000-000000000001)"; exit 1)
 	@bash scripts/training-data-seed-tenant.sh "$(tenant)"
 
-training-data-import-traces: ## Slice 56E: import labelled rows from Langfuse traces. Optional: days=N (default 7), tenant=<uuid>
+training-data-import-traces: ## Slice 56E (workstation): import Langfuse traces. Needs local Python deps + `make forward`. Optional: days=N tenant=<uuid> dry=1
 	@cd packages/intent-classifier && python -m training.import_traces \
 	  $(if $(days),--days $(days)) \
 	  $(if $(tenant),--tenant-id $(tenant)) \
 	  $(if $(dry),--dry-run)
+
+trace-import-now: ## Slice 56E (in-cluster): trigger an ad-hoc trace-import Job from the CronJob spec. No workstation deps needed.
+	@JOB="trace-import-manual-$$(date +%s)"; \
+	kubectl create job --from=cronjob/intent-classifier-trace-import -n cip-app "$$JOB"; \
+	echo "Tail logs with: kubectl logs -n cip-app -f job/$$JOB"
 
 # ── Classifier (Slice 56) ───────────────────────────────────────────────────
 

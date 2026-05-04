@@ -60,6 +60,20 @@ trainer:
   minUntrained:   "1"
   timeoutSeconds: 600
 
+# Slice 56E: in-cluster Langfuse trace-export import CronJob.
+#   Imports clean-success turns from Langfuse → bot_intent_training_data
+#   (reviewed=false). Operator approves via `make training-data-review`.
+#   Schedule LEADS the trainer by ~24h so reviewed rows are ready in time.
+#   schedule: cron expression (default = weekly Saturday 02:00 UTC)
+#   days:     trace lookback window
+#   limit:    cap on rows imported per run
+traceImport:
+  enabled:        true
+  schedule:       "0 2 * * 6"
+  days:           "7"
+  limit:          "500"
+  timeoutSeconds: 600
+
 livenessProbe:
   httpGet:
     path: /healthz

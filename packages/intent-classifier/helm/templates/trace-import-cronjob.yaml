@@ -1,0 +1,72 @@
+{{- if .Values.traceImport.enabled }}
+# Slice 56E: in-cluster Langfuse trace-export import.
+#
+# Mines clean-success turns from bot_turn_metrics, fetches user text
+# from Langfuse, lands them as reviewed=false rows in
+# bot_intent_training_data with source='trace_export'. Operator
+# approves via `make training-data-review` → `mark-reviewed`.
+#
+# Reuses the intent-classifier image (has python + psycopg + langfuse
+# deps + the import_traces.py script). Mounts hr-service-credentials
+# for both DATABASE_URL_HR and LANGFUSE_* env (those secrets already
+# exist for the hr-service deploy).
+#
+# Schedule chosen to LEAD the trainer CronJob (Sunday 02:30 UTC) by
+# 24 hours, so a typical weekly cadence is:
+#   Saturday 02:00 — import → reviewed=false rows accumulate
+#   ~Saturday-Sunday — operator reviews + marks-reviewed
+#   Sunday 02:30 — trainer picks up newly-approved rows
+#
+# Schedule + lookback window are tunable via values.yaml.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: intent-classifier-trace-import
+  namespace: cip-app
+  labels:
+    app: intent-classifier
+    component: trace-import
+spec:
+  schedule: {{ .Values.traceImport.schedule | quote }}
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 5
+  jobTemplate:
+    spec:
+      backoffLimit: 1
+      activeDeadlineSeconds: {{ .Values.traceImport.timeoutSeconds }}
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: trace-import
+              image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+              imagePullPolicy: {{ .Values.image.pullPolicy }}
+              # sh -c so we can interpolate env into the CLI args
+              # without baking them into a wrapper script. Keeps the
+              # Dockerfile unchanged.
+              command:
+                - sh
+                - -c
+                - >-
+                  python -m training.import_traces
+                  --days  ${TRACE_IMPORT_DAYS}
+                  --limit ${TRACE_IMPORT_LIMIT}
+              env:
+                - name: TRACE_IMPORT_DAYS
+                  value: {{ .Values.traceImport.days  | quote }}
+                - name: TRACE_IMPORT_LIMIT
+                  value: {{ .Values.traceImport.limit | quote }}
+              envFrom:
+                # DATABASE_URL_HR + LANGFUSE_* (already populated by
+                # scripts/create-secrets.sh for hr-service).
+                - secretRef:
+                    name: hr-service-credentials
+              resources:
+                requests:
+                  cpu:    100m
+                  memory: 128Mi
+                limits:
+                  cpu:    250m
+                  memory: 256Mi
+{{- end }}
