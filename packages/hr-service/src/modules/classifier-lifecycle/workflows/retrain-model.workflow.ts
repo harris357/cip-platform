@@ -94,14 +94,21 @@ export interface RetrainModelWorkflowInput {
   /** Hard deadline for admin review. Workflow fails closed after this.
    *  Default: 30 days. */
   adminReviewTimeoutHours?: number;
+  /** Slice 57C: when 'import-only', do steps 1-2 (import traces,
+   *  count rows) only and return — no admin review, no train, no
+   *  promotion. Replaces the standalone intent-classifier-trace-import
+   *  CronJob with one workflow class fronting two schedules. */
+  mode?:           'full' | 'import-only';
 }
 
 export interface RetrainModelWorkflowOutput {
-  outcome:        'shipped' | 'skipped_no_data' | 'eval_gate_failed' | 'admin_review_timeout' | 'error';
+  outcome:        'shipped' | 'skipped_no_data' | 'eval_gate_failed' | 'admin_review_timeout' | 'error' | 'import_complete';
   modelVersion?:  string;
   artifactUri?:   string;
   cvMacroF1?:     number | null;
   rowsTrained?:   number;
+  /** Slice 57C: count of rows imported on the import-only path. */
+  imported?:      number;
 }
 
 // ── Workflow body ──────────────────────────────────────────────────────
@@ -122,14 +129,16 @@ export async function RetrainModelWorkflow(
   setHandler(adminApprovalSignal, (sig) => { approval = sig; });
 
   // ── 1. Import traces (skip on cron-only retrain mode) ────────────────
+  let importedThisRun = 0;
   if (!input.skipImportAndReview) {
     currentStep = 'importing-traces';
     log.info('importing traces from langfuse');
-    await importTracesActivity({
+    const importResult = await importTracesActivity({
       tenantId: input.tenantId,
       days:     7,
       limit:    500,
     });
+    importedThisRun = importResult.inserted;
   }
 
   // ── 2. Skip-if-empty check ──────────────────────────────────────────
@@ -138,6 +147,19 @@ export async function RetrainModelWorkflow(
     tenantId: input.tenantId,
   });
   log.info('row counts', { unreviewed, totalReviewed });
+
+  // Slice 57C: import-only mode bails out here. The trace-import schedule
+  // wants to ingest new candidate rows for admin review WITHOUT kicking
+  // off a retrain. A separate (full) schedule does the train cycle on
+  // its own cadence.
+  if (input.mode === 'import-only') {
+    log.info('import-only mode — skipping admin review, train, promotion');
+    return {
+      outcome:  'import_complete',
+      imported: importedThisRun,
+    };
+  }
+
   if (totalReviewed === 0 && unreviewed === 0) {
     log.info('no training data at all — aborting');
     return { outcome: 'skipped_no_data' };
