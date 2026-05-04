@@ -83,7 +83,58 @@ if [[ -n "$TENANT_ID" ]]; then
 fi
 python -m training.export_training_data "${EXPORT_ARGS[@]}"
 
-# 3. Train + upload + record lineage.
+# 3. Slice 56J: eval gate. Pull the current baseline from S3 (CURRENT.json
+# pointer + the joblib it references), then run eval.py to check that the
+# CSV-trained candidate beats the baseline by ≥ MIN_IMPROVEMENT macro-F1
+# AND no class regresses by > MAX_REGRESSION pp. eval.py exits 2 on
+# regression failure → set -e propagates → cron job fails → no upload.
+#
+# First-time train: no baseline in S3 → eval.py skips the regression gate
+# (its own --baseline missing handling). The cron job proceeds normally.
+echo "[trainer] eval gate — checking candidate against baseline…"
+BASELINE_PATH=""
+python -c "
+import os, sys, boto3, json
+from botocore.exceptions import ClientError
+bucket = os.environ.get('MODEL_S3_BUCKET', 'cip-platform-models')
+prefix = os.environ.get('MODEL_S3_PREFIX', 'intent-classifier')
+endpoint = os.environ.get('AWS_ENDPOINT_URL')
+scope = os.environ.get('TENANT_ID')
+key_prefix = f'{prefix}/by-tenant/{scope}' if scope else prefix
+s3 = boto3.client('s3', endpoint_url=endpoint, region_name=os.environ.get('AWS_REGION', 'BHS'))
+try:
+    obj = s3.get_object(Bucket=bucket, Key=f'{key_prefix}/CURRENT.json')
+    pointer = json.loads(obj['Body'].read())
+    s3.download_file(Bucket=bucket, Key=pointer['key'], Filename='/tmp/baseline.joblib')
+    print('downloaded')
+except ClientError as e:
+    code = e.response.get('Error', {}).get('Code', '')
+    if code in ('NoSuchKey', '404'):
+        print('no_baseline')
+    else:
+        print(f'fetch_error: {e}', file=sys.stderr)
+        # Don't fail the cron just because we couldn't fetch the baseline
+        # — fall through to the no-baseline path so the train still happens.
+        print('no_baseline')
+" > /tmp/baseline_status
+
+if grep -q "downloaded" /tmp/baseline_status; then
+  BASELINE_PATH="/tmp/baseline.joblib"
+  echo "[trainer] baseline downloaded; running regression check"
+  python -m training.eval --csv "$CSV_OUT" --baseline "$BASELINE_PATH" \
+    --min-improvement "${MIN_IMPROVEMENT:-0.01}" \
+    --max-regression  "${MAX_REGRESSION:-0.05}"
+  EVAL_RC=$?
+  if [[ "$EVAL_RC" -ne 0 ]]; then
+    echo "[trainer] EVAL GATE FAILED (rc=$EVAL_RC) — aborting train, baseline stays live"
+    exit 1
+  fi
+  echo "[trainer] eval gate passed"
+else
+  echo "[trainer] no baseline available (first train or S3 unreachable) — skipping regression gate"
+fi
+
+# 4. Train + upload + record lineage.
 echo "[trainer] training version=$VERSION scope=$SCOPE_DESC…"
 TRAIN_ARGS=(--csv "$CSV_OUT" --out-dir /tmp/models --version "$VERSION")
 if [[ -n "$TENANT_ID" ]]; then
