@@ -16,5 +16,9 @@ COPY --from=builder /app/packages/hr-service/dist ./dist
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/packages/shared/package.json ./node_modules/@cip/shared/package.json
 COPY --from=builder /app/packages/shared/dist ./node_modules/@cip/shared/dist
+# Slice 56B+ migration auto-run: ship the .sql files alongside the
+# compiled migrate.js so the Helm initContainer can apply them on
+# every rollout. tsc doesn't bundle non-TS assets — copy explicitly.
+COPY --from=builder /app/packages/hr-service/src/db/migrations ./dist/db/migrations
 EXPOSE 3000
 CMD ["node", "dist/index.js"]

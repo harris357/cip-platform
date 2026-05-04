@@ -73,7 +73,15 @@ logs:         ## Tail logs from a service. Usage: make logs svc=hr-service
 
 TAG ?= $(shell git rev-parse --short HEAD)
 IMAGE_REPO ?= ghcr.io/harris357
-deploy:       ## Deploy a service via helm upgrade (chart + values change). Usage: make deploy svc=hr-service [TAG=<sha>]
+
+# Slice 56D follow-up: bridge selected workstation env vars into Helm
+# `--set` flags so operators can flip deploy-time switches in .envrc
+# without also editing values.yaml. Allowlist is intentional — anything
+# secret stays in K8s secrets, never crosses this boundary.
+HELM_ENV_BRIDGE := CLASSIFIER_PER_TENANT_ENABLED
+HELM_SET_FROM_ENV = $(foreach v,$(HELM_ENV_BRIDGE),$(if $($(v)),--set env.$(v)=$($(v))))
+
+deploy:       ## Deploy a service via helm upgrade. Bridges $HELM_ENV_BRIDGE vars from your shell. Usage: make deploy svc=hr-service [TAG=<sha>]
 	@[ -n "$(svc)" ] || (echo "Error: svc= is required"; exit 1)
 	@if [ -d "./packages/$(svc)/helm" ]; then \
 		if [ "$(TAG)" != "latest" ] && command -v gh >/dev/null 2>&1; then \
@@ -100,9 +108,11 @@ deploy:       ## Deploy a service via helm upgrade (chart + values change). Usag
 			fi; \
 		fi; \
 		echo "→ Deploying app chart packages/$(svc)/helm with image tag $(TAG)"; \
+		[ -n "$(strip $(HELM_SET_FROM_ENV))" ] && echo "→ Bridging env: $(HELM_SET_FROM_ENV)" || true; \
 		helm upgrade --install $(svc) ./packages/$(svc)/helm \
 			--namespace cip-app --create-namespace \
 			--set image.tag=$(TAG) \
+			$(HELM_SET_FROM_ENV) \
 			--atomic --timeout 5m; \
 	elif [ -d "./infra/helm/$(svc)" ]; then \
 		echo "→ Deploying infra chart infra/helm/$(svc) (image tag ignored)"; \
