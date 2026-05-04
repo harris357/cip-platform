@@ -3,7 +3,7 @@
 
 .DEFAULT_GOAL := help
 
-.PHONY: help start stop bootstrap bootstrap-infra create-secrets status forward logs deploy redeploy redeploy-all ship provision-tenant verify typecheck build lint extractor-test extractor-coverage extractor-add training-data-add training-data-stats training-data-review training-data-mark-reviewed training-data-export classifier-train classifier-eval classifier-deploy
+.PHONY: help start stop bootstrap bootstrap-infra create-secrets status forward logs deploy redeploy redeploy-all ship provision-tenant verify typecheck build lint extractor-test extractor-coverage extractor-add training-data-add training-data-stats training-data-review training-data-mark-reviewed training-data-export classifier-train classifier-eval classifier-deploy classifier-status
 
 # ── Daily cycle ──────────────────────────────────────────────────────────────
 
@@ -223,5 +223,8 @@ classifier-train: ## Train sklearn pipeline on training_data.csv → joblib arti
 classifier-eval: ## Held-out eval. Optional: baseline=path/to/old.joblib for regression gate
 	@cd packages/intent-classifier && python -m training.eval $(if $(baseline),--baseline $(baseline))
 
-classifier-deploy: ## Build + push intent-classifier image with current model baked in
+classifier-deploy: ## Build + push intent-classifier image (code changes only — models hot-reload from S3 since 56B)
 	@$(MAKE) ship svc=intent-classifier
+
+classifier-status: ## Slice 56B: latest model run, untrained-row count, live /healthz per pod
+	@bash scripts/classifier-status.sh

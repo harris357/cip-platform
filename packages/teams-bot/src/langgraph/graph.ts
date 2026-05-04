@@ -67,12 +67,17 @@ async function routeOnSignals(state: State): Promise<'respond' | 'plan'> {
 /**
  * Conditional edge after executeTool:
  *   - stepCount ≥ MAX_STEPS → respond
- *   - otherwise            → plan (loop)
+ *   - grammar/classifier already produced the tool call → respond
+ *     (Slice 55/56: the whole point of those layers is to skip the planner
+ *      LLM. Without this branch the loop falls back to plan and we pay for
+ *      a second LLM call to compose a response, defeating the fast-path.)
+ *   - otherwise → plan (loop, true multi-step planning)
  */
 async function shouldContinue(state: State): Promise<'plan' | 'respond'> {
   const tunables = await getTunables(state.tenantId);
   const maxSteps = getTunable<number>(tunables, 'lg.max_steps', 5);
   if (state.stepCount >= maxSteps) return 'respond';
+  if (state.extractionResult?.kind === 'complete') return 'respond';
   return 'plan';
 }
 

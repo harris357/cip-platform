@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Slice 55: merge all training-data sources into one canonical CSV
+# Slice 55 → 56B: merge all training-data sources into one canonical CSV
 # that Slice 56's sklearn pipeline consumes.
 #
 # Sources (in order — later sources override earlier on the same text):
 #   1. packages/intent-classifier/training/manual_examples.csv (committed)
-#   2. bot_intent_examples WHERE reviewed=true (DB)
-#   3. (Future) Langfuse traces — auto-labelled high-confidence successful turns
+#   2. bot_intent_training_data WHERE reviewed=true (DB)
+#   3. (Slice 56e) Langfuse traces — auto-labelled high-confidence successful turns
 #
 # Output: packages/intent-classifier/training/training_data.csv
 
@@ -36,14 +36,14 @@ fi
 # 2. DB rows (reviewed only). Use COPY TO STDOUT for clean CSV escaping.
 COUNT_DB=$(kubectl exec -i -n cip-infra postgres-postgresql-0 -- \
   env PGPASSWORD="$PG_USER_PASSWORD" psql -U cipuser -d cip_hr -t -A -c "
-    SELECT COUNT(*) FROM bot_intent_examples WHERE reviewed = true;
+    SELECT COUNT(*) FROM bot_intent_training_data WHERE reviewed = true;
   " | tr -d '[:space:]')
 
 kubectl exec -i -n cip-infra postgres-postgresql-0 -- \
   env PGPASSWORD="$PG_USER_PASSWORD" psql -U cipuser -d cip_hr -c "\COPY (
     SELECT text, intent, COALESCE(tool, '') AS tool, next_action,
            source, added_by, added_at::date AS added_at, COALESCE(notes, '') AS notes
-      FROM bot_intent_examples
+      FROM bot_intent_training_data
      WHERE reviewed = true
      ORDER BY added_at
   ) TO STDOUT WITH CSV" >> "$CSV_OUT"
@@ -52,9 +52,9 @@ TOTAL=$(($(wc -l < "$CSV_OUT") - 1))
 
 echo ""
 echo "=== Exported to $CSV_OUT ==="
-echo "  manual_examples.csv:    $COUNT_MANUAL rows"
-echo "  bot_intent_examples:    $COUNT_DB rows"
-echo "  total:                  $TOTAL rows"
+echo "  manual_examples.csv:        $COUNT_MANUAL rows"
+echo "  bot_intent_training_data:   $COUNT_DB rows"
+echo "  total:                      $TOTAL rows"
 echo ""
 echo "Per-intent counts:"
 tail -n +2 "$CSV_OUT" | awk -F, '{print $2}' | sort | uniq -c | sort -rn | sed 's/^/  /'

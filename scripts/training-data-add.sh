@@ -1,9 +1,13 @@
 #!/usr/bin/env bash
-# Slice 55: interactive append to manual_examples.csv.
+# Slice 55 → 56B: interactive append to manual_examples.csv.
 #
 # Prompts for: text, intent, tool, next_action, notes.
 # Validates next_action against the allowed enum.
 # Appends a row with source='manual_csv', added_by=$USER, added_at=today.
+#
+# This script edits the committed CSV — it does NOT touch the DB.
+# Per-tenant runtime additions go through /teach (writes to
+# bot_intent_training_data with reviewed=false).
 
 set -euo pipefail
 
@@ -20,7 +24,7 @@ prompt() {
   fi
 }
 
-echo "=== Add training example ==="
+echo "=== Add training row ==="
 prompt TEXT       "text (the user phrasing)"
 prompt INTENT     "intent (e.g. disable_employee)"
 prompt TOOL       "tool (optional; e.g. employee_disable)" ""

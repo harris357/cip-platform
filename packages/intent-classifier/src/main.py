@@ -1,10 +1,18 @@
-"""Slice 56: FastAPI entrypoint for the intent-classifier service.
+"""Slice 56 + 56B: FastAPI entrypoint for the intent-classifier service.
 
 Endpoints:
   - POST /classify  → ClassifyResponse
   - GET  /healthz   → HealthResponse (kubernetes liveness + readiness)
 
-Stateless. Multi-replica safe. Model loaded once at startup.
+Stateless w.r.t. requests; statefully loads + hot-reloads the model.
+Multi-replica safe — every replica polls S3 independently and converges
+on the same artifact within MODEL_POLL_INTERVAL_SEC of upload.
+
+Slice 56B: model loading is now two-phase:
+  1. lifespan boot loads the image-baked baseline (if any).
+  2. S3ModelLoader starts a background asyncio task that polls
+     s3://$MODEL_S3_BUCKET/$MODEL_S3_PREFIX/CURRENT.json and swaps in
+     a newer artifact via classifier.swap_in() when the version differs.
 """
 
 from __future__ import annotations
@@ -14,8 +22,9 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException
 
-from .classifier import load_model, predict, is_loaded, get_state
+from .classifier import load_model, predict, is_loaded, get_state, swap_in
 from .schema import ClassifyRequest, ClassifyResponse, HealthResponse
+from .s3_loader import S3ModelLoader
 
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
@@ -24,9 +33,23 @@ logger = logging.getLogger("intent-classifier")
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
+    # Phase 1: image-baked baseline (best-effort).
     load_model()
-    yield
-    # No teardown — model is in-memory only.
+
+    # Phase 2: S3 hot-reload poller. Tells the poller our currently-loaded
+    # version so it skips the redundant swap if the baseline already
+    # matches the S3 CURRENT pointer.
+    loader = S3ModelLoader(on_swap=swap_in)
+    state = get_state()
+    loader.set_loaded_version(state.version)
+    await loader.start()
+    logger.info("[main] S3 poller started (loaded baseline=%s)", state.version)
+
+    try:
+        yield
+    finally:
+        await loader.stop()
+        # No model teardown — process exit reaps the in-memory state.
 
 
 app = FastAPI(

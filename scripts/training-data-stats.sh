@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Slice 55: per-intent training-example counts across all sources.
-# Targets ~200 per intent to be useful for sklearn training (Slice 56).
+# Slice 55 → 56B: per-intent training-row counts across all sources.
+# Targets ~200 per intent to be useful for sklearn training.
 
 set -euo pipefail
 
@@ -15,16 +15,19 @@ else
 fi
 
 echo ""
-echo "=== bot_intent_examples (DB; reviewed=true) ==="
+echo "=== bot_intent_training_data (DB; reviewed=true) ==="
 echo "    Run from a workstation with kubectl + .envrc:"
 echo ""
 cat <<'SQL'
     psql -h localhost -p 15432 -U cipuser -d cip_hr -c \
-      "SELECT intent, COUNT(*) FROM bot_intent_examples WHERE reviewed=true GROUP BY intent ORDER BY count DESC;"
+      "SELECT intent, COUNT(*) FROM bot_intent_training_data WHERE reviewed=true GROUP BY intent ORDER BY count DESC;"
 SQL
 echo ""
 echo "=== Recommendation ==="
-echo "  Slice 56 (sklearn classifier) needs ≥200 examples per intent for"
-echo "  reliable LogisticRegression training. Anything below ~100 will be"
-echo "  noisy. Use \`make training-data-add\` to bulk-import client doc"
+echo "  The classifier needs ~200 rows per intent for reliable"
+echo "  LogisticRegression training. Anything below ~100 will be noisy."
+echo "  Use \`make training-data-add\` to bulk-import client doc"
 echo "  phrasings, or /teach in Teams to ad-hoc add."
+echo ""
+echo "  Run \`make classifier-status\` to see how many reviewed rows are"
+echo "  pending the next train."

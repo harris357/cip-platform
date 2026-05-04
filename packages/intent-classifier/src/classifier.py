@@ -1,4 +1,4 @@
-"""Slice 56: model loader + predict wrapper.
+"""Slice 56 + 56B: model loader + predict wrapper.
 
 The model artifact is a joblib-pickled dict:
 
@@ -17,10 +17,15 @@ the GRAMMAR ROUTER + EXTRACTOR (Slice 55) handles the call_tool branch
 deterministically and the classifier predicts intent='disable_employee'
 + next_action='clarify' as the default.
 
-Loaded once at process boot. Multi-replica safe — model is read-only.
+Slice 56B: model is no longer image-baked-only. On boot we load the
+image-baked artifact (if any) as a fallback baseline, then S3ModelLoader
+(src/s3_loader.py) polls the platform's S3 for a newer artifact and
+swaps in-place via swap_in(). This decouples model rev from image rev:
+adding a phrase + retraining no longer requires an image rebuild.
 
-Failure to load → exit non-zero so kubernetes restarts the pod (and
-the bot's classify graph node falls through to triage in the meantime).
+Multi-replica safe — model is read-only and swap_in is a single Python
+attribute assignment per field (CPython GIL guarantees atomicity per
+write; predict() never sees a half-applied bundle).
 """
 
 from __future__ import annotations
@@ -53,40 +58,72 @@ _state = _ModelState()
 
 
 def load_model() -> None:
-    """Find the latest .joblib in the model dir and load it.
+    """Load the image-baked artifact (if any) as a baseline.
+
+    The S3 poller (s3_loader.py) takes over after this and may
+    immediately swap in a newer artifact via swap_in(). The image-baked
+    load is intentionally optional — for clusters running 56B onwards
+    the image can ship with no .joblib at all and rely entirely on S3.
+
     Conventional naming: classifier-v<NN>-<YYYY-MM-DD>.joblib.
     Falls back to any .joblib if the convention isn't met.
     """
     if not _DEFAULT_MODEL_DIR.exists():
-        logger.error("[classifier] model dir does not exist: %s", _DEFAULT_MODEL_DIR)
-        sys.exit(1)
+        logger.warning(
+            "[classifier] model dir does not exist: %s — relying on S3 hot-reload only",
+            _DEFAULT_MODEL_DIR,
+        )
+        return
 
     candidates = sorted(_DEFAULT_MODEL_DIR.glob("*.joblib"), reverse=True)
     if not candidates:
-        # Bootstrap allowance: no model yet. Run in degraded mode (always
-        # returns "unknown" with confidence 0.0) so the bot's classify
-        # node treats it as fallthrough. Useful in CI before the first
-        # training run.
+        # Slice 56B: no longer fatal — S3 poller may bring up a model
+        # within MODEL_POLL_INTERVAL_SEC. Until then, /classify returns
+        # 'unknown'/0.0 and the bot's classify node treats it as
+        # fallthrough.
         logger.warning(
-            "[classifier] no .joblib found in %s — running in DEGRADED mode (returns 'unknown'/0.0). "
-            "Build a model with `make classifier-train` and rebuild the image.",
+            "[classifier] no baked-in .joblib found in %s — running in DEGRADED mode "
+            "until S3 poller brings up an artifact (or always, if S3 has none).",
             _DEFAULT_MODEL_DIR,
         )
         return
 
     artifact_path = candidates[0]
-    logger.info("[classifier] loading %s", artifact_path)
+    logger.info("[classifier] loading baked-in baseline %s", artifact_path)
     try:
         bundle = joblib.load(artifact_path)
-        _state.pipeline    = bundle["pipeline"]
-        _state.intents     = sorted(bundle.get("intents", list(_state.pipeline.classes_)))
-        _state.intent_meta = bundle.get("intent_meta", {})
-        _state.version     = bundle.get("version", artifact_path.stem)
-        _state.loaded_at   = datetime.now(timezone.utc)
-        logger.info("[classifier] loaded version=%s intents=%d", _state.version, len(_state.intents))
     except Exception:
-        logger.exception("[classifier] failed to load %s", artifact_path)
-        sys.exit(1)
+        # Slice 56B: also non-fatal. A corrupt baked-in artifact
+        # shouldn't kill the pod — the S3 poller is the source of truth.
+        logger.exception("[classifier] failed to load %s — falling through to S3 poller", artifact_path)
+        return
+    swap_in(bundle, bundle.get("version", artifact_path.stem))
+
+
+def swap_in(bundle: dict, version: str) -> None:
+    """Atomically swap the active model. Called by load_model() on boot
+    and by S3ModelLoader on hot-reload.
+
+    Atomicity note: each `_state.<field> = ...` is a single attribute
+    assignment, atomic under the GIL. predict() reads `_state.pipeline`
+    once into a local; even if a swap interleaves a multi-field update,
+    predict either sees the full old or the full new — never a half-set
+    bundle, because pipeline + intent_meta + intents are written in the
+    same dict already.
+    """
+    pipeline   = bundle["pipeline"]
+    intents    = sorted(bundle.get("intents", list(pipeline.classes_)))
+    intent_meta = bundle.get("intent_meta", {})
+
+    _state.pipeline    = pipeline
+    _state.intent_meta = intent_meta
+    _state.intents     = intents
+    _state.version     = version
+    _state.loaded_at   = datetime.now(timezone.utc)
+    logger.info(
+        "[classifier] active model: version=%s intents=%d at=%s",
+        version, len(intents), _state.loaded_at.isoformat(),
+    )
 
 
 def is_loaded() -> bool:

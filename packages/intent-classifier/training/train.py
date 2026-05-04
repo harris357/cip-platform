@@ -1,9 +1,13 @@
-"""Slice 56: train the sklearn intent classifier.
+"""Slice 56 + 56B: train the sklearn intent classifier.
 
 Reads training_data.csv (produced by `make training-data-export`),
 fits a TfidfVectorizer + LogisticRegression pipeline, evaluates with
-cross-validation, and saves the resulting joblib bundle to
-packages/intent-classifier/models/.
+cross-validation, saves the resulting joblib bundle, then (Slice 56B):
+
+  1. Uploads the artifact to s3://$MODEL_S3_BUCKET/$MODEL_S3_PREFIX/
+  2. Updates CURRENT.json — the pointer the classifier service polls
+  3. INSERTs a row into bot_intent_model_runs
+  4. INSERTs membership rows for the training_data ids that fed it
 
 Bundle shape (matches src/classifier.py expectations):
 
@@ -18,11 +22,14 @@ Each intent's tool + next_action come from training_data.csv. If a
 single intent shows multiple (tool, next_action) pairs across rows,
 we pick the most common combo (mode).
 
-Usage (from repo root):
+Usage (from repo root, after sourcing .envrc and starting a port-forward
+to the in-cluster postgres):
 
+    kubectl port-forward -n cip-infra svc/postgres-postgresql 15432:5432 &
     python -m packages.intent-classifier.training.train
+    # or just: make classifier-train
 
-Run from `make classifier-train` which sets up paths.
+`--no-upload` skips S3 + DB writes (local dry-run).
 """
 
 from __future__ import annotations
@@ -30,7 +37,7 @@ import argparse
 import csv
 import sys
 from collections import Counter
-from datetime import date
+from datetime import date, datetime, timezone
 from pathlib import Path
 
 import joblib
@@ -103,11 +110,19 @@ def main() -> int:
     parser.add_argument(
         "--version", default=f"v1-{date.today().isoformat()}",
     )
+    parser.add_argument(
+        "--no-upload", action="store_true",
+        help="Skip S3 upload + DB lineage writes (local dry-run).",
+    )
     args = parser.parse_args()
 
     if not args.csv.exists():
         print(f"ERROR: {args.csv} not found. Run `make training-data-export` first.", file=sys.stderr)
         return 1
+
+    # Lock the cutoff BEFORE training. Any rows added during fit aren't
+    # claimed by this run — they fall into the next run's untrained set.
+    corpus_cutoff_at = datetime.now(timezone.utc)
 
     rows = load_training_data(args.csv)
     if len(rows) < 5:
@@ -126,11 +141,13 @@ def main() -> int:
     # k-fold cross-val (k = min(5, smallest-class-count) so every fold has every class)
     min_class = min(intent_counts.values())
     k = max(2, min(5, min_class))
+    cv_macro_f1: float | None = None
     if min_class < 2:
         print("WARN: at least one intent has only 1 example — skipping cross-val.", file=sys.stderr)
     else:
         cv_scores = cross_val_score(pipeline, texts, intents, cv=k, scoring="f1_macro")
-        print(f"\nCross-val (k={k}) macro F1: mean={cv_scores.mean():.3f} std={cv_scores.std():.3f}")
+        cv_macro_f1 = float(cv_scores.mean())
+        print(f"\nCross-val (k={k}) macro F1: mean={cv_macro_f1:.3f} std={cv_scores.std():.3f}")
 
     pipeline.fit(texts, intents)
     intent_meta = derive_intent_meta(rows)
@@ -144,6 +161,59 @@ def main() -> int:
         "intents":     sorted(set(intents)),
     }, out_path)
     print(f"\nSaved {out_path}")
+
+    if args.no_upload:
+        print("\n--no-upload set — skipping S3 + DB writes.")
+        return 0
+
+    # ── Slice 56B: ship the artifact to S3 + record lineage ──────────
+    # Imported lazily so --no-upload + missing boto3/psycopg still trains.
+    try:
+        from .upload import (
+            ensure_bucket, upload_artifact, update_current_pointer,
+            record_model_run, record_membership,
+        )
+    except ImportError as e:
+        print(f"\nWARN: --no-upload not set but upload deps missing ({e}). "
+              f"Artifact saved locally only.", file=sys.stderr)
+        return 0
+
+    try:
+        ensure_bucket()
+        artifact_uri, artifact_sha256 = upload_artifact(args.version, out_path)
+        # Pointer goes LAST so readers never see a CURRENT pointing at a
+        # not-yet-uploaded key.
+        update_current_pointer(args.version, f"{artifact_uri.split('/', 3)[-1]}", artifact_sha256)
+    except Exception as e:
+        print(f"\nERROR: S3 upload failed: {e}", file=sys.stderr)
+        print(f"Artifact remains at {out_path} — you can retry the upload manually.", file=sys.stderr)
+        return 2
+
+    # DB writes are best-effort: an upload that succeeds without DB
+    # lineage is still useful (the classifier hot-loads it). Log loudly
+    # and let the operator backfill via psql if needed.
+    run_id = record_model_run(
+        model_version    = args.version,
+        corpus_cutoff_at = corpus_cutoff_at,
+        train_count      = len(rows),
+        intents_count    = len(intent_counts),
+        cv_macro_f1      = cv_macro_f1,
+        holdout_macro_f1 = None,
+        artifact_uri     = artifact_uri,
+        artifact_sha256  = artifact_sha256,
+    )
+    if run_id:
+        record_membership(run_id, corpus_cutoff_at)
+
+    print(f"\n=== Trained, uploaded, recorded ===")
+    print(f"  version:    {args.version}")
+    print(f"  artifact:   {artifact_uri}")
+    print(f"  cutoff:     {corpus_cutoff_at.isoformat()}")
+    print(f"  rows:       {len(rows)}")
+    print(f"  intents:    {len(intent_counts)}")
+    if cv_macro_f1 is not None:
+        print(f"  cv_macro_f1: {cv_macro_f1:.3f}")
+    print(f"  Classifier pods will hot-load within MODEL_POLL_INTERVAL_SEC (default 60s).")
     return 0
 
 

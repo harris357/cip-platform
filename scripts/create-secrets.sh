@@ -92,6 +92,16 @@ kubectl create secret generic teams-bot-credentials \
   --from-literal=DATABASE_URL_HR="${DATABASE_URL_HR}" \
   --dry-run=client -o yaml | kubectl apply -f -
 
+# Slice 56B: intent-classifier needs S3 creds for hot-reload polling.
+# Bucket name + endpoint come from values.yaml; only the access keys
+# need to be secret. Empty defaults are tolerated — the service falls
+# back to image-baked / degraded mode if S3 is unreachable.
+kubectl create secret generic intent-classifier-credentials \
+  --namespace cip-app \
+  --from-literal=AWS_ACCESS_KEY_ID="${AWS_ACCESS_KEY_ID:-}" \
+  --from-literal=AWS_SECRET_ACCESS_KEY="${AWS_SECRET_ACCESS_KEY:-}" \
+  --dry-run=client -o yaml | kubectl apply -f -
+
 # Langfuse credentials (DATABASE_URL, NEXTAUTH_SECRET, SALT)
 kubectl create secret generic langfuse-credentials \
   --namespace cip-app \

@@ -1,4 +1,4 @@
-# Slice 56: intent-classifier values.
+# Slice 56 + 56B: intent-classifier values.
 
 replicaCount: 2          # stateless; HA + load-spreading
 
@@ -19,12 +19,21 @@ resources:
     cpu:    250m          # sklearn predict_proba is microseconds; load is light
     memory: 256Mi
 
-# No envFrom for v1 — the service doesn't need secrets when running in
-# degraded mode. Once OTEL/Langfuse wiring + S3-pull mode are added in
-# a follow-up, switch to:
-#   envFrom:
-#     - secretRef:
-#         name: intent-classifier-credentials
+# Slice 56B: S3 hot-reload config.
+#   - MODEL_S3_BUCKET / MODEL_S3_PREFIX    — where the trainer uploads
+#   - MODEL_POLL_INTERVAL_SEC              — how often each replica polls
+#   - AWS_ENDPOINT_URL / AWS_REGION        — OVH S3 endpoint
+# AWS_ACCESS_KEY_ID + AWS_SECRET_ACCESS_KEY come from the secret below.
+env:
+  MODEL_S3_BUCKET:        cip-platform-models
+  MODEL_S3_PREFIX:        intent-classifier
+  MODEL_POLL_INTERVAL_SEC: "60"
+  AWS_ENDPOINT_URL:       https://s3.bhs.io.cloud.ovh.net
+  AWS_REGION:             BHS
+
+envFrom:
+  - secretRef:
+      name: intent-classifier-credentials
 
 livenessProbe:
   httpGet:

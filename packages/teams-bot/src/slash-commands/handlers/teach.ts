@@ -1,16 +1,16 @@
-// Slice 55: /teach <key=value> ... text="..." — append a labelled
-// training example for the sklearn classifier (Slice 56).
+// Slice 55 → 56B: /teach <key=value> ... text="..." — append a labelled
+// training row for the sklearn classifier.
 //
 // Usage:
 //   /teach intent=disable_employee tool=employee_disable next_action=call_tool text="off-board the contractor"
 //   /teach intent=view_certs next_action=clarify text="what about her certs"
 //
 // Requires `bot.metrics.read` (same gate as /turn). Writes via the
-// bot_intent_example_add MCP tool, which lands the row in
-// bot_intent_examples with reviewed=false. Operator must run
-// `make training-data-mark-reviewed ids=<id>` to promote into training
-// data (or `make training-data-export` aggregates reviewed rows
-// alongside the manual_examples.csv file).
+// bot_intent_training_data_add MCP tool, which lands the row in
+// bot_intent_training_data with reviewed=false. Operator must run
+// `make training-data-mark-reviewed ids=<id>` to promote into the
+// training corpus (or `make training-data-export` aggregates reviewed
+// rows alongside the manual_examples.csv file).
 
 import { executeTool } from '../../mcp/tool-executor.js';
 import type { SlashCommandHandlerArgs, SlashCommandResult } from '../registry.js';
@@ -44,7 +44,7 @@ export async function teachHandler(args: SlashCommandHandlerArgs): Promise<Slash
 
   try {
     const result = await executeTool(
-      'bot_intent_example_add',
+      'bot_intent_training_data_add',
       {
         text, intent,
         ...(tool ? { tool } : {}),
@@ -61,7 +61,7 @@ export async function teachHandler(args: SlashCommandHandlerArgs): Promise<Slash
     const idShort = result.data?.id?.slice(0, 8) ?? '?';
     return {
       reply:
-        `✓ Saved training example (id=\`${idShort}\`).\n\n` +
+        `✓ Saved training row (id=\`${idShort}\`).\n\n` +
         `Pending review. Run \`make training-data-review\` to inspect, then ` +
         `\`make training-data-mark-reviewed ids='${result.data?.id ?? '?'}'\` to promote.`,
     };
@@ -72,7 +72,7 @@ export async function teachHandler(args: SlashCommandHandlerArgs): Promise<Slash
 
 function usage(): string {
   return [
-    '`/teach <key=value>... text="..."` — label a training example.',
+    '`/teach <key=value>... text="..."` — label a training row.',
     '',
     '**Required:** `intent=`, `next_action=`, `text="..."`',
     '**Optional:** `tool=`, `notes="..."`',
