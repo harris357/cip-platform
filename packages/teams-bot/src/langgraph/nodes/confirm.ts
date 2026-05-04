@@ -62,15 +62,18 @@ export async function confirmNode(state: State): Promise<Partial<State>> {
   const verdict = classifyConfirmReply(decision, affirm, cancel);
 
   if (verdict === 'affirm') {
-    const ai = new AIMessage({
-      content: '',
-      tool_calls: [{
-        id:   state.pendingWriteCall.toolCallId,
-        name: state.pendingWriteCall.toolName,
-        args: state.pendingWriteCall.toolArgs,
-      }],
-    });
-    return { messages: [ai], pendingWriteCall: null };
+    // Slice 56D follow-up: do NOT re-emit a new AIMessage(tool_calls)
+    // here. The planner's original AIMessage with these exact tool_calls
+    // is still the last message in state (the interrupt suspended INSIDE
+    // this node — nothing was appended in between). Just clear the
+    // pending flag; routeAfterConfirm sees the original AIMessage and
+    // routes to execute, execute reads it and runs the tool.
+    //
+    // Why this matters: re-emitting created a SECOND AIMessage with the
+    // same tool_call_id as the planner's original. On subsequent turns,
+    // the planner LLM was sent both → Mistral 400 "Duplicate tool call
+    // id in assistant message" → the entire turn errored out.
+    return { pendingWriteCall: null };
   }
 
   if (verdict === 'cancel') {
