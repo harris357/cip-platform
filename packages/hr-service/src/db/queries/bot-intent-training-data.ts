@@ -26,22 +26,27 @@ export interface AddTrainingDataInput {
   nextAction:   'call_tool' | 'clarify' | 'answer_directly' | 'unknown';
   source:       'teach' | 'turn_label' | 'manual_csv' | 'trace_export';
   sourceTurnId?: string | null;
+  /** Slice 56E: Langfuse trace UUID (separate from sourceTurnId, which
+   *  holds the bot's 8-char hex turnId). Set by import_traces.py. */
+  sourceLangfuseTraceId?: string | null;
   notes?:       string | null;
 }
 
 export interface TrainingDataRow {
-  id:             string;
-  tenant_id:      string;
-  added_by:       string;
-  added_at:       Date;
-  text:           string;
-  intent:         string;
-  tool:           string | null;
-  next_action:    string;
-  source:         string;
-  source_turn_id: string | null;
-  notes:          string | null;
-  reviewed:       boolean;
+  id:                       string;
+  tenant_id:                string;
+  added_by:                 string;
+  added_at:                 Date;
+  text:                     string;
+  intent:                   string;
+  tool:                     string | null;
+  next_action:              string;
+  source:                   string;
+  source_turn_id:           string | null;
+  /** Slice 56E: populated only when source='trace_export'. */
+  source_langfuse_trace_id: string | null;
+  notes:                    string | null;
+  reviewed:                 boolean;
 }
 
 export async function addTrainingData(
@@ -50,13 +55,15 @@ export async function addTrainingData(
 ): Promise<TrainingDataRow> {
   const r = await pool.query<TrainingDataRow>(
     `INSERT INTO bot_intent_training_data
-       (tenant_id, added_by, text, intent, tool, next_action, source, source_turn_id, notes)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+       (tenant_id, added_by, text, intent, tool, next_action, source,
+        source_turn_id, source_langfuse_trace_id, notes)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
      RETURNING *`,
     [
       input.tenantId, input.addedBy, input.text, input.intent,
       input.tool ?? null, input.nextAction, input.source,
-      input.sourceTurnId ?? null, input.notes ?? null,
+      input.sourceTurnId ?? null, input.sourceLangfuseTraceId ?? null,
+      input.notes ?? null,
     ],
   );
   return r.rows[0]!;
