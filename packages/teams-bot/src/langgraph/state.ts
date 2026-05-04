@@ -86,7 +86,17 @@ export const StateAnnotation = Annotation.Root({
 
   /** Distilled tool-result lines for the current turn. Reset by `ingest`. */
   lastToolFacts:   Annotation<string[]>({
-    reducer: (prev, next) => [...prev, ...next],
+    // Slice 56D follow-up: switched from append to overwrite. The append
+    // semantics meant per-turn facts accumulated across turns — ingest
+    // wrote `[]` but with the append reducer that was a no-op. Result:
+    // turn N rendered N copies of "X: 1 employee(s)" stacked from prior
+    // turns. Overwrite makes ingest's reset actually reset.
+    //
+    // Loop edge case: if execute fires multiple times within one turn
+    // (plan→execute→plan→execute), only the last batch's facts are
+    // kept. Acceptable for v1; the planner typically emits all
+    // tool_calls in one shot. Revisit if that ever changes.
+    reducer: (_prev, next) => next,
     default: () => [],
   }),
 

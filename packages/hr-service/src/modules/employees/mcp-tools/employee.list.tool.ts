@@ -79,7 +79,21 @@ export function registerEmployeeList(server: McpServer): void {
             args.status === 'active' ? r.disabledAt === null : r.disabledAt !== null,
           )
         : rows;
-      return ok({ employees: filtered, count: filtered.length });
+      // Slice 56D follow-up: render a user-facing message with names,
+      // not just a count. respond.ts surfaces this verbatim in Teams,
+      // so the user gets `**3 employees:** Alice <a@x>, Bob <b@x>, …`
+      // instead of the previous bare count from the distill fallback.
+      let userMessage: string;
+      if (filtered.length === 0) {
+        userMessage = '_No employees match._';
+      } else {
+        const lines = filtered
+          .slice(0, 25)
+          .map(r => `- **${r.fullName ?? '(unnamed)'}** \`<${r.email}>\`${r.disabledAt ? ' _(disabled)_' : ''}`);
+        const more = filtered.length > 25 ? `\n_… and ${filtered.length - 25} more — narrow with \`status=\` or \`identityType=\`._` : '';
+        userMessage = `**${filtered.length} employee${filtered.length === 1 ? '' : 's'}:**\n${lines.join('\n')}${more}`;
+      }
+      return ok({ employees: filtered, count: filtered.length }, userMessage);
     },
   );
 }

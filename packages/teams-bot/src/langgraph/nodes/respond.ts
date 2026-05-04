@@ -31,13 +31,43 @@ import type { State } from '../state.js';
  * present. Tools that follow the McpModuleResponse convention return
  * `{data, message, card?}` — the bot uses `message` as the markdown to
  * surface verbatim. Returns null if the tool didn't set one.
+ *
+ * Slice 56D follow-up: handle the MCP wire envelope. executeTool
+ * stringifies the raw MCP response shape `{content:[{type,text:<JSON>}]}`
+ * and stores it in ToolMessage.content. Previously this function only
+ * looked for `.message` at the top level — which is the WRAPPER's level,
+ * not the application envelope. Result: every grammar/classifier-routed
+ * turn fell through to lastToolFacts (or "(I had nothing to say...)" when
+ * that was empty too) instead of rendering the tool's nicely-formatted
+ * user message. distillFact handles both shapes; we now match.
  */
+interface McpInnerEnvelope { data?: unknown; message?: unknown; card?: unknown; refused?: unknown }
+function unwrapMcpEnvelope(parsed: unknown): McpInnerEnvelope {
+  if (typeof parsed !== 'object' || parsed === null) return {};
+  const obj = parsed as { content?: unknown };
+  // MCP wire shape: { content: [{ type:'text', text:'<inner JSON>' }] }
+  if (Array.isArray(obj.content)) {
+    const text = obj.content
+      .find((c): c is { type: string; text: string } =>
+        typeof c === 'object' && c !== null && (c as { type?: unknown }).type === 'text' &&
+        typeof (c as { text?: unknown }).text === 'string')
+      ?.text;
+    if (typeof text === 'string') {
+      try { return JSON.parse(text) as McpInnerEnvelope; }
+      catch { return {}; }
+    }
+    return {};
+  }
+  return parsed as McpInnerEnvelope;
+}
+
 function extractToolUserMessage(content: string): string | null {
   try {
-    const parsed = JSON.parse(content) as { message?: unknown; refused?: unknown };
-    if (parsed.refused) return null;
-    if (typeof parsed.message === 'string' && parsed.message.length > 0) {
-      return parsed.message;
+    const parsed = JSON.parse(content);
+    const env = unwrapMcpEnvelope(parsed);
+    if (env.refused) return null;
+    if (typeof env.message === 'string' && env.message.length > 0) {
+      return env.message;
     }
   } catch { /* not JSON — ignore */ }
   return null;
