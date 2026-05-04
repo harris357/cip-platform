@@ -18,6 +18,7 @@ import { aboutHandler } from './handlers/about.js';
 import { turnHandler } from './handlers/turn.js';
 import { teachHandler } from './handlers/teach.js';
 import { turnFeedbackHandler } from './handlers/turn-feedback.js';
+import { turnLabelHandler, turnLabelSubmitHandler } from './handlers/turn-label.js';
 
 export interface SlashCommandResult {
   /** Plain markdown reply. Sent verbatim if `card` is unset. */
@@ -89,6 +90,21 @@ export const REGISTRY: SlashCommand[] = [
     description: 'Record verdict on a bot turn — fired by 👍/👎 buttons. Usage: `/turn-feedback <id> positive|negative [correction]`',
     requires:    null,
     handler:     turnFeedbackHandler,
+  },
+  // Slice 56K: "Add to training set" flow promised in slice 55. Two
+  // commands — /turn-label opens the prefill card; /turn-label-submit
+  // commits the labelled row to bot_intent_training_data.
+  {
+    command:     '/turn-label',
+    description: 'Open the "Add to training set" card for a turn. Usage: `/turn-label <id>` (usually fired by 📚 button)',
+    requires:    'bot.metrics.read',
+    handler:     turnLabelHandler,
+  },
+  {
+    command:     '/turn-label-submit',
+    description: 'Save a labelled training example from a turn — fired by the prefill card\'s Save action.',
+    requires:    'bot.metrics.read',
+    handler:     turnLabelSubmitHandler,
   },
 ];
 

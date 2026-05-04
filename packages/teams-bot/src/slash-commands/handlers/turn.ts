@@ -10,6 +10,7 @@
 // source of truth is registry.ts entry below.
 
 import { executeTool } from '../../mcp/tool-executor.js';
+import { buildAddToTrainingActionCard } from '../../intent/add-to-training-card.js';
 import type { SlashCommandHandlerArgs, SlashCommandResult } from '../registry.js';
 
 const ID_RE = /^[0-9a-f]{8}$/;
@@ -42,7 +43,13 @@ export async function turnHandler(args: SlashCommandHandlerArgs): Promise<SlashC
     if (!result.data) {
       return { reply: `Turn ${after} not found.` };
     }
-    return { reply: renderTurnCard(after, result.data) };
+    // Slice 56K: alongside the markdown reply, attach a small action
+    // card with the "📚 Add to training set" button. Same SlashCommandResult
+    // shape extended in 56F (reply text + card attachment).
+    return {
+      reply: renderTurnCard(after, result.data),
+      card:  buildAddToTrainingActionCard(after),
+    };
   } catch (err) {
     return {
       reply: `Error fetching turn ${after}: ${err instanceof Error ? err.message : String(err)}`,
