@@ -16,15 +16,28 @@ export function extractAuthContext(authInfo: { token: string } | undefined): Mcp
   const payload = JSON.parse(payloadJson) as Record<string, unknown>
   const tenantId = payload['tenantId']
   const sub = payload['sub']
-  const rolesRaw = payload['roles']
   if (typeof tenantId !== 'string' || !tenantId)
     throw new Error('JWT missing tenantId claim — check Keycloak Protocol Mapper')
   if (typeof sub !== 'string' || !sub)
     throw new Error('JWT missing sub claim')
+  // Slice 56D follow-up: realm roles live under realm_access.roles in
+  // Keycloak's standard token format. Previously this code only read a
+  // top-level `roles` claim — which Keycloak doesn't emit unless a
+  // custom Protocol Mapper has been configured to flatten it. Result:
+  // ctx.roles was always empty and every realm-role check (e.g. the
+  // employee_list `hr` gate) silently rejected even users who DID
+  // have the role assigned in KC.
+  //
+  // Read both: realm_access.roles (the canonical source) plus the
+  // top-level `roles` (in case a mapper exists or future tokens carry
+  // it). Dedupe.
+  const realmAccess = (payload['realm_access'] as { roles?: unknown } | undefined) ?? {}
+  const realmRoles  = Array.isArray(realmAccess.roles) ? (realmAccess.roles as string[]) : []
+  const flatRoles   = Array.isArray(payload['roles']) ? (payload['roles'] as string[]) : []
   return {
     tenantId,
     employeeId: sub,
-    roles: Array.isArray(rolesRaw) ? (rolesRaw as string[]) : [],
+    roles: Array.from(new Set([...realmRoles, ...flatRoles])),
   }
 }
 
