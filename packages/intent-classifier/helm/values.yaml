@@ -36,7 +36,7 @@ env:
   # Slice 56D: master switch. When false, /classify ignores tenant_id
   # and always uses the platform model. Trainer also reads this env to
   # reject `--tenant-id` invocations.
-  CLASSIFIER_PER_TENANT_ENABLED: "false"
+  CLASSIFIER_PER_TENANT_ENABLED: "true"
 
 envFrom:
   - secretRef:
