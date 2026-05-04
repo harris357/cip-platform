@@ -3,6 +3,7 @@ import { createTemporalWorkerConnection } from '@cip/shared';
 import * as certActivities from '../modules/certifications/activities/index.js';
 import * as employeeActivities from '../modules/employees/activities/index.js';
 import * as classifierLifecycleActivities from '../modules/classifier-lifecycle/activities/index.js';
+import * as maintenanceActivities from '../modules/maintenance/activities/index.js';
 
 export async function startTemporalWorker(): Promise<void> {
   const connection = await createTemporalWorkerConnection();
@@ -20,6 +21,7 @@ export async function startTemporalWorker(): Promise<void> {
       ...certActivities,
       ...employeeActivities,
       ...classifierLifecycleActivities,   // Slice 56N: RetrainModelWorkflow activities
+      ...maintenanceActivities,           // Slice 57B: CheckpointGcWorkflow activities
     },
     taskQueue: process.env['TEMPORAL_TASK_QUEUE_HR'] ?? 'cip-hr-tasks',
   });

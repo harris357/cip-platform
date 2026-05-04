@@ -22,3 +22,13 @@ export type {
   RetrainModelWorkflowOutput,
   AdminApprovalSignalPayload,
 } from '../modules/classifier-lifecycle/workflows/retrain-model.workflow.js';
+
+// Slice 57B: nightly retention GC. Replaces the in-process node gc.js
+// script with three independently-retriable activities under one
+// workflow. K8s CronJob now starts the workflow rather than running
+// the work in-process.
+export { CheckpointGcWorkflow } from '../modules/maintenance/workflows/checkpoint-gc.workflow.js';
+export type {
+  CheckpointGcWorkflowInput,
+  CheckpointGcWorkflowOutput,
+} from '../modules/maintenance/workflows/checkpoint-gc.workflow.js';

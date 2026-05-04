@@ -7,7 +7,10 @@ metadata:
     app: hr-service
     component: gc
 spec:
-  schedule: "30 3 * * *"               # 03:30 UTC nightly (low traffic)
+  # 03:30 UTC nightly (low traffic). K8s remains the schedule source;
+  # the work itself is now a Temporal workflow (slice 57B). Future
+  # slice can move the schedule into Temporal Schedules entirely.
+  schedule: "30 3 * * *"
   concurrencyPolicy: Forbid
   successfulJobsHistoryLimit: 3
   failedJobsHistoryLimit: 5
@@ -21,9 +24,14 @@ spec:
             - name: gc
               image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
               imagePullPolicy: {{ .Values.image.pullPolicy }}
-              command: ["node", "dist/scripts/gc.js"]
+              # Slice 57B: was `node dist/scripts/gc.js` — in-process
+              # cleanup with no observability beyond pod logs.
+              # Now triggers a Temporal workflow that runs three
+              # independently-retriable activities. The Pod blocks
+              # until the workflow finishes so kubectl get jobs shows
+              # the right status.
+              command: ["node", "dist/modules/maintenance/scripts/start-checkpoint-gc.js"]
               env:
-                # Knobs (defaults match the slice doc).
                 - name: GC_KEEP_PER_THREAD
                   value: "10"
                 - name: GC_KEEP_RECENT_HOURS
@@ -31,5 +39,7 @@ spec:
                 - name: GC_METRICS_RETENTION_DAYS
                   value: "90"
               envFrom:
+                # DATABASE_URL_HR (used inside activities) and
+                # TEMPORAL_* (used by the trigger script's client).
                 - secretRef:
                     name: hr-service-credentials
