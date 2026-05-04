@@ -184,6 +184,34 @@ export async function runLangGraph(args: {
         break;
       }
     }
+    // Diagnostic: if the search came up empty, dump what we DID see so
+    // we can pin down whether the slice math is wrong, the messages are
+    // failing isAIMessage type-tag fallback, or the planner emitted
+    // empty content.
+    if (outbound === null) {
+      const summary = turnMessages.map((m, i) => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const obj = m as any;
+        const t = typeof obj?._getType === 'function' ? obj._getType() : (obj?.type ?? 'unknown');
+        const tc = Array.isArray(obj?.tool_calls) ? obj.tool_calls.length : 0;
+        const contentLen = typeof obj?.content === 'string' ? obj.content.length : 0;
+        return `[${i}]${t}/tc=${tc}/content=${contentLen}c/isAI=${isAIMessage(m)}`;
+      }).join(' ');
+      console.warn(
+        `[runner] outbound NULL — priorCount=${priorMessageCount} ` +
+        `allLen=${allMessages.length} turnLen=${turnMessages.length} ` +
+        `turn=${turnId} msgs=${summary}`,
+      );
+      // Last-resort fallback: if any tool actually ran this turn and
+      // distilled a fact, show that instead of the unhelpful
+      // "(I had nothing to say...)" placeholder. Beats silent-failure
+      // when the planner emitted only tool_calls (no content) and
+      // respond never produced an AIMessage for some reason.
+      const facts = (result as { lastToolFacts?: string[] }).lastToolFacts;
+      if (Array.isArray(facts) && facts.length > 0) {
+        outbound = facts.join('\n');
+      }
+    }
   }
 
   // Slice 55: when respond emitted an adaptive card (e.g., disambiguation),
