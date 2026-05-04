@@ -126,6 +126,14 @@ export async function runLangGraph(args: {
   // this turn is a resume — feed the user's text to confirm via Command.
   const priorInterrupt = detectInterrupt(priorState);
 
+  // Snapshot the persisted message count BEFORE invoke. The checkpointer
+  // accumulates messages across turns within a thread, so anything from
+  // this index forward in result.messages is THIS turn's contribution.
+  // Used by the footer's tools list, refusedTools, and outbound text
+  // search — without it, a 4-turn session would show all 4 turns' tools
+  // as a "→" chain in every footer.
+  const priorMessageCount = ((priorState?.values ?? {}) as { messages?: unknown[] }).messages?.length ?? 0;
+
   const tInvoke = Date.now();
   let result;
   try {
@@ -156,13 +164,18 @@ export async function runLangGraph(args: {
   const newInterrupt = detectInterrupt(postState);
   const confirmationFired = newInterrupt !== null;
 
+  // Slice 56B follow-up: scope all message-derived telemetry + outbound
+  // search to THIS TURN's messages, not the entire persisted history.
+  const allMessages  = result.messages ?? [];
+  const turnMessages = allMessages.slice(priorMessageCount);
+
   let outbound: string | null = null;
   if (newInterrupt) {
     outbound = `About to: \`${newInterrupt.payload.summary}\`\n\nReply **yes** to confirm or **no** to cancel.`;
   } else {
-    const messages = result.messages ?? [];
-    for (let i = messages.length - 1; i >= 0; i--) {
-      const m = messages[i];
+    // Search ONLY this turn's messages — never echo a prior turn's reply.
+    for (let i = turnMessages.length - 1; i >= 0; i--) {
+      const m = turnMessages[i];
       if (m instanceof AIMessage && typeof m.content === 'string' && m.content.trim().length > 0) {
         outbound = m.content;
         break;
@@ -188,8 +201,10 @@ export async function runLangGraph(args: {
   // Compact LangGraph footer mirroring the legacy debug-banner format.
   const totalMs = Date.now() - tStart;
   const graphMs = tDone - tInvoke;
-  const messages = result.messages ?? [];
-  const tools  = (messages
+  // Per-turn slice — see priorMessageCount above. Without this the footer
+  // would show "tool_a → tool_b → tool_c" for an N-turn session even on
+  // a single-tool turn.
+  const tools  = (turnMessages
     .filter(m => m instanceof AIMessage && m.tool_calls?.length)
     .flatMap(m => (m as AIMessage).tool_calls?.map(tc => tc.name) ?? []));
 
@@ -197,7 +212,7 @@ export async function runLangGraph(args: {
   // the bot's hallucination guard or the tool itself returned a refusal.
   const ToolMessageCtor = (await import('@langchain/core/messages')).ToolMessage;
   const refusedTools: string[] = [];
-  for (const m of messages) {
+  for (const m of turnMessages) {
     if (m instanceof ToolMessageCtor && typeof m.content === 'string') {
       try {
         const parsed = JSON.parse(m.content) as { refused?: string; name?: string };
