@@ -1,0 +1,94 @@
+name: Cluster startup (morning)
+
+# Schedules `make start` from outside the cluster — when the cluster is
+# scaled to 0 nodes there is no in-cluster runner to bring itself up.
+#
+# Runs on a cron schedule AND can be triggered manually from the GH
+# UI's "Run workflow" button. The cron is intentionally conservative
+# (workdays only) — flip workflow_dispatch on weekends if needed.
+#
+# Concurrency: shares a group with cluster-shutdown so we never overlap.
+
+on:
+  schedule:
+    # 13:00 UTC weekdays = 8am EST / 5am PST. GH cron can be 5–15 min
+    # late under load — fine, that just shifts startup later. Adjust to
+    # taste; weekend skip is the cron `1-5` (Mon–Fri) on the DOW field.
+    - cron: '0 13 * * 1-5'
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: 'Why are you running this manually?'
+        required: false
+        default: 'manual startup'
+
+concurrency:
+  group: cluster-lifecycle
+  cancel-in-progress: false   # Wait for any in-flight startup/shutdown to finish
+
+permissions:
+  contents: read   # No commits from this workflow
+
+jobs:
+  startup:
+    runs-on: ubuntu-latest
+    # `make start` waits for the OVH node pool to scale up (typically
+    # 5–10 min) plus all bootstrap charts and app deploys. 45 min gives
+    # generous headroom; bump if OVH is slow.
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node + pnpm
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Install deps
+        run: pnpm install --frozen-lockfile
+
+      - name: Install kubectl + helm
+        # GH-hosted ubuntu runners include kubectl, but it can lag the
+        # cluster version. Pin to whatever the cluster runs.
+        run: |
+          curl -sLO "https://dl.k8s.io/release/v1.30.0/bin/linux/amd64/kubectl"
+          chmod +x kubectl && sudo mv kubectl /usr/local/bin/
+          curl -sL https://get.helm.sh/helm-v3.16.0-linux-amd64.tar.gz | tar xz
+          sudo mv linux-amd64/helm /usr/local/bin/
+
+      - name: Configure kubectl
+        run: |
+          mkdir -p ~/.kube
+          echo "${{ secrets.KUBECONFIG_B64 }}" | base64 -d > ~/.kube/config
+          chmod 600 ~/.kube/config
+
+      - name: Write .envrc
+        # The full .envrc content lives in one secret; write it to disk
+        # so `make start` and the underlying scripts can `source .envrc`
+        # exactly the way they do on the operator's workstation.
+        run: |
+          echo "${{ secrets.ENVRC_B64 }}" | base64 -d > .envrc
+
+      - name: make start
+        run: |
+          set -a
+          source .envrc
+          set +a
+          make start
+
+      - name: Smoke test
+        # If start succeeds but the cluster is unhealthy, fail loudly so
+        # the GH Actions email arrives before someone tries to use it.
+        run: |
+          set -a
+          source .envrc
+          set +a
+          make smoke-test
+
+      - name: Cleanup
+        if: always()
+        run: rm -f .envrc ~/.kube/config
