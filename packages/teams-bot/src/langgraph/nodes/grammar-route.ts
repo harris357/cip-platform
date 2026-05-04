@@ -60,6 +60,7 @@ export function makeGrammarRouteNode(ctx: BotAuthContext) {
             args: result.args,
           }],
         });
+        console.log(`[grammar-route] EMITTED pattern=${matched.name} tool=${matched.toolName} call_id=${toolCallId} prior_msg_count=${state.messages.length}`);
         return {
           grammarMatch:     { name: matched.name, toolName: matched.toolName },
           extractionResult: result,
@@ -90,6 +91,10 @@ export function makeGrammarRouteNode(ctx: BotAuthContext) {
  */
 export function routeAfterGrammar(state: State): 'execute' | 'respond' | 'triage' {
   const r = state.extractionResult;
+  const last = state.messages[state.messages.length - 1];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const lastInfo = last ? `${(last as any)._getType?.() ?? 'unknown'}/tc=${(last as any).tool_calls?.length ?? 0}` : 'none';
+  console.log(`[route-after-grammar] extractionResult=${r?.kind ?? 'null'} msg_count=${state.messages.length} last=${lastInfo}`);
   if (!r || r.kind === 'no_match') return 'triage';
   if (r.kind === 'complete')        return 'execute';
   return 'respond';   // ambiguous OR missing both render via respond

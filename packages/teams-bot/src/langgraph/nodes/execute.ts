@@ -25,9 +25,13 @@ import type { BotAuthContext } from '../../auth/resolve-context.js';
 export function makeExecuteToolNode(ctx: BotAuthContext) {
   return async function executeToolNode(state: State): Promise<Partial<State>> {
     const last = state.messages[state.messages.length - 1];
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const lastInfo = last ? `${(last as any)._getType?.() ?? 'unknown'}/tc=${(last as any).tool_calls?.length ?? 0}/isAI=${isAIMessage(last)}` : 'none';
+    console.log(`[execute] enter msg_count=${state.messages.length} last=${lastInfo}`);
     // Slice 56D follow-up: defensive type-check (works on deserialized
     // messages from checkpoint, where instanceof can fail).
     if (!isAIMessage(last) || !last.tool_calls?.length) {
+      console.log(`[execute] EXIT-EARLY: no AIMessage with tool_calls at end of state.messages`);
       return {};
     }
 
