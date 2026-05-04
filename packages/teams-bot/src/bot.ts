@@ -42,7 +42,11 @@ function getAadTenantId(context: TurnContext): string {
 async function exchangeAadForKeycloak(aadToken: string, ctx: TenantContext): Promise<string> {
   const keycloakBase = process.env['KEYCLOAK_URL'] ?? 'http://keycloak:8080';
   const clientId = process.env['KEYCLOAK_CLIENT_ID'] ?? 'teams-bot';
-  const url = `${keycloakBase}/auth/realms/${ctx.realm}/protocol/openid-connect/token`;
+  // Slice 56D follow-up: KEYCLOAK_URL now includes the /auth base path
+  // (matches Keycloak Quarkus distribution layout). Don't double-add it
+  // here — every other caller across the codebase already does the
+  // direct `${base}/realms/...` form. This was the lone outlier.
+  const url = `${keycloakBase}/realms/${ctx.realm}/protocol/openid-connect/token`;
 
   const body = new URLSearchParams({
     grant_type:    'urn:ietf:params:oauth:grant-type:jwt-bearer',
