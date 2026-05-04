@@ -214,6 +214,19 @@ export async function runLangGraph(args: {
     : confirmationFired
       ? 'tool'
       : 'unknown';
+  // Compute classifier + grammar layer info BEFORE the footer so it
+  // can render "clf=skip:disable_employee(0.91)" / "grammar=verb_disable"
+  // as part of the inline debug line.
+  const finalState = await graph.getState(config);
+  const finalSessionId = ((finalState?.values ?? {}) as { sessionId?: string }).sessionId
+                       ?? sessionId;
+  const grammarMatch     = ((finalState?.values ?? {}) as { grammarMatch?: { name: string; toolName: string } | null }).grammarMatch ?? null;
+  const extractionResult = ((finalState?.values ?? {}) as { extractionResult?: { kind?: string } | null }).extractionResult ?? null;
+  const classifierPrediction = ((finalState?.values ?? {}) as {
+    classifierPrediction?: { intent: string; confidence: number; classifier_version: string } | null
+  }).classifierPrediction ?? null;
+  const classifierDecision = ((finalState?.values ?? {}) as { classifierDecision?: string | null }).classifierDecision ?? null;
+
   await sendResponseTime(context, totalMs, {
     classifierAlias: 'cip-classifier',
     routerAlias:     tools.length > 0 ? 'cip-router-careful' : null,
@@ -222,6 +235,11 @@ export async function runLangGraph(args: {
     intent:          `langgraph:${intent}`,
     routeMs:         graphMs,
     turnId,
+    grammarPattern:        grammarMatch?.name ?? null,
+    classifierDecision:    classifierDecision ?? null,
+    classifierIntent:      classifierPrediction?.intent ?? null,
+    classifierConfidence:  classifierPrediction?.confidence ?? null,
+    classifierVersion:     classifierPrediction?.classifier_version ?? null,
   });
 
   // Structured turn log — turn= prefix lets a user paste the ID back
@@ -238,6 +256,8 @@ export async function runLangGraph(args: {
     `clarificationFired=${clarificationFired} ` +
     `confirmationFired=${confirmationFired} ` +
     `resumed=${priorInterrupt !== null} ` +
+    `grammar=${grammarMatch?.name ?? 'none'} ` +
+    `classifier=${classifierDecision ?? 'na'}:${classifierPrediction?.intent ?? '-'}(${classifierPrediction?.confidence?.toFixed(2) ?? '-'}) ` +
     `totalMs=${totalMs} graphMs=${graphMs}`,
   );
 
@@ -245,27 +265,12 @@ export async function runLangGraph(args: {
   // assigned by OTEL when the root span was created) so /turn can
   // produce a direct deep-link instead of a broken search URL. The
   // CallbackHandler exposes this on `last_trace_id` after spans end.
-  // At low traffic this is reliable; at high concurrent traffic two
-  // turns could clobber the field — acceptable for now, tracked for
-  // a future refinement that uses OTEL context propagation.
   const langfuseTraceId = (langfuseHandler as unknown as { last_trace_id: string | null }).last_trace_id;
 
   // Slice 48: best-effort metric write. Failures only log; the [turn]
   // line above is the durable backup if the DB is down.
-  // Slice 46e follow-up: pull final sessionId from post-invoke state
-  // (ingest may have rotated it on this turn) so /turn can deep-link
-  // to the Langfuse session.
-  const finalState = await graph.getState(config);
-  const finalSessionId = ((finalState?.values ?? {}) as { sessionId?: string }).sessionId
-                       ?? sessionId;
-  // Slice 55: grammar router + extractor outcomes for telemetry.
-  const grammarMatch     = ((finalState?.values ?? {}) as { grammarMatch?: { name: string; toolName: string } | null }).grammarMatch ?? null;
-  const extractionResult = ((finalState?.values ?? {}) as { extractionResult?: { kind?: string } | null }).extractionResult ?? null;
-  // Slice 56: classifier shadow + active-routing telemetry.
-  const classifierPrediction = ((finalState?.values ?? {}) as {
-    classifierPrediction?: { intent: string; confidence: number; classifier_version: string } | null
-  }).classifierPrediction ?? null;
-  const classifierDecision = ((finalState?.values ?? {}) as { classifierDecision?: string | null }).classifierDecision ?? null;
+  // (finalState + grammar/classifier reads happen earlier so the inline
+  // footer can include them.)
 
   void writeTurnMetric({
     turnId,

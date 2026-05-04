@@ -23,6 +23,7 @@ export const GRAMMAR_PATTERNS: GrammarPattern[] = [
   { name: 'slash_my_certs',    pattern: /^\/(mycerts|certs)\s*$/i,              toolName: 'get_my_certifications' },
   { name: 'slash_staff_certs', pattern: /^\/certs\s+(\S+)/i,                    toolName: 'get_staff_certifications' },
   { name: 'slash_staff',       pattern: /^\/(staff|employees|list)(\s|$)/i,     toolName: 'employee_list' },
+  { name: 'slash_my_roles',    pattern: /^\/(roles|myroles|permissions|myperms)\s*$/i, toolName: 'get_employee_permissions' },
 
   // ─── Verb-object — caller's own certs (self-scoped) ────────────────
   // "show my certs" / "what are my certifications" / etc.
@@ -30,6 +31,19 @@ export const GRAMMAR_PATTERNS: GrammarPattern[] = [
   { name: 'verb_my_certs',
     pattern: /\b(show|view|see|list|get|what(?:'s|\s+are))?\s*my\s+certs?(?:ifications?)?\b/i,
     toolName: 'get_my_certifications' },
+
+  // ─── Verb-object — caller's own roles + permissions ────────────────
+  // The tool returns BOTH roles and permissions; one extractor handles
+  // both phrasings.
+  { name: 'verb_my_roles',
+    pattern: /\b(show|view|see|list|get|what(?:'s|\s+are))?\s*my\s+roles?\b/i,
+    toolName: 'get_employee_permissions' },
+  { name: 'verb_my_permissions',
+    pattern: /\b(show|view|see|list|get|what(?:'s|\s+are))?\s*my\s+(permissions?|perms|access|privileges?)\b/i,
+    toolName: 'get_employee_permissions' },
+  { name: 'verb_what_can_i_do',
+    pattern: /\bwhat\s+(can|am\s+i\s+able\s+to)\s+(i\s+)?do\b/i,
+    toolName: 'get_employee_permissions' },
 
   // ─── Verb-object — write actions ───────────────────────────────────
   // "off-board Sarah", "disable bob@x.com", "fire Tom Jones"

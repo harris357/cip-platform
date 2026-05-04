@@ -34,6 +34,16 @@ export interface ResponseTimeDetail {
    *  it back when reporting an issue; we then grep [turn] log lines for
    *  `turn=<id>` and find correlated Langfuse traces by the same trace_id. */
   turnId?:          string;
+  /** Slice 55: which grammar pattern matched (or null). Surfaced in footer
+   *  so admins can see at-a-glance whether the deterministic fast-path fired. */
+  grammarPattern?:  string | null;
+  /** Slice 56: classifier decision + intent + confidence + version.
+   *  Surfaced in footer so admins can see whether the classifier was
+   *  involved AND what it predicted. */
+  classifierDecision?:   string | null;
+  classifierIntent?:     string | null;
+  classifierConfidence?: number | null;
+  classifierVersion?:    string | null;
 }
 
 const fmtSeconds = (ms?: number): string => ms === undefined ? '?' : `${(ms / 1000).toFixed(2)}s`;
@@ -83,8 +93,30 @@ export async function sendResponseTime(
   }
   const pipeline = pipelineParts.length > 0 ? ` · ${pipelineParts.join(' → ')}` : '';
 
+  // Slice 55 + 56: surface which routing layer handled this turn.
+  // Format: `· grammar=<pattern>` if grammar fired
+  //         `· clf=<decision>:<intent>(<confidence>)` if classifier fired
+  // (decision in: skip / clarify / disambiguate / narrow_plan / fallthrough)
+  const layerParts: string[] = [];
+  if (detail?.grammarPattern) {
+    layerParts.push(`grammar=${detail.grammarPattern}`);
+  }
+  if (detail?.classifierDecision && detail.classifierDecision !== 'fallthrough') {
+    const conf = typeof detail.classifierConfidence === 'number'
+      ? detail.classifierConfidence.toFixed(2)
+      : '?';
+    layerParts.push(`clf=${detail.classifierDecision}:${detail.classifierIntent ?? '?'}(${conf})`);
+  } else if (detail?.classifierIntent) {
+    // Show classifier prediction even on fallthrough so admins see what it would have done.
+    const conf = typeof detail.classifierConfidence === 'number'
+      ? detail.classifierConfidence.toFixed(2)
+      : '?';
+    layerParts.push(`clf=shadow:${detail.classifierIntent}(${conf})`);
+  }
+  const layers = layerParts.length > 0 ? ` · ${layerParts.join(' · ')}` : '';
+
   const turn = detail?.turnId ? ` · turn=\`${detail.turnId}\`` : '';
-  const footerText = `_⏱ ${seconds}s${timings}${intent}${pipeline}${turn}_`;
+  const footerText = `_⏱ ${seconds}s${timings}${intent}${pipeline}${layers}${turn}_`;
 
   // Slice 46e: when a turnId is present, render as an adaptive card so
   // the inline "🔍 Inspect" action can fire `/turn <id>` via messageBack.

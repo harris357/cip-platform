@@ -9,17 +9,19 @@
 // here, and confirm a grammar pattern points to its toolName.
 
 import type { Extractor } from './types.js';
-import { employeeDisableExtractor }       from './employee-disable.js';
-import { employeeFindExtractor }          from './employee-find.js';
-import { employeeListExtractor }          from './employee-list.js';
-import { getMyCertificationsExtractor }   from './get-my-certifications.js';
+import { employeeDisableExtractor }        from './employee-disable.js';
+import { employeeFindExtractor }           from './employee-find.js';
+import { employeeListExtractor }           from './employee-list.js';
+import { getEmployeePermissionsExtractor } from './get-employee-permissions.js';
+import { getMyCertificationsExtractor }    from './get-my-certifications.js';
 import { getStaffCertificationsExtractor } from './get-staff-certifications.js';
 
 export const EXTRACTORS: Record<string, Extractor> = {
-  employee_disable:        employeeDisableExtractor,
-  employee_find:           employeeFindExtractor,
-  employee_list:           employeeListExtractor,
-  get_my_certifications:   getMyCertificationsExtractor,
+  employee_disable:         employeeDisableExtractor,
+  employee_find:            employeeFindExtractor,
+  employee_list:            employeeListExtractor,
+  get_employee_permissions: getEmployeePermissionsExtractor,
+  get_my_certifications:    getMyCertificationsExtractor,
   get_staff_certifications: getStaffCertificationsExtractor,
 };
 
