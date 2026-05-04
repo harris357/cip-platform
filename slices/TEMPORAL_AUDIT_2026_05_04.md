@@ -115,9 +115,26 @@ none of which exist as workflow activities.
 shim that lets `provision-tenant.sh` call `temporal workflow start`
 during the migration period.
 
-**Priority:** Defer until 57A–D are stable. Tenant provisioning is
-high-stakes; operators need confidence in Temporal-as-source-of-truth
-before we cut over.
+**Status (2026-05-04):** **Deferred — intentionally unshipped.**
+
+A first attempt during this same session added structural skeletons
+(3 stub activities throwing "not implemented", workflow wired to call
+them, bash `--use-workflow` flag) but was **reverted before commit**
+because:
+- Activity bodies need genuine porting from bash (KC IDP API calls,
+  kubectl secret create, DB UPDATEs, role assignment) — not stubs.
+- Half-shipped, the workflow path would advertise functionality that
+  throws at runtime, which is a worse state than the all-bash status
+  quo.
+- The audit's own recommendation was to defer until other 57x slices
+  stabilise AND a dedicated implementation session is available. We
+  honoured that.
+
+**When to revisit:** once 57B + 57C are running in production for
+2-3 weeks AND an operator wants to drive tenant provisioning from a
+non-bash entry point (UI, admin bot command, automated provisioning
+hook). The 4 missing activity bodies + return-the-secrets refactor of
+`createKeycloakRealm` are the deliverable.
 
 ## What's correctly NOT a Temporal candidate
 
@@ -132,13 +149,13 @@ The audit explicitly approved these as-is:
 
 ## Recommended ship order
 
-| Slice | What | Effort | When |
+| Slice | What | Effort | Status (2026-05-04) |
 |---|---|---|---|
-| **57A** | ComplianceDriftCheckWorkflow (BUG FIX) | Medium | Immediate |
-| **57B** | CheckpointGCWorkflow + Temporal Schedule | Small | After 57A; establishes Schedule pattern |
-| **57C** | trace-import folded into RetrainModelWorkflow | Small | Trivial after 57B |
-| **57D** | EmployeeRoleChangeWorkflow | Small | Independent; can ship anytime |
-| **57E** | TenantProvisioningWorkflow (full) | Large | Defer 2-4 weeks until 57A-D are stable |
+| **57A** | ComplianceDriftCheckWorkflow (BUG FIX) | Medium | Deferred — workflow stub already in place; user opted to address later |
+| **57B** | CheckpointGCWorkflow + Temporal Schedule | Small | ✅ Shipped |
+| **57C** | trace-import folded into RetrainModelWorkflow | Small | ✅ Shipped |
+| **57D** | EmployeeRoleChangeWorkflow | Small | Deferred — user opted to address later (stubbed for review) |
+| **57E** | TenantProvisioningWorkflow (full) | Large | Deferred — first attempt reverted; properly defer |
 
 ## Patterns the audit identified for reuse
 
