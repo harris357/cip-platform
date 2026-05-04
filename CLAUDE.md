@@ -61,6 +61,56 @@ Check every file you produce against all seven before finishing a session.
 
 ---
 
+## Durability Check — Before Designing Any New Pipeline
+
+**Run this check before writing the slice doc for any work that
+involves cron jobs, multi-step processes, or multi-system writes.**
+We have a Temporal cluster + worker pods deployed; failing to use
+them when the work fits is leaving infrastructure on the table.
+
+Ask these six questions about the work you're about to design:
+
+1. **Multi-step?** Does the operation involve 2+ network/DB/storage
+   calls that need to all succeed for the operation to be
+   "complete"?
+2. **Cron-driven?** Is this work scheduled (weekly/daily/hourly),
+   especially if any step takes > 30 seconds or could fail mid-way?
+3. **Wait for human?** Does the workflow need to pause for an admin
+   review, approval, or external event (HITL)?
+4. **Bad if interrupted?** Would a pod restart mid-execution leave
+   the system in a partial/inconsistent state requiring manual
+   recovery?
+5. **Compensating actions?** If step N fails after step N-1 succeeded,
+   should we roll back N-1 (delete the S3 object, revoke the KC role,
+   etc.)?
+6. **Fan-out?** Will we ever want to run this operation across
+   multiple tenants/entities in parallel?
+
+**Two or more "yes" answers = strong Temporal candidate.** Use the
+existing patterns:
+
+- Signal-paused HITL: `certification-processing.workflow.ts`,
+  `retrain-model.workflow.ts` (slice 56N)
+- Compensating action: `retrain-model.workflow.ts:228-256`
+- MCP tool → `workflow.start` handoff: `process-document.ts:61-68`
+- Activity proxy with per-step timeouts:
+  `retrain-model.workflow.ts:56-80`
+
+**One "yes" answer or fewer = stay sync.** Single SQL UPDATE in an MCP
+handler, sub-100ms request paths, LangGraph nodes (its own runtime),
+and operator-driven diagnostic scripts are NOT Temporal candidates.
+
+**If unsure** between sync and Temporal, default to sync first; it's
+easier to convert sync→Temporal once a real durability problem hits
+than to back out a needless workflow. But document the decision in
+the slice doc so reviewers can challenge it.
+
+**Pattern reference:** `slices/TEMPORAL_AUDIT_2026_05_04.md` for the
+last comprehensive audit; re-run quarterly to catch missed
+opportunities.
+
+---
+
 ## Cross-Slice Issues — How to Handle Them
 
 If you discover during a session that an earlier slice produced something incorrect
