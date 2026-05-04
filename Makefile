@@ -3,7 +3,7 @@
 
 .DEFAULT_GOAL := help
 
-.PHONY: help start stop bootstrap bootstrap-infra create-secrets status forward logs deploy redeploy redeploy-all ship provision-tenant verify typecheck build lint extractor-test extractor-coverage extractor-add training-data-add training-data-stats training-data-review training-data-mark-reviewed training-data-export classifier-train classifier-eval classifier-deploy classifier-status classifier-retrain-now training-data-import-traces
+.PHONY: help start stop bootstrap bootstrap-infra create-secrets status forward logs deploy redeploy redeploy-all ship provision-tenant verify typecheck build lint extractor-test extractor-coverage extractor-add training-data-add training-data-stats training-data-review training-data-mark-reviewed training-data-export training-data-seed-tenant classifier-train classifier-eval classifier-deploy classifier-status classifier-retrain-now training-data-import-traces
 
 # ── Daily cycle ──────────────────────────────────────────────────────────────
 
@@ -224,6 +224,10 @@ training-data-mark-reviewed: ## Mark example IDs as reviewed. Usage: make traini
 
 training-data-export: ## Merge all sources into packages/intent-classifier/training/training_data.csv
 	@bash scripts/training-data-export.sh
+
+training-data-seed-tenant: ## Slice 56D: import manual_examples.csv into bot_intent_training_data tagged with a tenant_id (idempotent). Usage: make training-data-seed-tenant tenant=<uuid>
+	@[ -n "$(tenant)" ] || (echo "Error: tenant=<uuid> required (e.g. make training-data-seed-tenant tenant=00000000-0000-0000-0000-000000000001)"; exit 1)
+	@bash scripts/training-data-seed-tenant.sh "$(tenant)"
 
 training-data-import-traces: ## Slice 56E: import labelled rows from Langfuse traces. Optional: days=N (default 7), tenant=<uuid>
 	@cd packages/intent-classifier && python -m training.import_traces \
