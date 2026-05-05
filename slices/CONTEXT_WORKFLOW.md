@@ -186,6 +186,27 @@ PENDING:    42A ──► 42C ──► 42B
   documents.* permissions seeded.  No tools/activities yet — 58B
   starts there.  See `slices/archive/SLICE_58A_DOCUMENT_SERVICE_FOUNDATION.md`.
 
+- **Slice 58B-2a** (2026-05-05, doc-service-side, image `31ab6df`)
+  — `DocumentProcessingWorkflow` phase loop + 6 ingest activities
+  (scan, features, embedding, fingerprint, sensitivity, progress
+  publish), `document_process` + `documents_status` MCP tools,
+  Langfuse-hosted L3 rubric, EICAR + happy-path PDF flow verified
+  live (~6s end-to-end through to `classifying`).
+
+- **Slice 58B-2b** (2026-05-05, `d23fdaf`,`ae92257`)
+  — Bot-side wiring for the doc-service ingest pipeline.
+  Multi-MCP-server tool-discovery + execution (hr-service +
+  document-service, fail-loud collision detection at startup);
+  `downloadAttachmentToBuffer` keeps bytes flowing bot→doc-service→S3
+  once; bot-progress NATS subscriber renders fresh Teams messages
+  per workflow phase via `adapter.continueConversation`. File
+  fast-path branches on `documents.cert_legacy_path` so the legacy
+  cert flow stays alive (58E will flip the tunable false and remove
+  legacy code). Vitest set up on @cip/teams-bot with 10 unit tests
+  green.  After this slice: cluster-side ingest end-to-end testable
+  in Teams once the bot pod is rolled to the new image; cert flow
+  preserved while the tunable is on.
+
 ### Drafted, not yet shipped
 
 Recommended order: **58B → 58C → 58D → 58E (cert E2E) → 58F/G → 58H/I → 53 → 49 → 51**.
@@ -198,7 +219,7 @@ operational follow-ons; H/I are growth investments.
 | Slice | Doc | Status |
 |---|---|---|
 | **58A** — `@cip/document-service` foundation (schema, ClamAV, RLS, perms, contract, lifecycle) | [archive/SLICE_58A_DOCUMENT_SERVICE_FOUNDATION.md](./archive/SLICE_58A_DOCUMENT_SERVICE_FOUNDATION.md) | SHIPPED 2026-05-05 (`14235e4`,`6468010`,`2cde96f`,`dc6e15e`) |
-| **58B** — Ingest path (bot wiring + scan + features + sensitivity + workflow + bot-progress channel) | [SLICE_58B_INGEST_SCAN_FEATURES.md](./SLICE_58B_INGEST_SCAN_FEATURES.md) | DRAFTED |
+| **58B** — Ingest path (bot wiring + scan + features + sensitivity + workflow + bot-progress channel) | [SLICE_58B_INGEST_SCAN_FEATURES.md](./SLICE_58B_INGEST_SCAN_FEATURES.md) | SHIPPED 2026-05-05 (2a `31ab6df`; 2b `d23fdaf`,`ae92257`).  Cert legacy path stays alive until 58E. |
 | **58C** — Classification + per-type extraction strategy (cert as first consumer) | [SLICE_58C_CLASSIFY_AND_EXTRACT.md](./SLICE_58C_CLASSIFY_AND_EXTRACT.md) | DRAFTED |
 | **58D** — Subject resolution + HITL admin queue | [SLICE_58D_SUBJECT_RESOLUTION.md](./SLICE_58D_SUBJECT_RESOLUTION.md) | DRAFTED |
 | **58E** — Routing handoff + cert workflow as Route-A consumer + legacy removal | [SLICE_58E_ROUTING_AND_CERT_MIGRATION.md](./SLICE_58E_ROUTING_AND_CERT_MIGRATION.md) | DRAFTED |
