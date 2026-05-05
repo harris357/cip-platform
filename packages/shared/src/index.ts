@@ -24,6 +24,10 @@ export * from './clients/temporal.js';
 export * from './clients/nats.js';
 export * from './clients/postgres.js';
 
+// Notifications — generic Teams adaptive-card delivery (pre-58D infra)
+export * from './notifications/teams-card-notifier.js';
+export * from './notifications/adaptive-card-builder.js';
+
 // Utils
 export * from './utils/subject-builder.js';
 export * from './utils/tenant-context.js';
