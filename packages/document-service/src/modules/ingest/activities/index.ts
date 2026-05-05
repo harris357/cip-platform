@@ -22,3 +22,18 @@ export type { PublishProgressInput }    from './publish-progress.activity.js'
 
 export { transitionToClassifyingActivity } from './transition-to-classifying.activity.js'
 export type { TransitionToClassifyingInput } from './transition-to-classifying.activity.js'
+
+// Slice 58C — generic state-transition helper used by every phase from
+// classify onward. transitionToClassifyingActivity stays for backward
+// compat with existing in-flight workflows (Temporal replays history).
+export { transitionLifecycleStateActivity } from './transition-lifecycle-state.activity.js'
+export type { TransitionLifecycleStateInput } from './transition-lifecycle-state.activity.js'
+
+export { classifyDocumentActivity, ClassifyDocumentOutputSchema } from './classify-document.activity.js'
+export type { ClassifyDocumentInput, ClassifyDocumentOutput }     from './classify-document.activity.js'
+
+export { runExtractionStrategyActivity, StrategyNotFoundError } from './run-extraction-strategy.activity.js'
+export type { RunExtractionStrategyInput }                      from './run-extraction-strategy.activity.js'
+
+export { loadDocumentsTunablesActivity }     from './load-tunables.activity.js'
+export type { LoadDocumentsTunablesInput }   from './load-tunables.activity.js'

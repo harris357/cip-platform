@@ -27,6 +27,8 @@ const {
   computeLayoutFingerprintActivity,
   publishProgressActivity,
   transitionToClassifyingActivity,
+  transitionLifecycleStateActivity,
+  loadDocumentsTunablesActivity,
 } = proxyActivities<typeof activities>({
   startToCloseTimeout: '60 seconds',
   retry: {
@@ -37,11 +39,27 @@ const {
   },
 })
 
-const { scoreSensitivityActivity } = proxyActivities<typeof activities>({
-  // L3 LLM rubric occasionally needs the longer timeout — Mistral
-  // small can spike to 60-90s under load.
+const { scoreSensitivityActivity, classifyDocumentActivity } = proxyActivities<typeof activities>({
+  // LLM-backed activities — Mistral small can spike to 60-90s under load.
   startToCloseTimeout: '5 minutes',
   retry: { maximumAttempts: 3 },
+})
+
+const { runExtractionStrategyActivity } = proxyActivities<typeof activities>({
+  // Extraction strategy can be heavy (vision agent does multi-step LLM
+  // work). The dispatcher activity itself starts a workflow on another
+  // queue and awaits its result, so the timeout has to cover that whole
+  // round-trip — generous to absorb queue-side scheduling latency.
+  startToCloseTimeout: '15 minutes',
+  retry: {
+    maximumAttempts: 3,
+    initialInterval: '15 seconds',
+    backoffCoefficient: 2,
+    // StrategyNotFoundError is a config error, not a transient failure
+    // — let the workflow surface it once and route to HITL via the
+    // catch handler in the extract case.
+    nonRetryableErrorTypes: ['StrategyNotFoundError'],
+  },
 })
 
 // ─── Phase + signal scaffold ────────────────────────────────────────────
@@ -95,6 +113,13 @@ export async function DocumentProcessingWorkflow(input: DocumentProcessingInput)
   // Persisted on the documents row so 58G's restore-and-resume can re-
   // hydrate; in 58B we keep the in-memory copy for the linear path.
   let cachedGenericFeatures: activities.GenericFeatures | null = null
+  // Slice 58C — sensitivity tier carries through to classify+extract;
+  // cached in the workflow because the activities consume it as input
+  // rather than re-reading from DB.
+  let cachedSensitivityTier: 'public' | 'internal' | 'confidential' | 'restricted' | null = null
+  // Slice 58C — classify result cached for the extract phase; on
+  // reclassify (slice 58F) the new value replaces this.
+  let cachedClassification: activities.ClassifyDocumentOutput | null = null
 
   type ProgressStep   = Parameters<typeof publishProgressActivity>[0]['step']
   type ProgressStatus = Parameters<typeof publishProgressActivity>[0]['status']
@@ -176,24 +201,132 @@ export async function DocumentProcessingWorkflow(input: DocumentProcessingInput)
           mimeType:  cachedGenericFeatures.mimeType,
           ...(uploaderHintText !== undefined ? { uploaderHintText } : {}),
         })
+        cachedSensitivityTier = sens.tier
         await progress('sensitivity', 'completed', { tier: sens.tier })
 
-        // Transition documents.lifecycle_state → 'classifying' before exit
-        // so it's observable from documents_status. Idempotent on retry.
+        // Transition documents.lifecycle_state → 'classifying' before
+        // entering the classify phase. Idempotent on retry. The slice-58B
+        // helper is preserved (in-flight workflows still replay through it);
+        // new workflow runs use it just the same.
         await transitionToClassifyingActivity({ tenantId, documentId })
         phase = 'classify'
         break
       }
 
-      case 'classify':
-      case 'extract':
+      case 'classify': {
+        await progress('classify', 'started')
+        if (!cachedGenericFeatures) {
+          throw new Error('classify phase: cachedGenericFeatures missing — restart from scan')
+        }
+
+        // Tunable: classify_confidence_threshold. Loaded once per phase
+        // entry (cheap with the tunables 5-min cache); reclassification
+        // re-enters this case and re-reads to honour live admin changes.
+        const tunables = await loadDocumentsTunablesActivity({ tenantId })
+
+        const cls = await classifyDocumentActivity({
+          tenantId,
+          documentId,
+          ocrText:         cachedGenericFeatures.ocrText,
+          fileName:        cachedGenericFeatures.fileName,
+          mimeType:        cachedGenericFeatures.mimeType,
+          ...(uploaderHintText !== undefined ? { uploaderHintText } : {}),
+          // sensitivityTier is persisted on the row by the sensitivity
+          // phase; classify activity reads from input rather than DB so
+          // the workflow trace shows the value used. Reload from cache.
+          sensitivityTier: cachedSensitivityTier ?? 'public',
+          genericFeatures: cachedGenericFeatures as unknown as Record<string, unknown>,
+        })
+        await progress('classify', 'completed', {
+          module:     cls.module,
+          docType:    cls.docType,
+          confidence: cls.confidence,
+        })
+
+        if (cls.confidence < tunables.classifyConfidenceThreshold) {
+          // Park in HITL queue; 58D's admin tools resolve.
+          await transitionLifecycleStateActivity({
+            tenantId,
+            documentId,
+            to:            'hitl_admin_queue',
+            preHitlState:  'classifying',
+            reason:        'low_classification_confidence',
+            module:        cls.module,
+            docType:       cls.docType,
+          })
+          return
+        }
+
+        cachedClassification = cls
+        phase = 'extract'
+        break
+      }
+
+      case 'extract': {
+        await progress('extract', 'started')
+        if (!cachedGenericFeatures) {
+          throw new Error('extract phase: cachedGenericFeatures missing — restart from scan')
+        }
+        if (!cachedClassification) {
+          throw new Error('extract phase: cachedClassification missing — re-run classify')
+        }
+
+        try {
+          const extracted = await runExtractionStrategyActivity({
+            tenantId,
+            documentId,
+            module:           cachedClassification.module,
+            docType:          cachedClassification.docType,
+            sensitivityTier:  cachedSensitivityTier ?? 'public',
+            ocrText:          cachedGenericFeatures.ocrText,
+            genericFeatures:  cachedGenericFeatures as unknown as Record<string, unknown>,
+            ...(uploaderHintText !== undefined ? { uploaderHintText } : {}),
+          })
+          await progress('extract', 'completed', {
+            fieldCount: Object.keys(extracted.fields).length,
+            confidence: extracted.extractionConfidence,
+          })
+        } catch (err) {
+          // No registered strategy for this (module, docType) — treat as a
+          // misclassification: park in HITL with the error reason. Other
+          // failures bubble (Temporal retries; nonRetryable types fail the
+          // workflow so an alert fires).
+          const isStrategyNotFound = (err as { name?: string } | undefined)?.name === 'StrategyNotFoundError'
+          if (!isStrategyNotFound) throw err
+
+          await progress('extract', 'failed', {
+            reason: 'no_extraction_strategy',
+            module: cachedClassification.module,
+            docType: cachedClassification.docType,
+          })
+          await transitionLifecycleStateActivity({
+            tenantId,
+            documentId,
+            to:           'hitl_admin_queue',
+            preHitlState: 'classifying',
+            reason:       'no_extraction_strategy',
+          })
+          return
+        }
+
+        // Hand off to the subject phase (58D fills it). Move the lifecycle
+        // state pointer here so external observers see the doc graduate
+        // out of 'classifying' even before 58D ships.
+        await transitionLifecycleStateActivity({
+          tenantId,
+          documentId,
+          to: 'awaiting_subject',
+        })
+        phase = 'subject'
+        break
+      }
+
       case 'subject':
       case 'route':
       case 'awaiting_module_callback':
-        // Slice 58C+ owns these phases. In 58B, exiting here is the
-        // expected behavior — the workflow halts with documents.lifecycle_state
-        // = 'classifying' and 58C picks it up via a separate workflow
-        // (or a signal — 58C decides).
+        // Slice 58D / 58E own these phases. In 58C, exit at 'subject'
+        // with the DB lifecycle state already at 'awaiting_subject' —
+        // 58D will start a new workflow (or signal this one) to resume.
         return
     }
   }
