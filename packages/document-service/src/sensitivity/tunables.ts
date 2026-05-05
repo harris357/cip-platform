@@ -20,6 +20,8 @@ export const DOCUMENTS_TUNABLE_KEYS = [
   'documents.l1_keywords',
   'documents.av_max_file_size_mb',
   'documents.progress_subscription_ttl_seconds',
+  // Slice 58C — below this confidence the classifier shunts to HITL.
+  'documents.classify_confidence_threshold',
 ] as const
 export type DocumentsTunableKey = typeof DOCUMENTS_TUNABLE_KEYS[number]
 
@@ -29,6 +31,8 @@ export interface DocumentsTunables {
   l1Keywords:                      string[]
   avMaxFileSizeMb:                 number
   progressSubscriptionTtlSeconds:  number
+  /** Slice 58C — minimum classifier confidence to skip HITL admin queue. */
+  classifyConfidenceThreshold:     number
 }
 
 /** Code-resident fallbacks — used when the DB row is missing entirely. */
@@ -41,6 +45,7 @@ export const DEFAULTS: DocumentsTunables = {
   ],
   avMaxFileSizeMb:                 25,
   progressSubscriptionTtlSeconds:  300,
+  classifyConfidenceThreshold:     0.75,
 }
 
 interface CacheEntry {
@@ -61,6 +66,10 @@ function asBool(v: unknown, fallback: boolean): boolean {
   return fallback
 }
 function asInt(v: unknown, fallback: number): number {
+  const n = typeof v === 'number' ? v : Number(v)
+  return Number.isFinite(n) ? n : fallback
+}
+function asNumber(v: unknown, fallback: number): number {
   const n = typeof v === 'number' ? v : Number(v)
   return Number.isFinite(n) ? n : fallback
 }
@@ -107,6 +116,7 @@ export async function loadDocumentsTunables(tenantId: string): Promise<Documents
     l1Keywords:                      asStringArray(merged['documents.l1_keywords'], DEFAULTS.l1Keywords),
     avMaxFileSizeMb:                 asInt(merged['documents.av_max_file_size_mb'], DEFAULTS.avMaxFileSizeMb),
     progressSubscriptionTtlSeconds:  asInt(merged['documents.progress_subscription_ttl_seconds'], DEFAULTS.progressSubscriptionTtlSeconds),
+    classifyConfidenceThreshold:     asNumber(merged['documents.classify_confidence_threshold'], DEFAULTS.classifyConfidenceThreshold),
   }
 
   cache.set(tenantId, { value, expiresAt: Date.now() + TTL_MS })

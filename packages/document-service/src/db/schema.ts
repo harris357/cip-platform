@@ -136,6 +136,25 @@ export const documentEmbeddings = cipDocuments.table('document_embeddings', {
   tenantIdx:        index('document_embeddings_tenant_idx').on(t.tenantId),
 }))
 
+// Slice 58C — per-tenant strategy registry. Resolution falls back through
+// (tenant, module, doc_type) → (tenant, module, '*') → (zero-UUID, ...).
+export const extractionStrategies = cipDocuments.table('extraction_strategies', {
+  tenantId:         uuid('tenant_id').notNull(),
+  module:           text('module').notNull(),
+  docType:          text('doc_type').notNull(),                    // '*' = wildcard
+  strategyName:     text('strategy_name').notNull(),
+  taskQueue:        text('task_queue').notNull(),
+  activityName:     text('activity_name').notNull(),
+  configJson:       jsonb('config_json').notNull().default(sql`'{}'::jsonb`),
+  enabled:          boolean('enabled').notNull().default(true),
+  notes:            text('notes'),
+  updatedAt:        timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedBy:        uuid('updated_by'),
+}, (t) => ({
+  pk:               primaryKey({ columns: [t.tenantId, t.module, t.docType] }),
+  tenantModuleIdx:  index('extraction_strategies_tenant_module_idx').on(t.tenantId, t.module, t.enabled),
+}))
+
 export const documentRoutingMap = cipDocuments.table('document_routing_map', {
   tenantId:         uuid('tenant_id').notNull(),
   module:           text('module').notNull(),
