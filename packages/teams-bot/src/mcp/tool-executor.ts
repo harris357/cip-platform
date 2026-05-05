@@ -1,5 +1,5 @@
 import type { McpModuleResponse } from '@cip/shared';
-import { getMcpClient } from './client.js';
+import { getMcpClientFor, getServerForTool, type ServerName } from './multi-server-client.js';
 import type { BotAuthContext } from '../auth/resolve-context.js';
 
 function extractText(content: unknown): string {
@@ -10,13 +10,26 @@ function extractText(content: unknown): string {
   return '{}';
 }
 
+/**
+ * Execute a tool by name on whichever MCP server registered it.
+ *
+ * Slice 58B-2b: routing is driven by the table populated at
+ * discoverTools() time. If the tool name isn't in the table, we
+ * fall back to hr-service — the legacy behaviour, and the right
+ * default for any tool the bot calls before the catalog is warm
+ * (e.g. `sync_employee` and `get_employee_permissions` during
+ * resolveAuthContext).
+ *
+ * tenantId flows through the bearer token, NOT as a tool argument
+ * (non-negotiable #6).
+ */
 export async function executeTool(
   name: string,
   args: Record<string, unknown>,
   ctx: BotAuthContext,
 ): Promise<McpModuleResponse> {
-  // tenantId flows through the bearer token, not as a tool argument (non-negotiable #6)
-  const client = await getMcpClient(ctx.bearerToken);
+  const server: ServerName = getServerForTool(name) ?? 'hr-service';
+  const client = await getMcpClientFor(server, ctx.bearerToken);
   const result = await client.callTool({ name, arguments: args });
   return JSON.parse(extractText(result.content)) as McpModuleResponse;
 }

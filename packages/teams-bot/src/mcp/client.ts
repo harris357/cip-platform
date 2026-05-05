@@ -1,17 +1,19 @@
-import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
+// Slice 58B-2b — thin compatibility wrapper.
+//
+// The bot now talks to two MCP servers (see multi-server-client.ts).
+// Pre-2b code (auth/resolve-context, teams-protocol/channel-registry)
+// hard-coded an hr-service-only `getMcpClient(bearerToken)` import.
+// Rather than touch every call site in this slice, we delegate to the
+// new multi-server registry pinned to hr-service.
+//
+// Future cleanup: migrate the two remaining call sites
+// (resolveAuthContext + updateChannelRegistry) to call
+// `getMcpClientFor('hr-service', token)` directly and delete this file.
 
+import type { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { getMcpClientFor } from './multi-server-client.js';
+
+/** @deprecated use getMcpClientFor('hr-service', token) directly. */
 export async function getMcpClient(bearerToken: string): Promise<Client> {
-  const serverUrl = process.env['MCP_SERVER_URL'];
-  if (!serverUrl) throw new Error('MCP_SERVER_URL is not set');
-
-  const transport = new StreamableHTTPClientTransport(new URL(serverUrl), {
-    requestInit: { headers: { Authorization: `Bearer ${bearerToken}` } },
-  });
-  const client = new Client({ name: 'teams-bot', version: '1.0.0' });
-  // Transport.sessionId is required (string) but SDK types it as string | undefined under
-  // exactOptionalPropertyTypes — safe cast, the value is always present at runtime.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  await client.connect(transport as any);
-  return client;
+  return getMcpClientFor('hr-service', bearerToken);
 }

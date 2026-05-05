@@ -1,5 +1,5 @@
 import type { Tool as McpTool } from '@modelcontextprotocol/sdk/types.js';
-import { getMcpClient } from './client.js';
+import { getMcpClientFor, getServers, setToolRouting, type ServerName } from './multi-server-client.js';
 import { fetchTopKTools } from '../intent/embed-cache.js';
 import { getToolMetadata } from './tool-metadata.js';
 import type { BotAuthContext } from '../auth/resolve-context.js';
@@ -13,7 +13,9 @@ const cache = new Map<string, CacheEntry>();
 const TTL = 5 * 60 * 1000;
 
 // Per-(tenant, employee). Same-tenant users with different permissions
-// get distinct cache entries.
+// get distinct cache entries. Slice 58B-2b: catalog now spans every
+// MCP server in the registry, but the cache key is unchanged — caller
+// permissions are what changes between users, not the server list.
 function cacheKey(ctx: BotAuthContext): string {
   return `${ctx.tenantId}:${ctx.employeeId}`;
 }
@@ -38,7 +40,45 @@ function isToolPermitted(tool: McpTool, permissions: Record<string, boolean>): b
 }
 
 /**
+ * Fetch the catalog from a single MCP server, enrich each tool's
+ * annotations from hr-service's metadata side-channel, and tag each
+ * tool with its source server name (in `_source` so callers can route).
+ *
+ * Failure of one server fails the whole discovery (we'd rather crash
+ * loud than silently render a half-catalog with the doc-service tools
+ * missing). The caller can wrap this in a circuit breaker later.
+ */
+async function listFromServer(
+  server:       ServerName,
+  bearerToken:  string,
+  metadata:     Record<string, Record<string, unknown>>,
+): Promise<McpTool[]> {
+  const client = await getMcpClientFor(server, bearerToken);
+  const result = await client.listTools();
+  // Hotfix: the MCP SDK strips non-spec annotation fields on the wire.
+  // Merge the side-channel metadata back in so isToolPermitted (and
+  // downstream gateWriteAction + tool-reference rendering) see
+  // sideEffectLevel / requiredPermission / whenToUse / whenNotToUse /
+  // commonNextTools / outputSchema. Today only hr-service exposes the
+  // /admin/tool-metadata side-channel; doc-service tools rely on the
+  // annotations the SDK does pass through (the SDK preserves enough
+  // for our gates — server-side defense in depth covers the rest).
+  return result.tools.map(t => ({
+    ...t,
+    annotations: { ...(t.annotations ?? {}), ...(metadata[t.name] ?? {}) },
+    // Non-spec field; carried for the bot's internal routing only.
+    // Stripped before being passed to the LLM.
+    _source: server,
+  })) as unknown as McpTool[];
+}
+
+/**
  * Returns the candidate tool catalog for the router LLM.
+ *
+ * Slice 58B-2b: the catalog is the union of every MCP server in the
+ * registry (today: hr-service + document-service). Tool names are
+ * globally unique within this view — the merge step throws on
+ * collision (hard rule #1).
  *
  * Two filters applied in order:
  *   1. Permission filter — drops tools the user can't invoke. Driven by
@@ -57,19 +97,29 @@ export async function discoverTools(
   const key = cacheKey(ctx);
   let permitted = cache.get(key);
   if (!permitted || Date.now() >= permitted.expiresAt) {
-    const client = await getMcpClient(ctx.bearerToken);
-    const result = await client.listTools();
-    // Hotfix: the MCP SDK strips non-spec annotation fields on the wire.
-    // Fetch the full annotation map from hr-service's side channel and
-    // merge so isToolPermitted (and downstream gateWriteAction +
-    // tool-reference rendering) see sideEffectLevel / requiredPermission /
-    // whenToUse / whenNotToUse / commonNextTools / outputSchema.
     const metadata = await getToolMetadata();
-    const enriched = result.tools.map(t => ({
-      ...t,
-      annotations: { ...(t.annotations ?? {}), ...(metadata[t.name] ?? {}) },
-    })) as McpTool[];
-    const filtered = enriched.filter(t => isToolPermitted(t, ctx.permissions));
+
+    // Fan out across servers in parallel. listFromServer tags each tool
+    // with `_source` so we can populate the routing map below.
+    const servers = getServers();
+    const perServer = await Promise.all(
+      servers.map(s => listFromServer(s.name, ctx.bearerToken, metadata)),
+    );
+
+    // Merge with collision detection. Hard rule #1: the same name
+    // appearing in two catalogs is a startup-time error.
+    const merged: McpTool[] = [];
+    for (let i = 0; i < servers.length; i += 1) {
+      const serverEntry = servers[i];
+      const tools = perServer[i];
+      if (!serverEntry || !tools) continue;
+      for (const tool of tools) {
+        setToolRouting(tool.name, serverEntry.name);
+        merged.push(tool);
+      }
+    }
+
+    const filtered = merged.filter(t => isToolPermitted(t, ctx.permissions));
     permitted = { tools: filtered, expiresAt: Date.now() + TTL };
     cache.set(key, permitted);
   }
@@ -85,4 +135,9 @@ export async function discoverTools(
   }
 
   return permitted.tools;
+}
+
+/** Test-only — clear the catalog cache between cases. */
+export function _resetToolDiscoveryCache(): void {
+  cache.clear();
 }

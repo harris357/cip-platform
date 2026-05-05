@@ -7,13 +7,20 @@ import { cacheToken, getCachedToken } from './auth/token-store.js';
 import { storePendingMessage, takePendingMessage } from './auth/pending-message-store.js';
 import { resolveTenantContext, type TenantContext } from './auth/tenant-resolver.js';
 import { updateChannelRegistry } from './teams-protocol/channel-registry.js';
-import { detectFileAttachments, downloadToObjectStore } from './teams-protocol/file-handler.js';
+import {
+  detectFileAttachments,
+  downloadToObjectStore,
+  downloadAttachmentToBuffer,
+  guessMimeType,
+} from './teams-protocol/file-handler.js';
 import { renderResponse } from './teams-protocol/card-renderer.js';
+import { startProgressRenderer } from './teams-protocol/progress-renderer.js';
 import { sendResponseTime } from './intent/debug-banner.js';
 import { executeTool } from './mcp/tool-executor.js';
 import { runLangGraph } from './langgraph/runner.js';
 import { dispatchSlashCommand } from './slash-commands/dispatch.js';
 import { buildWelcomeChips } from './slash-commands/welcome-chips.js';
+import { getTunables, getTunable } from './langgraph/tunables.js';
 
 export function buildWelcomeMessage(): string {
   return (
@@ -37,6 +44,25 @@ export function buildWelcomeActivity(): Activity {
 
 function getAadTenantId(context: TurnContext): string {
   return (context.activity.channelData as { tenant?: { id?: string } } | undefined)?.tenant?.id ?? '';
+}
+
+/**
+ * Pull the documentId out of a `document_process` MCP response.
+ * Tolerates the various shapes McpModuleResponse can take so the bot
+ * doesn't fail the turn on a schema drift — worst case the progress
+ * subscription is skipped and the user falls back to documents_status.
+ */
+function extractDocumentId(result: unknown): string | null {
+  if (!result || typeof result !== 'object') return null;
+  const obj = result as Record<string, unknown>;
+  const data = obj['data'];
+  if (data && typeof data === 'object') {
+    const id = (data as Record<string, unknown>)['documentId'];
+    if (typeof id === 'string' && id.length > 0) return id;
+  }
+  const top = obj['documentId'];
+  if (typeof top === 'string' && top.length > 0) return top;
+  return null;
 }
 
 async function exchangeAadForKeycloak(aadToken: string, ctx: TenantContext): Promise<string> {
@@ -199,21 +225,68 @@ export class CIPTeamsBot extends TeamsActivityHandler {
     await updateChannelRegistry(context, ctx.tenantId, ctx.bearerToken);
     const tRegistry = Date.now();
 
-    // File-attachment fast path. process_document is the only valid tool
-    // for these turns; no planner needed.
+    // File-attachment fast path. Slice 58B-2b: branches on the
+    // `documents.cert_legacy_path` tunable. While the legacy path is
+    // enabled (default through 58B), the bot uploads to OVH itself
+    // and calls hr-service `process_document(objectStoreKey)`. When
+    // flipped false (target state at 58E), the bot streams CDN bytes
+    // straight into doc-service `document_process(...)` and subscribes
+    // to per-conversation NATS progress events.
+    //
+    // Both paths coexist by design — the cert flow MUST stay alive
+    // until 58E removes it. Hard rule #7.
     if (fileAttachments.length > 0) {
+      const tunables = await getTunables(ctx.tenantId);
+      const certLegacyPath = getTunable<boolean>(tunables, 'documents.cert_legacy_path', true);
+
       for (const file of fileAttachments) {
+        if (certLegacyPath) {
+          // ── LEGACY PATH ─────────────────────────────────────────────
+          const tDl0 = Date.now();
+          const key = await downloadToObjectStore(file, ctx);
+          const tDl1 = Date.now();
+          const result = await executeTool('process_document', { objectStoreKey: key }, ctx);
+          const tExec1 = Date.now();
+          await renderResponse(context, result);
+          await sendResponseTime(context, Date.now() - tStart, {
+            tool:   'process_document',
+            execMs: tExec1 - tDl1,
+          });
+          console.log(`[turn] tenantId=${ctx.tenantId} mode=file path=legacy file=${file.name ?? '?'} typing=${tTyping - tStart}ms auth=${tAuth - tTyping}ms registry=${tRegistry - tAuth}ms download=${tDl1 - tDl0}ms exec=${tExec1 - tDl1}ms render=${Date.now() - tExec1}ms total=${Date.now() - tStart}ms`);
+          continue;
+        }
+
+        // ── NEW PATH (58B+) ─────────────────────────────────────────
         const tDl0 = Date.now();
-        const key = await downloadToObjectStore(file, ctx);
+        const { buffer, mimeType, fileName } = await downloadAttachmentToBuffer(file);
         const tDl1 = Date.now();
-        const result = await executeTool('process_document', { objectStoreKey: key }, ctx);
+        const conversationId = context.activity.conversation?.id ?? '';
+        const sourceMessageId = context.activity.id;
+        const args: Record<string, unknown> = {
+          fileBase64: buffer.toString('base64'),
+          fileName,
+          mimeType:   guessMimeType(fileName, mimeType),
+          ...(text ? { hintText: text } : {}),
+          ...(sourceMessageId ? { sourceMessageId } : {}),
+          ...(conversationId ? { conversationId } : {}),
+        };
+        const result = await executeTool('document_process', args, ctx);
         const tExec1 = Date.now();
+
+        // Best-effort progress subscription. Failures don't block ack.
+        const docId = extractDocumentId(result);
+        if (docId && conversationId) {
+          // Fire-and-forget: the renderer manages its own TTL + lifecycle.
+          void startProgressRenderer(context, ctx.tenantId, conversationId, docId)
+            .catch(err => console.warn(`[progress-renderer] start failed: ${err instanceof Error ? err.message : String(err)}`));
+        }
+
         await renderResponse(context, result);
         await sendResponseTime(context, Date.now() - tStart, {
-          tool: 'process_document',
+          tool:   'document_process',
           execMs: tExec1 - tDl1,
         });
-        console.log(`[turn] tenantId=${ctx.tenantId} mode=file file=${file.name ?? '?'} typing=${tTyping - tStart}ms auth=${tAuth - tTyping}ms registry=${tRegistry - tAuth}ms download=${tDl1 - tDl0}ms exec=${tExec1 - tDl1}ms render=${Date.now() - tExec1}ms total=${Date.now() - tStart}ms`);
+        console.log(`[turn] tenantId=${ctx.tenantId} mode=file path=docservice file=${fileName} docId=${docId ?? '?'} typing=${tTyping - tStart}ms auth=${tAuth - tTyping}ms registry=${tRegistry - tAuth}ms download=${tDl1 - tDl0}ms exec=${tExec1 - tDl1}ms render=${Date.now() - tExec1}ms total=${Date.now() - tStart}ms`);
       }
       return;
     }

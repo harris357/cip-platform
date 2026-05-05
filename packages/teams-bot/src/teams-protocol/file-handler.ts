@@ -1,3 +1,20 @@
+// Slice 58B-2b — DUAL-PATH file handler.
+//
+// During the 58B/58E transition the bot supports BOTH file-upload pipelines:
+//
+//   ── LEGACY (cert_legacy_path = true; default through 58B) ──
+//     downloadToObjectStore(): bot fetches CDN bytes → bot uploads to OVH →
+//     bot calls hr-service `process_document(objectStoreKey)`.
+//     Removed in 58E along with the hr-service tool.
+//
+//   ── NEW (cert_legacy_path = false; tested in 58B-2b, default flips in 58E) ──
+//     downloadAttachmentToBuffer(): bot fetches CDN bytes only and forwards
+//     them to doc-service `document_process(fileBase64, ...)`. Doc-service
+//     does the OVH PutObject. Bytes hop bot→doc-service→S3 once
+//     (hard rule #3).
+//
+// Both helpers share `detectFileAttachments` and `guessMimeType`.
+
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import { randomUUID } from 'node:crypto';
 import type { TurnContext } from '@microsoft/agents-hosting';
@@ -28,15 +45,46 @@ export function detectFileAttachments(context: TurnContext): Attachment[] {
     );
 }
 
+function downloadUrlOf(attachment: Attachment): string {
+  const url =
+    (attachment.content as Record<string, unknown> | undefined)?.['downloadUrl'] as string | undefined
+    ?? attachment.contentUrl;
+  if (!url) throw new Error('No download URL found on attachment');
+  return url;
+}
+
+/**
+ * Streams the Teams CDN body into a Buffer plus the resolved metadata
+ * the doc-service `document_process` tool needs. NEW PATH (58B+).
+ *
+ * Bytes go bot → doc-service → S3 once. The bot does NOT touch object
+ * storage on this path — that's doc-service's job.
+ */
+export async function downloadAttachmentToBuffer(
+  attachment: Attachment,
+): Promise<{ buffer: Buffer; mimeType: string; fileName: string }> {
+  const downloadUrl = downloadUrlOf(attachment);
+  const fileName = attachment.name ?? 'upload';
+  const mimeType = guessMimeType(fileName, attachment.contentType);
+
+  const response = await fetch(downloadUrl);
+  if (!response.ok) {
+    throw new Error(`Failed to download file from Teams CDN: ${response.status}`);
+  }
+  const buffer = Buffer.from(await response.arrayBuffer());
+  return { buffer, mimeType, fileName };
+}
+
+/**
+ * LEGACY: bot uploads directly to OVH and returns the S3 key. Used by the
+ * cert-only `process_document(objectStoreKey)` flow. Stays alive while
+ * `documents.cert_legacy_path = true`. Removed in 58E.
+ */
 export async function downloadToObjectStore(
   attachment: Attachment,
   ctx: BotAuthContext,
 ): Promise<string> {
-  const downloadUrl =
-    (attachment.content as Record<string, unknown> | undefined)?.['downloadUrl'] as string | undefined
-    ?? attachment.contentUrl;
-
-  if (!downloadUrl) throw new Error('No download URL found on attachment');
+  const downloadUrl = downloadUrlOf(attachment);
 
   const filename = attachment.name ?? 'upload';
   const mimeType = guessMimeType(filename, attachment.contentType);
@@ -66,7 +114,7 @@ export async function downloadToObjectStore(
   return key;
 }
 
-function guessMimeType(filename: string, contentType?: string): string {
+export function guessMimeType(filename: string, contentType?: string): string {
   if (contentType && contentType !== 'application/octet-stream') return contentType;
   const ext = filename.split('.').pop()?.toLowerCase() ?? '';
   const map: Record<string, string> = {
