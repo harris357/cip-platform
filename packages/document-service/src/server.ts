@@ -13,6 +13,8 @@ import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/
 import { getPool } from './db/index.js'
 import { ClamAVClient } from './av/clamav-client.js'
 import { registerIngestTools } from './modules/ingest/mcp-tools/index.js'
+// Slice 58E — routing-map admin tools.
+import { registerRoutingTools } from './modules/routing/mcp-tools/index.js'
 
 const PORT = Number(process.env['PORT'] ?? 3000)
 
@@ -30,6 +32,7 @@ function attachBearerAuth(req: Request, _res: Response, next: NextFunction): voi
 function createRegisteredServer(): McpServer {
   const s = new McpServer({ name: 'document-service', version: '1.0.0' })
   registerIngestTools(s)
+  registerRoutingTools(s)
   return s
 }
 

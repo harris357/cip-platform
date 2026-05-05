@@ -1,11 +1,10 @@
 import { z } from 'zod';
 import { eq } from 'drizzle-orm';
-import { callLLM, createLiteLLMClient, getPrompt } from '@cip/shared';
+import { callLLM, createLiteLLMClient, getPrompt, resolveAlias } from '@cip/shared';
 import type { ExtractionResult } from '@cip/shared';
 import { getDb } from '../../../db/index.js';
 import { withTenantRLS } from '../../../db/rls.js';
 import { certificateDefinitions } from '../../../db/schema.js';
-import { resolveAlias } from '../../../services/alias-resolver.js';
 
 // ── Zod schema ────────────────────────────────────────────────────────────────
 

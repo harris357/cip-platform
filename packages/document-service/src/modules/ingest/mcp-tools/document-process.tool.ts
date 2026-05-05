@@ -164,6 +164,15 @@ export function registerDocumentProcess(server: McpServer): void {
       const temporal = await createTemporalClient()
       // Workflow ID pattern: {workflowType}-{tenantId}-{entityId}
       const workflowId = `DocumentProcess-${tenantId}-${documentId}`
+      // Slice 58E — forward the auth token to downstream modules so they
+      // authenticate further calls (e.g. into hr-service MCP) without
+      // doc-service impersonating a service principal. The token is
+      // already bound to the uploader; the module receives it verbatim.
+      const actorContext: Record<string, unknown> = {
+        tenantId,
+        employeeId,
+        ...(context.authInfo?.token !== undefined ? { jwt: context.authInfo.token } : {}),
+      }
       await temporal.workflow.start(DocumentProcessingWorkflow, {
         workflowId,
         taskQueue: process.env['TEMPORAL_TASK_QUEUE_DOCUMENTS'] ?? 'cip-documents-tasks',
@@ -173,6 +182,11 @@ export function registerDocumentProcess(server: McpServer): void {
           uploaderEmployeeId: employeeId,
           ...(conversationId !== undefined ? { conversationId } : {}),
           ...(hintText !== undefined ? { uploaderHintText: hintText } : {}),
+          // Slice 58E — thread storage coords so the route phase can
+          // forward them to downstream modules without a re-read.
+          s3Bucket: bucket,
+          s3Key,
+          actorContext,
         }],
       })
 

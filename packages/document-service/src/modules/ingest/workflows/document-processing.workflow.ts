@@ -16,7 +16,16 @@
 //
 // All progress publishing is best-effort — see publishProgressActivity.
 
-import { proxyActivities, defineSignal, setHandler } from '@temporalio/workflow'
+import { proxyActivities, defineSignal, setHandler, condition } from '@temporalio/workflow'
+
+// Slice 58E — webpack-bundled workflow context. `import type` for
+// @cip/shared so zod schemas don't pull node-only modules into the
+// bundle (slice 58C learned this; do not regress).
+import type {
+  ProcessDocumentInput,
+  ModuleCallbackSignal,
+  RoutingResolutionSignal,
+} from '@cip/shared'
 
 import type * as activities from '../activities/index.js'
 
@@ -29,6 +38,11 @@ const {
   transitionToClassifyingActivity,
   transitionLifecycleStateActivity,
   loadDocumentsTunablesActivity,
+  // Slice 58E — routing dispatch + callback handling.
+  routeDocumentActivity,
+  startDownstreamWorkflowActivity,
+  handleModuleCallbackActivity,
+  persistDownstreamRecordActivity,
 } = proxyActivities<typeof activities>({
   startToCloseTimeout: '60 seconds',
   retry: {
@@ -91,6 +105,19 @@ export interface DocumentProcessingInput {
   conversationId?:      string
   uploaderEmployeeId:   string
   uploaderHintText?:    string
+  /**
+   * Slice 58E — S3 coordinates threaded from the document_process MCP
+   * tool. The workflow forwards them to downstream modules via
+   * `ProcessDocumentInput.{s3Bucket, s3Key}`. Optional for back-compat;
+   * activities re-read from the documents row when missing.
+   */
+  s3Bucket?:            string
+  s3Key?:               string
+  /**
+   * Slice 58E — forwarded actor envelope. Loose record so the slice
+   * doesn't lock the shape; downstream consumers cast as needed.
+   */
+  actorContext?:        Record<string, unknown>
   /** 58G restore: resume at a specific phase. Defaults to 'scan'. */
   startingPhase?:       DocumentPhase
 }
@@ -98,7 +125,7 @@ export interface DocumentProcessingInput {
 export async function DocumentProcessingWorkflow(input: DocumentProcessingInput): Promise<void> {
   // Workflow ID pattern: {workflowType}-{tenantId}-{entityId}
   // workflowId: `DocumentProcess-${input.tenantId}-${input.documentId}`
-  const { tenantId, documentId, conversationId, uploaderHintText } = input
+  const { tenantId, documentId, conversationId, uploaderHintText, uploaderEmployeeId } = input
 
   // Reclassify signal: 58F payload, queue once and consume next loop turn.
   let reclassifyPayload: ReclassifyPayload | undefined
@@ -120,6 +147,33 @@ export async function DocumentProcessingWorkflow(input: DocumentProcessingInput)
   // Slice 58C — classify result cached for the extract phase; on
   // reclassify (slice 58F) the new value replaces this.
   let cachedClassification: activities.ClassifyDocumentOutput | null = null
+  // Slice 58E — extracted features cached for the route phase, which
+  // forwards them to the downstream module workflow as
+  // ProcessDocumentInput.extractedFeatures.
+  let cachedExtraction: { fields: Record<string, unknown>; extractionConfidence: number } | null = null
+  // Slice 58E — s3 coords cached for ProcessDocumentInput.{s3Bucket,s3Key}.
+  // Seeded from input when the MCP tool threaded them through; otherwise
+  // re-resolved by run-extraction-strategy from the DB row.
+  let cachedS3Bucket: string | null = input.s3Bucket ?? null
+  let cachedS3Key:    string | null = input.s3Key    ?? null
+  // Slice 58E — downstream workflow handle id, captured at dispatch and
+  // applied on the moduleCallback signal.
+  let cachedDownstreamWorkflowId: string | null = null
+  let cachedDownstreamWorkflowType: string | null = null
+
+  // Slice 58E — module callback signal: downstream module workflow
+  // signals success/failure with `{moduleRecordId, status, reason?}`.
+  let moduleCallback: ModuleCallbackSignal | undefined
+  const moduleCallbackSignal = defineSignal<[ModuleCallbackSignal]>('moduleCallback')
+  setHandler(moduleCallbackSignal, (s) => { moduleCallback = s })
+
+  // Slice 58E — routing-resolution signal: admin tools resolve a
+  // doc parked in `hitl_admin_queue` due to no_routing_rule by sending
+  // either {action:'route', module, docType} (re-targets and retries
+  // route) or {action:'reject', reason?} (transitions to 'failed').
+  let routingResolution: RoutingResolutionSignal | undefined
+  const routingResolutionSignal = defineSignal<[RoutingResolutionSignal]>('routingResolution')
+  setHandler(routingResolutionSignal, (s) => { routingResolution = s })
 
   type ProgressStep   = Parameters<typeof publishProgressActivity>[0]['step']
   type ProgressStatus = Parameters<typeof publishProgressActivity>[0]['status']
@@ -281,7 +335,15 @@ export async function DocumentProcessingWorkflow(input: DocumentProcessingInput)
             ocrText:          cachedGenericFeatures.ocrText,
             genericFeatures:  cachedGenericFeatures as unknown as Record<string, unknown>,
             ...(uploaderHintText !== undefined ? { uploaderHintText } : {}),
+            // Slice 58E — registry honors mime_filter when provided.
+            ...(cachedGenericFeatures.mimeClass !== undefined ? { mimeClass: cachedGenericFeatures.mimeClass } : {}),
           })
+          // Slice 58E — cache for the route phase to forward as
+          // ProcessDocumentInput.{extractedFeatures, extractionConfidence}.
+          cachedExtraction = {
+            fields:               extracted.fields,
+            extractionConfidence: extracted.extractionConfidence,
+          }
           await progress('extract', 'completed', {
             fieldCount: Object.keys(extracted.fields).length,
             confidence: extracted.extractionConfidence,
@@ -321,13 +383,189 @@ export async function DocumentProcessingWorkflow(input: DocumentProcessingInput)
         break
       }
 
-      case 'subject':
-      case 'route':
-      case 'awaiting_module_callback':
-        // Slice 58D / 58E own these phases. In 58C, exit at 'subject'
-        // with the DB lifecycle state already at 'awaiting_subject' —
-        // 58D will start a new workflow (or signal this one) to resume.
-        return
+      case 'subject': {
+        // Slice 58E — Route-A locks subject resolution INSIDE the
+        // downstream module workflow (cert runs MatchPersonWorkflow as
+        // a child workflow). Doc-service no longer pre-resolves a
+        // subject; the lifecycle pointer just graduates to
+        // awaiting_routing so external observers see progress.
+        await transitionLifecycleStateActivity({
+          tenantId,
+          documentId,
+          to: 'awaiting_routing',
+        })
+        phase = 'route'
+        break
+      }
+
+      case 'route': {
+        if (!cachedClassification) {
+          throw new Error('route phase: cachedClassification missing — re-run classify')
+        }
+        if (!cachedExtraction) {
+          throw new Error('route phase: cachedExtraction missing — re-run extract')
+        }
+        if (!cachedGenericFeatures) {
+          throw new Error('route phase: cachedGenericFeatures missing — restart from scan')
+        }
+
+        await progress('route', 'started')
+
+        // Resolve the (module, doc_type) → (taskQueue, workflowType)
+        // routing rule. Loop allows admin-supplied retargeting via the
+        // routingResolution signal when no rule matches initially.
+        let routeModule  = cachedClassification.module
+        let routeDocType = cachedClassification.docType
+
+        // eslint-disable-next-line no-constant-condition
+        while (true) {
+          const routing = await routeDocumentActivity({
+            tenantId,
+            documentId,
+            module:  routeModule,
+            docType: routeDocType,
+          })
+
+          if (routing.matched) {
+            // Resolve s3 coords from cache or re-read via dispatcher.
+            const s3Bucket = cachedS3Bucket ?? ''
+            const s3Key    = cachedS3Key    ?? ''
+            const dispatched = await startDownstreamWorkflowActivity({
+              tenantId,
+              documentId,
+              taskQueue:    routing.taskQueue,
+              workflowType: routing.workflowType,
+              input: {
+                tenantId,
+                documentId,
+                uploaderEmployeeId,
+                ...(uploaderHintText !== undefined ? { uploaderHintText } : {}),
+                ...(conversationId   !== undefined ? { conversationId }   : {}),
+                docType:              routeDocType,
+                extractedFeatures:    cachedExtraction.fields,
+                extractionConfidence: cachedExtraction.extractionConfidence,
+                genericFeatures:      cachedGenericFeatures as unknown as Record<string, unknown>,
+                sensitivityTier:      cachedSensitivityTier ?? 'public',
+                s3Bucket,
+                s3Key,
+                actorContext:         input.actorContext ?? {},
+              },
+            })
+            cachedDownstreamWorkflowId   = dispatched.workflowId
+            cachedDownstreamWorkflowType = routing.workflowType
+
+            await transitionLifecycleStateActivity({
+              tenantId,
+              documentId,
+              to: 'routed',
+            })
+            await progress('route', 'completed', {
+              downstreamWorkflowId:   dispatched.workflowId,
+              downstreamWorkflowType: routing.workflowType,
+              module:                 routing.matchedModule,
+              docType:                routing.matchedDocType,
+            })
+            phase = 'awaiting_module_callback'
+            break
+          }
+
+          // No routing rule — park in HITL admin queue and wait for
+          // signal-driven resolution (route action retargets; reject
+          // transitions to failed).
+          await transitionLifecycleStateActivity({
+            tenantId,
+            documentId,
+            to:            'hitl_admin_queue',
+            preHitlState:  'awaiting_routing',
+            reason:        'no_routing_rule',
+            module:        routeModule,
+            docType:       routeDocType,
+          })
+          await progress('route', 'failed', {
+            reason:  'no_routing_rule',
+            module:  routeModule,
+            docType: routeDocType,
+          })
+
+          // Wait for admin tooling to signal a resolution. No timeout —
+          // the doc sits in HITL until handled (matches existing
+          // hitl_admin_queue semantics).
+          await condition(() => routingResolution !== undefined)
+          const resolution = routingResolution!
+          routingResolution = undefined
+
+          if (resolution.action === 'reject') {
+            await transitionLifecycleStateActivity({
+              tenantId,
+              documentId,
+              to:     'failed',
+              ...(resolution.reason !== undefined ? { reason: resolution.reason } : {}),
+            })
+            phase = 'failed'
+            break
+          }
+
+          // 'route' — admin supplied a fresh (module, doc_type) pair.
+          // Move back to awaiting_routing and re-attempt resolution.
+          routeModule  = resolution.module
+          routeDocType = resolution.docType
+          await transitionLifecycleStateActivity({
+            tenantId,
+            documentId,
+            to:      'awaiting_routing',
+            module:  routeModule,
+            docType: routeDocType,
+          })
+          // loop
+        }
+        break
+      }
+
+      case 'awaiting_module_callback': {
+        // Wait for the downstream module workflow to signal back. No
+        // timeout — module-side timeouts are owned by the module
+        // workflow's own retry/HITL policy.
+        await condition(() => moduleCallback !== undefined)
+        const cb = moduleCallback!
+
+        await handleModuleCallbackActivity({
+          tenantId,
+          documentId,
+          moduleRecordId:       cb.moduleRecordId,
+          downstreamWorkflowId: cachedDownstreamWorkflowId ?? '',
+          workflowType:         cachedDownstreamWorkflowType ?? '',
+          status:               cb.status,
+          ...(cb.reason !== undefined ? { reason: cb.reason } : {}),
+        })
+
+        await persistDownstreamRecordActivity({
+          tenantId,
+          documentId,
+          moduleRecordId: cb.moduleRecordId,
+          status:         cb.status,
+        })
+
+        if (cb.status === 'rejected') {
+          await transitionLifecycleStateActivity({
+            tenantId,
+            documentId,
+            to:     'failed',
+            ...(cb.reason !== undefined ? { reason: cb.reason } : {}),
+          })
+          await progress('archive', 'failed', { moduleRecordId: cb.moduleRecordId, reason: cb.reason ?? 'rejected' })
+          phase = 'failed'
+          break
+        }
+
+        await transitionLifecycleStateActivity({
+          tenantId,
+          documentId,
+          to: 'archived',
+        })
+        await progress('archive', 'completed', { moduleRecordId: cb.moduleRecordId })
+        phase = 'archived'
+        break
+      }
     }
   }
 }

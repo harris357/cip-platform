@@ -37,3 +37,16 @@ export type { RunExtractionStrategyInput }                      from './run-extr
 
 export { loadDocumentsTunablesActivity }     from './load-tunables.activity.js'
 export type { LoadDocumentsTunablesInput }   from './load-tunables.activity.js'
+
+// Slice 58E — routing dispatch + module callback + final persistence.
+export { routeDocumentActivity, RouteDocumentOutputSchema } from './route-document.activity.js'
+export type { RouteDocumentInput, RouteDocumentOutput }     from './route-document.activity.js'
+
+export { startDownstreamWorkflowActivity, StartDownstreamWorkflowOutputSchema } from './start-downstream-workflow.activity.js'
+export type { StartDownstreamWorkflowInput, StartDownstreamWorkflowOutput }     from './start-downstream-workflow.activity.js'
+
+export { handleModuleCallbackActivity, HandleModuleCallbackOutputSchema } from './handle-module-callback.activity.js'
+export type { HandleModuleCallbackInput, HandleModuleCallbackOutput }     from './handle-module-callback.activity.js'
+
+export { persistDownstreamRecordActivity, PersistDownstreamRecordOutputSchema } from './persist-downstream-record.activity.js'
+export type { PersistDownstreamRecordInput, PersistDownstreamRecordOutput }     from './persist-downstream-record.activity.js'

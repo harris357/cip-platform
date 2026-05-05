@@ -20,9 +20,10 @@ import {
   callLLM,
   createLiteLLMClient,
   getPrompt,
+  // Slice 58E — alias-resolver consolidated into @cip/shared.
+  resolveAlias,
 } from '@cip/shared';
 
-import { resolveAlias } from '../../../services/alias-resolver.js';
 import { HR_PEOPLE_CANONICALIZE_FALLBACK } from '../prompts/canonicalize-fallback.js';
 
 export const CanonicalizationSchema = z.object({

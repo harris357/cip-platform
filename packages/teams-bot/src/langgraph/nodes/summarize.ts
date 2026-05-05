@@ -19,8 +19,7 @@
 //     compress this time. Log + continue.
 
 import { SystemMessage, RemoveMessage, type BaseMessage } from '@langchain/core/messages';
-import { callLLM, createLiteLLMClient, getPrompt } from '@cip/shared';
-import { resolveAlias } from '../../intent/alias-resolver.js';
+import { callLLM, createLiteLLMClient, getPrompt, resolveAlias } from '@cip/shared';
 import { getTunables, getTunable } from '../tunables.js';
 import { type State } from '../state.js';
 import type { BotAuthContext } from '../../auth/resolve-context.js';
@@ -55,7 +54,7 @@ export function makeSummarizeNode(ctx: BotAuthContext) {
         .map(m => `${roleOf(m)}: ${stringContent(m)}`)
         .join('\n');
 
-      const alias = await resolveAlias({ purpose: 'summarize', tenantId: state.tenantId });
+      const alias = await resolveAlias({ service: 'bot', purpose: 'summarize', tenantId: state.tenantId });
       const prompt = await getPrompt({ name: 'bot.summarize', tenantId: state.tenantId });
       const client = createLiteLLMClient({
         tenantId:   state.tenantId,

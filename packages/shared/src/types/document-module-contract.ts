@@ -15,37 +15,16 @@
 // document_routing_map table to find (taskQueue, workflowType) for
 // a given (module, doc_type) and starts the module's workflow with
 // ProcessDocumentInput as the args[0].
+//
+// Slice 58E note: the live `ProcessDocumentInput` shape moved to
+// `./process-document.ts` (drift reconciliation header). That file
+// is the source of truth; this file keeps the `RevokeFor*` schemas
+// + `SensitivityTierSchema` only.
 
 import { z } from 'zod';
 
 export const SensitivityTierSchema = z.enum(['public','internal','confidential','restricted']);
 export type SensitivityTier = z.infer<typeof SensitivityTierSchema>;
-
-export const ProcessDocumentInputSchema = z.object({
-  tenantId:            z.string().uuid(),
-  documentId:          z.string().uuid(),
-  uploaderEmployeeId:  z.string().uuid(),
-  subjectEmployeeId:   z.string().uuid(),                  // 58D resolves before this is called
-  module:              z.string(),                          // e.g. 'certificate'
-  docType:             z.string(),                          // module-specific subtype, e.g. 'certificate.cpr'
-  extractedFeatures:   z.record(z.unknown()),               // L3 features from doc-service
-  genericFeatures:     z.record(z.unknown()),               // L1 features (pageCount, hasTable, ...)
-  sensitivityTier:     SensitivityTierSchema,
-  s3Bucket:            z.string(),
-  s3Key:               z.string(),                          // module fetches via presigned URL if it needs bytes
-  /**
-   * Forwarded actor envelope.  The module activity uses this to authenticate
-   * downstream calls (e.g. into hr-service MCP) without doc-service
-   * impersonating a service principal.  Always carries the original
-   * uploader's identity unless reclassification ran with admin override.
-   */
-  actorContext: z.object({
-    jwt:        z.string(),
-    tenantId:   z.string().uuid(),
-    employeeId: z.string().uuid(),
-  }),
-});
-export type ProcessDocumentInput = z.infer<typeof ProcessDocumentInputSchema>;
 
 export const ProcessDocumentOutputSchema = z.object({
   moduleRecordId:     z.string(),                          // module-specific PK (e.g. cert_submissions.id)

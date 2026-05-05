@@ -138,6 +138,9 @@ export const documentEmbeddings = cipDocuments.table('document_embeddings', {
 
 // Slice 58C — per-tenant strategy registry. Resolution falls back through
 // (tenant, module, doc_type) → (tenant, module, '*') → (zero-UUID, ...).
+// Slice 58E — added optional mime_filter column for MIME-aware routing
+// (NULL = matches every MIME class; otherwise matches the canonical
+// MimeClass string returned by classifyMime()).
 export const extractionStrategies = cipDocuments.table('extraction_strategies', {
   tenantId:         uuid('tenant_id').notNull(),
   module:           text('module').notNull(),
@@ -148,6 +151,8 @@ export const extractionStrategies = cipDocuments.table('extraction_strategies', 
   configJson:       jsonb('config_json').notNull().default(sql`'{}'::jsonb`),
   enabled:          boolean('enabled').notNull().default(true),
   notes:            text('notes'),
+  /** Slice 58E — optional MIME class filter; NULL matches every MIME. */
+  mimeFilter:       text('mime_filter'),
   updatedAt:        timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   updatedBy:        uuid('updated_by'),
 }, (t) => ({

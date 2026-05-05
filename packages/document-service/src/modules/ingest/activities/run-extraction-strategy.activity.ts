@@ -50,6 +50,8 @@ export interface RunExtractionStrategyInput {
   s3Key?:            string
   genericFeatures:   Record<string, unknown>
   uploaderHintText?: string
+  /** Slice 58E — canonical MIME class (per classifyMime) for routing. */
+  mimeClass?:        string
 }
 
 export class StrategyNotFoundError extends Error {
@@ -62,7 +64,7 @@ export class StrategyNotFoundError extends Error {
 export async function runExtractionStrategyActivity(
   input: RunExtractionStrategyInput,
 ): Promise<ExtractionOutput> {
-  const strategy = await resolveStrategy(input.tenantId, input.module, input.docType)
+  const strategy = await resolveStrategy(input.tenantId, input.module, input.docType, input.mimeClass)
   if (!strategy) throw new StrategyNotFoundError(input.module, input.docType)
 
   // Resolve s3 coords if the caller didn't supply them — keeps the

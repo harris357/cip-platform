@@ -32,10 +32,11 @@ import {
   callLLM,
   createLiteLLMClient,
   getPrompt,
+  // Slice 58E — alias-resolver consolidated into @cip/shared.
+  resolveAlias,
 } from '@cip/shared';
 
 import { runVisionAgent } from '../agents/vision-agent/index.js';
-import { resolveAlias } from '../../../services/alias-resolver.js';
 import { getPool } from '../../../db/index.js';
 
 const ZERO_UUID = '00000000-0000-0000-0000-000000000000';
@@ -73,17 +74,26 @@ function inferCertTypeHint(docType: string): string {
  * doc-service shadow loader uses (per-tenant > zero-UUID > code default).
  * Inlined here so the cert activity doesn't take a dependency on a
  * larger tunables module.
+ *
+ * Slice 58E — read `documents.cert_text_extraction_min_chars` first;
+ * fall back to legacy `lg.cert_text_extraction_min_chars` for one
+ * release. Aligns with the doc-service tunables-loader migration.
  */
 async function readMinChars(tenantId: string): Promise<number> {
   try {
     const pool = getPool();
-    const r = await pool.query<{ value_json: unknown }>(
-      `SELECT value_json
+    const r = await pool.query<{ key: string; value_json: unknown }>(
+      `SELECT key, value_json
          FROM bot_tunables
-        WHERE key = $1 AND (tenant_id = $2 OR tenant_id = $3::uuid)
-        ORDER BY (tenant_id = $2) DESC
+        WHERE key IN ($1, $2) AND (tenant_id = $3 OR tenant_id = $4::uuid)
+        ORDER BY (tenant_id = $3) DESC, (key = $1) DESC
         LIMIT 1`,
-      ['lg.cert_text_extraction_min_chars', tenantId, ZERO_UUID],
+      [
+        'documents.cert_text_extraction_min_chars',
+        'lg.cert_text_extraction_min_chars',
+        tenantId,
+        ZERO_UUID,
+      ],
     );
     const v = r.rows[0]?.value_json;
     const n = typeof v === 'number' ? v : Number(v);

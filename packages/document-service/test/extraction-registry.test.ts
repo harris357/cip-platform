@@ -28,6 +28,7 @@ interface Row {
   activity_name: string
   config_json:   Record<string, unknown> | null
   enabled:       boolean
+  mime_filter:   string | null
 }
 
 function row(over: Partial<Row>): Row {
@@ -40,6 +41,7 @@ function row(over: Partial<Row>): Row {
     activity_name: 'extractCertFeaturesActivity',
     config_json:   {},
     enabled:       true,
+    mime_filter:   null,
     ...over,
   }
 }

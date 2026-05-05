@@ -10,6 +10,10 @@ export { ExtractionResultSchema, IntentResultSchema } from './types/agent.js';
 // Slice 58A — module-side contract for document consumers
 export * from './types/document-module-contract.js';
 
+// Slice 58E — ProcessDocumentInput contract (split out of 58A's
+// document-module-contract.ts during the routing-dispatch rewrite).
+export * from './types/process-document.js';
+
 // Slice 58C — per-doc-type extraction strategy contract (cross-service activity surface)
 export * from './types/extraction-strategy.js';
 
@@ -22,6 +26,7 @@ export * from './nats/progress-subjects.js';
 
 // Clients
 export * from './clients/litellm.js';
+export * from './clients/litellm-alias-resolver.js';
 export * from './clients/langfuse.js';
 export * from './clients/temporal.js';
 export * from './clients/nats.js';

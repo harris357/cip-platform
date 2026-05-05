@@ -1,6 +1,5 @@
-import { callLLM, createLiteLLMClient, ExtractionResultSchema, getPrompt } from '@cip/shared';
+import { callLLM, createLiteLLMClient, ExtractionResultSchema, getPrompt, resolveAlias } from '@cip/shared';
 import type { ExtractionResult } from '@cip/shared';
-import { resolveAlias } from '../../../../services/alias-resolver.js';
 import { VisionAgentAnnotation } from './state.js';
 
 const REQUIRED_FIELDS = ['holderName', 'certName', 'issuingBody', 'issueDate', 'expiryDate', 'certNumber'] as const;

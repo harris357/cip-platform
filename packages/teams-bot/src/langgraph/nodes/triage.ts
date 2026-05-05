@@ -4,8 +4,7 @@
 // planner still runs.
 
 import { z } from 'zod';
-import { callLLM, createLiteLLMClient, getPrompt } from '@cip/shared';
-import { resolveAlias } from '../../intent/alias-resolver.js';
+import { callLLM, createLiteLLMClient, getPrompt, resolveAlias } from '@cip/shared';
 import { type State, type TriageSignals } from '../state.js';
 import type { BotAuthContext } from '../../auth/resolve-context.js';
 
@@ -31,7 +30,7 @@ const FALLBACK: TriageSignals = {
 export function makeTriageNode(ctx: BotAuthContext) {
   return async function triage(state: State): Promise<Partial<State>> {
     try {
-      const alias = await resolveAlias({ purpose: 'intent_classify', tenantId: state.tenantId });
+      const alias = await resolveAlias({ service: 'bot', purpose: 'intent_classify', tenantId: state.tenantId });
       const prompt = await getPrompt({ name: 'bot.triage', tenantId: state.tenantId });
       const client = createLiteLLMClient({
         tenantId:   state.tenantId,

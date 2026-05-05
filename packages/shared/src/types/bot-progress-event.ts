@@ -22,6 +22,9 @@ export const ProgressStepSchema = z.enum([
   'extract',
   'subject',
   'route',
+  // Slice 58E — terminal step published when the doc transitions to archived
+  // (or fails) after the downstream module workflow signals back.
+  'archive',
 ]);
 export type ProgressStep = z.infer<typeof ProgressStepSchema>;
 

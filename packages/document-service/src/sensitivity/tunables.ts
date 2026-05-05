@@ -14,6 +14,12 @@ import { getPool } from '../db/index.js'
 
 const GLOBAL_SENTINEL = '00000000-0000-0000-0000-000000000000'
 
+// Slice 58E — tunable-namespace migration: extraction keys move from
+// `lg.*` → `documents.*` (the `lg.*` prefix is reserved for bot-LangGraph
+// runtime tunables). Loader reads both prefixes; `documents.*` wins when
+// both are present. Migration 044 (hr-service) seeds `documents.*` rows
+// alongside the existing `lg.*` rows; a follow-up cleanup migration
+// drops the `lg.*` rows once doc-service has rolled out the new loader.
 export const DOCUMENTS_TUNABLE_KEYS = [
   'documents.l3_enabled',
   'documents.tier_override_floor',
@@ -22,10 +28,14 @@ export const DOCUMENTS_TUNABLE_KEYS = [
   'documents.progress_subscription_ttl_seconds',
   // Slice 58C — below this confidence the classifier shunts to HITL.
   'documents.classify_confidence_threshold',
-  // Slice 58C-FIX — MIME-aware extraction tunables. Note prefix: kickoff
-  // doc uses `lg.extract_*`; we follow the kickoff verbatim. Future
-  // 58E may rename these to `documents.extract_*` for namespace
-  // consistency — flagged in cross-slice notes.
+  // Slice 58E — new canonical keys (read first; falls back to lg.*).
+  'documents.extract_token_budget',
+  'documents.cert_text_extraction_min_chars',
+  'documents.extract_image_ocr_model',
+  'documents.extract_pdf_text_first',
+  'documents.extract_pdf_text_min_chars',
+  'documents.extract_office_image_render',
+  // Slice 58C-FIX — legacy lg.* prefix; back-compat for one release.
   'lg.extract_token_budget',
   'lg.cert_text_extraction_min_chars',
   'lg.extract_image_ocr_model',
@@ -141,6 +151,12 @@ export async function loadDocumentsTunables(tenantId: string): Promise<Documents
     merged = {}
   }
 
+  // Slice 58E — read documents.* first; fall back to lg.* (legacy) when
+  // the new key is absent. Once the cleanup migration drops lg.* rows,
+  // the fallback becomes a no-op.
+  const pick = (newKey: string, oldKey: string): unknown =>
+    merged[newKey] !== undefined ? merged[newKey] : merged[oldKey]
+
   const value: DocumentsTunables = {
     l3Enabled:                       asBool(merged['documents.l3_enabled'], DEFAULTS.l3Enabled),
     tierOverrideFloor:               asTier(merged['documents.tier_override_floor'], DEFAULTS.tierOverrideFloor),
@@ -148,12 +164,12 @@ export async function loadDocumentsTunables(tenantId: string): Promise<Documents
     avMaxFileSizeMb:                 asInt(merged['documents.av_max_file_size_mb'], DEFAULTS.avMaxFileSizeMb),
     progressSubscriptionTtlSeconds:  asInt(merged['documents.progress_subscription_ttl_seconds'], DEFAULTS.progressSubscriptionTtlSeconds),
     classifyConfidenceThreshold:     asNumber(merged['documents.classify_confidence_threshold'], DEFAULTS.classifyConfidenceThreshold),
-    extractTokenBudget:              asInt(merged['lg.extract_token_budget'],            DEFAULTS.extractTokenBudget),
-    certTextExtractionMinChars:      asInt(merged['lg.cert_text_extraction_min_chars'],  DEFAULTS.certTextExtractionMinChars),
-    extractImageOcrModel:            asString(merged['lg.extract_image_ocr_model'],      DEFAULTS.extractImageOcrModel),
-    extractPdfTextFirst:             asBool(merged['lg.extract_pdf_text_first'],         DEFAULTS.extractPdfTextFirst),
-    extractPdfTextMinChars:          asInt(merged['lg.extract_pdf_text_min_chars'],      DEFAULTS.extractPdfTextMinChars),
-    extractOfficeImageRender:        asBool(merged['lg.extract_office_image_render'],    DEFAULTS.extractOfficeImageRender),
+    extractTokenBudget:              asInt(pick('documents.extract_token_budget',           'lg.extract_token_budget'),            DEFAULTS.extractTokenBudget),
+    certTextExtractionMinChars:      asInt(pick('documents.cert_text_extraction_min_chars', 'lg.cert_text_extraction_min_chars'),  DEFAULTS.certTextExtractionMinChars),
+    extractImageOcrModel:            asString(pick('documents.extract_image_ocr_model',     'lg.extract_image_ocr_model'),         DEFAULTS.extractImageOcrModel),
+    extractPdfTextFirst:             asBool(pick('documents.extract_pdf_text_first',        'lg.extract_pdf_text_first'),          DEFAULTS.extractPdfTextFirst),
+    extractPdfTextMinChars:          asInt(pick('documents.extract_pdf_text_min_chars',     'lg.extract_pdf_text_min_chars'),      DEFAULTS.extractPdfTextMinChars),
+    extractOfficeImageRender:        asBool(pick('documents.extract_office_image_render',   'lg.extract_office_image_render'),     DEFAULTS.extractOfficeImageRender),
   }
 
   cache.set(tenantId, { value, expiresAt: Date.now() + TTL_MS })

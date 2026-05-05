@@ -11,8 +11,7 @@
 
 import { AIMessage, type SystemMessage } from '@langchain/core/messages';
 import type { Tool as McpTool } from '@modelcontextprotocol/sdk/types.js';
-import { callLLM, createLiteLLMClient, getPrompt } from '@cip/shared';
-import { resolveAlias } from '../../intent/alias-resolver.js';
+import { callLLM, createLiteLLMClient, getPrompt, resolveAlias } from '@cip/shared';
 import { discoverTools } from '../../mcp/tool-discovery.js';
 import { messagesToOpenAI } from '../util/messages.js';
 import { formatToolReference } from '../util/tool-reference.js';
@@ -49,7 +48,7 @@ export function makePlanNode(ctx: BotAuthContext) {
     const tunables = await getTunables(state.tenantId);
     const maxRecent = getTunable<number>(tunables, 'lg.max_recent_messages', 8);
 
-    const alias  = await resolveAlias({ purpose: 'route', tenantId: state.tenantId });
+    const alias  = await resolveAlias({ service: 'bot', purpose: 'route', tenantId: state.tenantId });
     const prompt = await getPrompt({ name: 'bot.plan', tenantId: state.tenantId });
     const client = createLiteLLMClient({
       tenantId:   state.tenantId,
