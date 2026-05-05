@@ -17,6 +17,7 @@ import { renderResponse } from './teams-protocol/card-renderer.js';
 import { startProgressRenderer } from './teams-protocol/progress-renderer.js';
 import { sendResponseTime } from './intent/debug-banner.js';
 import { executeTool } from './mcp/tool-executor.js';
+import { discoverTools } from './mcp/tool-discovery.js';
 import { runLangGraph } from './langgraph/runner.js';
 import { dispatchSlashCommand } from './slash-commands/dispatch.js';
 import { buildWelcomeChips } from './slash-commands/welcome-chips.js';
@@ -238,6 +239,19 @@ export class CIPTeamsBot extends TeamsActivityHandler {
     if (fileAttachments.length > 0) {
       const tunables = await getTunables(ctx.tenantId);
       const certLegacyPath = getTunable<boolean>(tunables, 'documents.cert_legacy_path', true);
+
+      // Warm the multi-server tool catalog so executeTool routes
+      // `document_process` (doc-service) and `process_document`
+      // (hr-service) correctly. discoverTools is cached 5-min per
+      // (tenant, employee), so this is sub-ms after the first turn.
+      // Any failure falls back to the hr-service default in
+      // executeTool — which keeps the legacy path working even if
+      // doc-service is briefly unreachable.
+      try {
+        await discoverTools(ctx);
+      } catch (err) {
+        console.warn(`[bot] tool catalog warmup failed: ${err instanceof Error ? err.message : String(err)} — falling back to hr-service-only routing`);
+      }
 
       for (const file of fileAttachments) {
         if (certLegacyPath) {
