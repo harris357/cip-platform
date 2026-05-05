@@ -1,5 +1,119 @@
 # Slice 58E — routing handoff + cert workflow as Route-A consumer
 
+> **Drift reconciliation (2026-05-05) — read before implementing.**
+> Several sections of this doc were drafted before 58D-A, 58D-B, and
+> the Q4 default-policy patch landed. Reality has shifted; the
+> implementer should follow this header where it conflicts with the
+> body below.
+>
+> **Already shipped (NOT in 58E scope anymore):**
+> - **Bot legacy fast-path removal** — already shipped in commit
+>   `d9b847b`. `packages/teams-bot/src/bot.ts` already streams every
+>   upload through doc-service's `document_process`. The "Bot legacy
+>   removal" section below is obsolete; do not re-modify the bot.
+> - **Cert workflow's subject-resolution path** — already replaced
+>   in 58D-B (commit `dbd33af`) with `startChild('MatchPersonWorkflow')`.
+>   The Route-A rewrite must PRESERVE this child-workflow call;
+>   it does not introduce it.
+> - **`rejectCertSubmissionActivity`** — already added in 58D-B.
+>   Route-A keeps using it for the `submission_status='failed'`
+>   side-effect; the `signalDocumentServiceCallback({status:'rejected'})`
+>   call additionally informs doc-service.
+>
+> **`ProcessDocumentInput` precise shape** (for the new
+> `@cip/shared/types/process-document.ts`):
+>
+> ```typescript
+> export const ProcessDocumentInputSchema = z.object({
+>   tenantId:             z.string().uuid(),
+>   documentId:           z.string().uuid(),
+>   uploaderEmployeeId:   z.string(),                     // AAD object id
+>   uploaderHintText:     z.string().optional(),
+>   conversationId:       z.string().optional(),
+>   docType:              z.string(),
+>   extractedFeatures:    z.record(z.unknown()),          // = ExtractionOutput.fields from 58C
+>   extractionConfidence: z.number().min(0).max(1),       // top-level, NOT inside extractedFeatures
+>   genericFeatures:      z.record(z.unknown()),          // ocrText, fileName, mimeType, pageCount
+>   sensitivityTier:      z.enum(['public','internal','confidential','restricted']),
+>   s3Bucket:             z.string(),
+>   s3Key:                z.string(),
+>   actorContext:         z.record(z.unknown()),          // forwarding shape
+> });
+> ```
+>
+> The cert workflow snippet below references
+> `extractedFeatures.overallConfidence` — that's wrong. Use the
+> top-level `extractionConfidence` field. `extractedFeatures` is the
+> generic per-doc-type field bag (e.g. `holderName`, `holderEmail`,
+> `certNumber`, `expiryDate` for cert).
+>
+> **MatchPerson policy in cert (post-Q4)**: drop the explicit
+> `policy: { onNoMatch: 'fail', onAmbiguous: 'uploader_pickcard' }`
+> object below; either omit it (use schema defaults
+> `onNoMatch='admin_queue'`, `onAmbiguous='uploader_pickcard'`) or
+> set it to match what 58D-B currently does (matches default).
+> Aligns with the post-Q4 "no match → admin HITL" decision.
+>
+> **`MatchPersonWorkflow` type-only import path**: `'@cip/shared'`
+> doesn't export the workflow type — only its input/output schemas.
+> Use the same local path 58D-B did:
+> `import type { MatchPersonWorkflow } from '../../people/workflows/match-person.workflow.js';`
+> Cert workflow already does this; the Route-A rewrite preserves it.
+>
+> **NEW activities 58E adds (spec'd here, not in body):**
+> - `createCertSubmissionRow` (~25 LOC) — Route-A entry. Inserts
+>   `cert_submissions` row from `ProcessDocumentInput`; returns
+>   `{ certSubmissionId }`. Today the row is created externally by
+>   the bot's `process_document` MCP tool; in Route-A the cert
+>   workflow creates it.
+> - `signalDocumentServiceCallback` (~30 LOC) — sends
+>   `moduleCallback` signal to the doc-service workflow handle
+>   (`DocumentProcess-${tenantId}-${documentId}`) with
+>   `{ moduleRecordId, status: 'accepted' | 'rejected', reason? }`.
+> - `routeDocumentActivity` (~70 LOC, doc-service side) — queries
+>   `document_routing_map`, returns `{ matched: bool, taskQueue?,
+>   workflowType? }` plus the `(module, doc_type)` row context.
+> - `startDownstreamWorkflowActivity` (~50 LOC, doc-service side) —
+>   uses `createTemporalClient` to start the matched workflow on its
+>   queue, returns `{ workflowId }`.
+> - `handleModuleCallbackActivity` (~25 LOC, doc-service side) —
+>   updates `documents.downstream_module_record_id`,
+>   `downstream_workflow_id` from the callback payload.
+> - `persistDownstreamRecordActivity` (~25 LOC, doc-service side) —
+>   final write before lifecycle → `archived` (the slice body
+>   references it; pin it as a real activity here).
+>
+> **Tunable rename — verified scope** (`lg.extract_*` →
+> `documents.extract_*`):
+> Already-seeded `lg.*` tunables to migrate (per
+> `041_extraction_tunables.sql`):
+> `lg.extract_token_budget`, `lg.cert_text_extraction_min_chars`,
+> `lg.extract_image_ocr_model`, `lg.extract_pdf_text_first`,
+> `lg.extract_pdf_text_min_chars`, `lg.extract_office_image_render`,
+> `lg.extractor_db_timeout_ms`. Backwards-compatible: insert
+> `documents.*` rows alongside, update the loader to read new keys
+> first then fall back to old, drop `lg.*` rows after one release.
+> `lg.cert_text_extraction_min_chars` renames to
+> `documents.cert_text_extraction_min_chars` (still cert-scoped but
+> on the documents prefix; alternative `documents.extract_text_min_chars`
+> if you want it module-agnostic — pick one and document why).
+>
+> **Phase 2 `mime_filter` column on `extraction_strategies`**:
+> ALTER TABLE adds `mime_filter TEXT`, NULLABLE.
+> `extraction/registry.ts:resolveStrategy()` widens the SELECT and
+> adds `mime_filter` to the specificity scoring (exact MIME class
+> match > NULL match). 58C-FIX's `classifyMime()` already returns
+> the canonical class names (`'pdf' | 'image' | 'plain_text' | 'docx'
+> | 'xlsx' | 'pptx' | 'unsupported'`); the registry stores those
+> exact strings. Backwards-compatible: existing rows with
+> `mime_filter=NULL` continue matching every doc.
+>
+> **Alias-resolver consolidation** (Option B, already-decided):
+> already documented in the body's preamble; the implementer
+> consolidates both copies into `@cip/shared/clients/litellm-alias-resolver.ts`.
+> Test set moves to `packages/shared/test/`.
+
+
 > **Why this exists:** 58D leaves docs at `awaiting_routing` with
 > module + doc_type + subject all set. 58E does the handoff:
 > queries `document_routing_map`, starts the downstream module
