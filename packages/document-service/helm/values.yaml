@@ -20,7 +20,7 @@ env:
   # owns the {tenantId}/{documentId}/{filename} key prefix going forward.
   OBJECT_STORE_BUCKET: cip-uploads
   AWS_ENDPOINT_URL: https://s3.bhs.io.cloud.ovh.net
-  AWS_REGION: BHS
+  AWS_REGION: bhs                    # OVH S3 endpoint validates region case-strictly; lowercase. Newer @aws-sdk/client-s3 rejects uppercase here.
   PORT: "3000"
   # Slice 58B — NATS for best-effort progress publishing + LiteLLM gateway
   # for embeddings + L3 sensitivity rubric. Same in-cluster URLs as

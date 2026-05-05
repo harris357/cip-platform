@@ -44,7 +44,7 @@ function getS3(): S3Client {
     const endpoint = process.env['AWS_ENDPOINT_URL']
     _s3 = new S3Client({
       ...(endpoint ? { endpoint } : {}),
-      region:         process.env['AWS_REGION'] ?? 'BHS',
+      region:         process.env['AWS_REGION']?.toLowerCase() ?? 'bhs',
       forcePathStyle: true,
       credentials: {
         accessKeyId:     process.env['AWS_ACCESS_KEY_ID'] ?? '',
