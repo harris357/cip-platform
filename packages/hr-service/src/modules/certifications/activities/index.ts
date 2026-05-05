@@ -7,6 +7,10 @@ export type { PreClassifyCertInput, PreClassifyCertOutput } from './pre-classify
 export { runVisionAgentActivity } from './run-vision-agent.activity.js';
 export type { RunVisionAgentInput } from './run-vision-agent.activity.js';
 
+// Slice 58C — cert strategy activity invoked by doc-service via
+// ExecuteExtractionStrategyWorkflow on this queue.
+export { extractCertFeaturesActivity } from './extract-cert-features.activity.js';
+
 export { validateExtractionActivity } from './validate-extraction.activity.js';
 export type { ValidateExtractionInput } from './validate-extraction.activity.js';
 

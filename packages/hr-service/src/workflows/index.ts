@@ -32,3 +32,9 @@ export type {
   CheckpointGcWorkflowInput,
   CheckpointGcWorkflowOutput,
 } from '../modules/maintenance/workflows/checkpoint-gc.workflow.js';
+
+// Slice 58C: cross-queue extraction-strategy executor. Started by
+// doc-service's runExtractionStrategyActivity on cip-hr-tasks; proxies
+// the named extract-*-features activity locally and returns its result.
+export { ExecuteExtractionStrategyWorkflow } from '../modules/certifications/workflows/execute-extraction-strategy.workflow.js';
+export type { ExecuteExtractionStrategyInput } from '../modules/certifications/workflows/execute-extraction-strategy.workflow.js';
