@@ -21,6 +21,11 @@ if [[ -n "${PG_USER_PASSWORD:-}" ]]; then
   DATABASE_URL_HR="${DATABASE_URL_HR//PASSWORD/$PG_USER_PASSWORD}"
   DATABASE_URL_PLATFORM="${DATABASE_URL_PLATFORM//PASSWORD/$PG_USER_PASSWORD}"
   DATABASE_URL_LITELLM="${DATABASE_URL_LITELLM//PASSWORD/$PG_USER_PASSWORD}"
+  # Slice 58A: document-service shares the hr-service Postgres role for first
+  # ship.  Schemas (cip_documents vs cip_hr) are isolated; RLS handles tenant
+  # isolation regardless of which role connects.  Future hardening: dedicated
+  # role with INSERT/UPDATE on permission_catalog only.
+  DATABASE_URL_DOCS="${DATABASE_URL_DOCS//PASSWORD/$PG_USER_PASSWORD}"
 fi
 
 # LiteLLM credentials (provider API keys all live here — secrets never reach app pods)
@@ -90,6 +95,24 @@ kubectl create secret generic teams-bot-credentials \
   --from-literal=LANGFUSE_HOST="${LANGFUSE_HOST:-https://cloud.langfuse.com}" \
   --from-literal=LANGFUSE_PROJECT_ID="${LANGFUSE_PROJECT_ID:-}" \
   --from-literal=DATABASE_URL_HR="${DATABASE_URL_HR}" \
+  --dry-run=client -o yaml | kubectl apply -f -
+
+# Slice 58A: document-service credentials.  Mirrors hr-service-credentials
+# in shape; DATABASE_URL_DOCS points at the same Postgres + role for now
+# (cip_documents schema is the isolation boundary).  LANGFUSE_* are
+# pre-seeded so 58B+ doesn't require a redeploy when they start being read.
+kubectl create secret generic document-service-credentials \
+  --namespace cip-app \
+  --from-literal=DATABASE_URL_DOCS="${DATABASE_URL_DOCS}" \
+  --from-literal=TEMPORAL_API_KEY="${TEMPORAL_API_KEY}" \
+  --from-literal=TEMPORAL_ADDRESS="${TEMPORAL_ADDRESS}" \
+  --from-literal=TEMPORAL_NAMESPACE="${TEMPORAL_NAMESPACE}" \
+  --from-literal=AWS_ACCESS_KEY_ID="${AWS_ACCESS_KEY_ID:-}" \
+  --from-literal=AWS_SECRET_ACCESS_KEY="${AWS_SECRET_ACCESS_KEY:-}" \
+  --from-literal=LANGFUSE_PUBLIC_KEY="${LANGFUSE_PUBLIC_KEY:-}" \
+  --from-literal=LANGFUSE_SECRET_KEY="${LANGFUSE_SECRET_KEY:-}" \
+  --from-literal=LANGFUSE_HOST="${LANGFUSE_HOST:-https://cloud.langfuse.com}" \
+  --from-literal=LANGFUSE_PROJECT_ID="${LANGFUSE_PROJECT_ID:-}" \
   --dry-run=client -o yaml | kubectl apply -f -
 
 # Slice 56B: intent-classifier needs S3 creds for hot-reload polling.
