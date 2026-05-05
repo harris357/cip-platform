@@ -12,6 +12,15 @@
 > The legacy bot fast-path (`process_document` MCP tool, cert-only
 > workflow start) is removed. After this slice the cert flow runs
 > end-to-end through the new doc pipeline.
+>
+> **Also folded in (added 2026-05-05):** registry-level MIME
+> routing — phase 2 of the MIME-aware extraction work whose phase
+> 1 (per-MIME extractors in doc-service) ships in slice 58C-FIX.
+> Adds `mime_filter` column on `extraction_strategies` so a tenant
+> can register different `strategy_name` rows per
+> `(module, doc_type, mime_class)`. Resolver matches `mime_filter`
+> against the doc's normalized MIME class. Backwards compatible:
+> rows with `mime_filter = NULL` match any MIME (current default).
 
 ---
 
