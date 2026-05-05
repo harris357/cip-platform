@@ -18,6 +18,8 @@ export const ProgressStepSchema = z.enum([
   'fingerprint',
   'sensitivity',
   'classify',
+  // Slice 58C — type-specific extraction phase between classify and subject.
+  'extract',
   'subject',
   'route',
 ]);

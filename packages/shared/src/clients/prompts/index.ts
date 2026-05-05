@@ -8,6 +8,7 @@ import { HR_VISION_EXTRACT }                from './hr-vision-extract.js';
 import { HR_EMPLOYEE_MATCH }                from './hr-employee-match.js';
 import { HR_CERT_DEF_MATCH }                from './hr-cert-def-match.js';
 import { BOT_DOCUMENTS_SENSITIVITY_RUBRIC } from './bot-documents-sensitivity-rubric.js';
+import { BOT_DOCUMENTS_CLASSIFY }            from './bot-documents-classify.js';
 
 // Slice 47b: bot.intent_classify and bot.meta_compose removed — legacy
 // classifier+router pipeline was deleted. The Langfuse prompts may
@@ -23,4 +24,6 @@ export const FALLBACKS: Record<string, string> = {
   'hr-service.cert_def_match':           HR_CERT_DEF_MATCH,
   // Slice 58B — doc-service L3 sensitivity rubric
   'bot.documents.sensitivity_rubric':    BOT_DOCUMENTS_SENSITIVITY_RUBRIC,
+  // Slice 58C — doc-service module/doc_type classifier
+  'bot.documents.classify':              BOT_DOCUMENTS_CLASSIFY,
 };
