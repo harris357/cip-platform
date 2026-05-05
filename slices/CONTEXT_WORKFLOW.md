@@ -24,13 +24,13 @@
 | 36 | Multi-Tenant Teams Bot (in-code routing) | [archive/SLICE_36_MULTI_TENANT_BOT.md](./archive/SLICE_36_MULTI_TENANT_BOT.md) | COMPLETE |
 | 37 | Per-Tenant KC Client Secrets via K8s Secrets | [archive/SLICE_37_PER_TENANT_KC_SECRETS.md](./archive/SLICE_37_PER_TENANT_KC_SECRETS.md) | COMPLETE |
 | 38 | Module-Level Permissions (renames "capabilities") | [archive/SLICE_38_PERMISSIONS.md](./archive/SLICE_38_PERMISSIONS.md) | COMPLETE |
-| 39A | Per-Purpose LLM Routing Foundation | [SLICE_39A_PER_PURPOSE_ROUTING.md](./SLICE_39A_PER_PURPOSE_ROUTING.md) | COMPLETE |
-| 39B | LLM-as-Classifier in the Bot | [SLICE_39B_BOT_CLASSIFIER.md](./SLICE_39B_BOT_CLASSIFIER.md) | COMPLETE |
-| 40 | LiteLLM Tier Governance via provision-tenant.sh | [SLICE_40_LITELLM_TIER_GOVERNANCE.md](./SLICE_40_LITELLM_TIER_GOVERNANCE.md) | COMPLETE |
-| 41 | Langfuse-hosted Prompts | [SLICE_41_LANGFUSE_PROMPTS.md](./SLICE_41_LANGFUSE_PROMPTS.md) | COMPLETE |
-| 42A | Permission Groups (rename roles + module + catalog + globs) | [SLICE_42A_PERMISSION_GROUPS_SCHEMA.md](./SLICE_42A_PERMISSION_GROUPS_SCHEMA.md) | PENDING |
-| 42C | Role Layer (cross-module composition over groups) | [SLICE_42C_ROLES_LAYER.md](./SLICE_42C_ROLES_LAYER.md) | PENDING |
-| 42B | Admin User Bootstrap (PLATFORM_ADMIN_EMAIL → admin role + hr realm role) | [SLICE_42B_ADMIN_USER_BOOTSTRAP.md](./SLICE_42B_ADMIN_USER_BOOTSTRAP.md) | PENDING |
+| 39A | Per-Purpose LLM Routing Foundation | [archive/SLICE_39A_PER_PURPOSE_ROUTING.md](./archive/SLICE_39A_PER_PURPOSE_ROUTING.md) | COMPLETE |
+| 39B | LLM-as-Classifier in the Bot | [archive/SLICE_39B_BOT_CLASSIFIER.md](./archive/SLICE_39B_BOT_CLASSIFIER.md) | COMPLETE |
+| 40 | LiteLLM Tier Governance via provision-tenant.sh | [archive/SLICE_40_LITELLM_TIER_GOVERNANCE.md](./archive/SLICE_40_LITELLM_TIER_GOVERNANCE.md) | COMPLETE |
+| 41 | Langfuse-hosted Prompts | [archive/SLICE_41_LANGFUSE_PROMPTS.md](./archive/SLICE_41_LANGFUSE_PROMPTS.md) | COMPLETE |
+| 42A | Permission Groups (rename roles + module + catalog + globs) | [archive/SLICE_42A_PERMISSION_GROUPS_SCHEMA.md](./archive/SLICE_42A_PERMISSION_GROUPS_SCHEMA.md) | SHIPPED |
+| 42C | Role Layer (cross-module composition over groups) | [archive/SLICE_42C_ROLES_LAYER.md](./archive/SLICE_42C_ROLES_LAYER.md) | SHIPPED |
+| 42B | Admin User Bootstrap (PLATFORM_ADMIN_EMAIL → admin role + hr realm role) | [archive/SLICE_42B_ADMIN_USER_BOOTSTRAP.md](./archive/SLICE_42B_ADMIN_USER_BOOTSTRAP.md) | SHIPPED |
 
 All slices 01–21 are complete — see [archive/](./archive/). Slices 31, 32,
 33, 35, 36, 37, 38 completed during the auth/multi-tenant + permissions
@@ -104,11 +104,11 @@ PENDING:    42A ──► 42C ──► 42B
 ### Shipped (recent)
 
 - **Slice 45c** (2026-05-01, `fbf957b`) — LangChain/LangGraph 1.x +
-  openai 6.x upgrade. See `slices/SLICE_45C_DEPENDENCY_UPGRADE.md`.
+  openai 6.x upgrade. See `slices/archive/SLICE_45C_DEPENDENCY_UPGRADE.md`.
 
 - **Slice 46** (2026-05-01, `fbf957b`) — Durable LangGraph state +
   LLM summarization (PostgresSaver + summarize node). See
-  `slices/SLICE_46_DURABLE_LANGGRAPH_STATE.md`.
+  `slices/archive/SLICE_46_DURABLE_LANGGRAPH_STATE.md`.
 
 - **Tool-annotation hotfix** (2026-05-01, `11c67ce`) — MCP SDK was
   stripping non-spec annotation fields, breaking the write-confirm
@@ -117,29 +117,29 @@ PENDING:    42A ──► 42C ──► 42B
   Strengthened `sync_employee` description + bot.plan honesty rule.
 
 - **Slice 45d** (2026-05-01, `76f6d8e`) — Temporal SDK 1.16 → 1.17.
-  See `slices/SLICE_45D_TEMPORAL_BUMP.md`.
+  See `slices/archive/SLICE_45D_TEMPORAL_BUMP.md`.
 
 - **Slice 46b** (2026-05-01, `cded50e`) — Native `interrupt()` for
   write-action confirmation. Removed `routeAfterIngest`, simplified
   ingest, runner detects via `getState().tasks` and resumes with
   `Command({resume})`. New `resumed=` field in `[turn]` log.
-  See `slices/SLICE_46B_NATIVE_INTERRUPT.md`.
+  See `slices/archive/SLICE_46B_NATIVE_INTERRUPT.md`.
 
 - **Slice 46c parts 3+5** (2026-05-01, `1fee9f9`) — Parallel tool
   execution via `Promise.all` + Mistral prompt-cache visibility
   (`[llm-cache]` log lines). Part 4 (async durability) inherited
   free from 1.x default. Parts 1+2 deferred to 46d.
-  See `slices/SLICE_46C_CHECKPOINT_HYGIENE.md`.
+  See `slices/archive/SLICE_46C_CHECKPOINT_HYGIENE.md`.
 
 - **Slice 48** (2026-05-01, `f0213f1`) — Langfuse `CallbackHandler` +
   `bot_turn_metrics` Postgres table. Per-turn trace tree keyed by
   turnId; metrics filling for SQL-based perf debugging.
-  See `slices/SLICE_48_LANGFUSE_TRACES_AND_TELEMETRY.md` and the
+  See `slices/archive/SLICE_48_LANGFUSE_TRACES_AND_TELEMETRY.md` and the
   runbook at `slices/BOT_PERF_DEBUGGING.md`.
 
 - **Slice 52** (2026-05-01, `3caadda`) — Typing-indicator refresh
   for long turns. New `lg.streaming_mode` tunable (default `typing`).
-  See `slices/SLICE_52_TEAMS_STREAMING.md`.
+  See `slices/archive/SLICE_52_TEAMS_STREAMING.md`.
 
 - **Slice 46d** (2026-05-01, `1b3585f`) — Ephemeral `candidateTools`
   (removed from state — Option B path: discoverTools called per-node
@@ -165,9 +165,30 @@ PENDING:    42A ──► 42C ──► 42B
   generations join our session aggregate. Verified live: per-session
   cost now non-null in `/turn` output.
 
+- **Slice 55** (2026-05-01) — Per-tool argument extraction framework
+  + grammar router. TS Extractor interface + registry, auth-derived
+  helpers, concrete extractors for top ~10 tools, regex grammar router
+  graph node before triage, disambiguation card, training-data entry
+  paths.  See `slices/archive/SLICE_55_ARG_EXTRACTION_FRAMEWORK.md`.
+
+- **Slice 56 family** (2026-05-01, `slices/archive/SLICE_56*.md` —
+  56B trainging-data lifecycle, 56C in-cluster trainer, 56D per-tenant
+  models, 56E trace export, 56N Temporal retrain workflow + parent
+  56_SKLEARN_INTENT_ROUTER and 56_FAMILY_REVIEW alignment doc).
+  Sklearn intent router shipped with phased rollout, trust-tier
+  training data, and Temporal-orchestrated retrain.
+
+- **Slice 58A** (2026-05-05, `14235e4`,`6468010`,`2cde96f`,`dc6e15e`)
+  — `@cip/document-service` foundation.  Schema (cip_documents),
+  ClamAV chart in cip-infra (demo-mode 750Mi/1Gi), RLS policies with
+  state-based read gate, lifecycle state machine, module contract
+  types in @cip/shared, EICAR integration test passing live, all 8
+  documents.* permissions seeded.  No tools/activities yet — 58B
+  starts there.  See `slices/archive/SLICE_58A_DOCUMENT_SERVICE_FOUNDATION.md`.
+
 ### Drafted, not yet shipped
 
-Recommended order: **55 → 56 → 53 → 49 → 51 → 58A→B→C→D→E (cert E2E) → 58F/G → 58H/I**.
+Recommended order: **58B → 58C → 58D → 58E (cert E2E) → 58F/G → 58H/I → 53 → 49 → 51**.
 
 #### Slice 58 — Generic document workflow (`@cip/document-service`)
 
@@ -176,7 +197,7 @@ operational follow-ons; H/I are growth investments.
 
 | Slice | Doc | Status |
 |---|---|---|
-| **58A** — `@cip/document-service` foundation (schema, ClamAV, RLS, perms, contract, lifecycle) | [SLICE_58A_DOCUMENT_SERVICE_FOUNDATION.md](./SLICE_58A_DOCUMENT_SERVICE_FOUNDATION.md) | IN PROGRESS |
+| **58A** — `@cip/document-service` foundation (schema, ClamAV, RLS, perms, contract, lifecycle) | [archive/SLICE_58A_DOCUMENT_SERVICE_FOUNDATION.md](./archive/SLICE_58A_DOCUMENT_SERVICE_FOUNDATION.md) | SHIPPED 2026-05-05 (`14235e4`,`6468010`,`2cde96f`,`dc6e15e`) |
 | **58B** — Ingest path (bot wiring + scan + features + sensitivity + workflow + bot-progress channel) | [SLICE_58B_INGEST_SCAN_FEATURES.md](./SLICE_58B_INGEST_SCAN_FEATURES.md) | DRAFTED |
 | **58C** — Classification + per-type extraction strategy (cert as first consumer) | [SLICE_58C_CLASSIFY_AND_EXTRACT.md](./SLICE_58C_CLASSIFY_AND_EXTRACT.md) | DRAFTED |
 | **58D** — Subject resolution + HITL admin queue | [SLICE_58D_SUBJECT_RESOLUTION.md](./SLICE_58D_SUBJECT_RESOLUTION.md) | DRAFTED |
@@ -204,13 +225,6 @@ operational follow-ons; H/I are growth investments.
   production.
   See `slices/SLICE_51_LANGGRAPH_STUDIO.md`.
 
-- **Slice 52** — Streaming partial responses to Teams. **GATED on
-  Slice 48 telemetry** — only ship if p95 turn latency proves to
-  warrant the perceived-latency win. Default mode `typing` (just the
-  indicator); optional `progress` mode for tool-loop turns. Per-tenant
-  kill switch via `lg.streaming_mode = 'none'`.
-  See `slices/SLICE_52_TEAMS_STREAMING.md`.
-
 - **Slice 53** — Card-driven write-action confirm + invoke router.
   Replaces the Slice 46b text "Reply yes/no." with an Adaptive Card
   (`Action.Execute` `[Confirm] [Cancel]`). Lays the verb-dispatched
@@ -221,31 +235,6 @@ operational follow-ons; H/I are growth investments.
   Per-tenant kill switch back to text via render-mode tunable. No
   state-shape change; same `interrupt()` mechanism as 46b.
   See `slices/SLICE_53_CARD_CONFIRM.md`.
-
-- **Slice 55** — Per-tool argument extraction framework + grammar
-  router. **Ships before Slice 56.** TypeScript `Extractor` interface
-  + registry. Auth-derived helpers (caller_id), DB-resolution helpers
-  (employee name → id, role lookup). Concrete extractors for the top
-  ~10 high-volume tools. Deterministic regex grammar router as a
-  graph node before triage — templated requests skip the planner
-  entirely. Disambiguation card (multi-match DB resolution) +
-  templated clarification (missing args). Three low-effort training-
-  data entry paths: committed CSV in repo, `/teach` admin slash
-  command, "Add to training set" action on `/turn` cards. Nine new
-  Make commands for extractor + training-data lifecycle. Per-tenant
-  kill switch via `lg.grammar_router_enabled = false`.
-  See `slices/SLICE_55_ARG_EXTRACTION_FRAMEWORK.md`.
-
-- **Slice 56** — Sklearn intent router (depends on Slice 55). New
-  `intent-classifier` Python service (FastAPI + TfidfVectorizer +
-  LogisticRegression). New `classify` graph node before triage.
-  Reuses Slice 55's extractor framework. Five-way routing decision
-  (fallthrough / clarify / skip / disambiguate / narrow_plan).
-  Phased rollout: shadow → clarify+disambiguate → narrow_plan →
-  skip. Captures `(text, intent, was_correct)` for retraining via
-  the `correction_in_next_turn` analyzer. Per-tenant kill switch via
-  `lg.classifier_enabled = false`.
-  See `slices/SLICE_56_SKLEARN_INTENT_ROUTER.md`.
 
 ### Proposed (not yet drafted)
 
