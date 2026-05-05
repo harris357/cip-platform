@@ -21,6 +21,20 @@
 > `(module, doc_type, mime_class)`. Resolver matches `mime_filter`
 > against the doc's normalized MIME class. Backwards compatible:
 > rows with `mime_filter = NULL` match any MIME (current default).
+>
+> **Tunable namespace rename (added 2026-05-05):** 58C-FIX
+> seeded extraction tunables under the `lg.*` prefix
+> (`lg.extract_token_budget`, `lg.cert_text_extraction_min_chars`,
+> `lg.extract_image_ocr_model`, `lg.extract_pdf_text_first`,
+> `lg.extract_office_image_render`, plus `lg.cert_text_extraction_min_chars`).
+> The `lg.*` prefix belongs to bot-LangGraph runtime tunables;
+> doc-service tunables otherwise use `documents.*`. 58E renames
+> them via backwards-compatible migration: insert new
+> `documents.extract_*` rows, update doc-service tunables loader
+> to read the new keys (falling back to `lg.*` for one release),
+> then drop `lg.*` rows. Any `lg.cert_*` value stays under `lg.*`
+> only if it's truly bot-LangGraph-scoped — otherwise renames to
+> `documents.cert_*`.
 
 ---
 
