@@ -35,6 +35,25 @@
 > then drop `lg.*` rows. Any `lg.cert_*` value stays under `lg.*`
 > only if it's truly bot-LangGraph-scoped — otherwise renames to
 > `documents.cert_*`.
+>
+> **Alias-resolver consolidation (added 2026-05-05):** today
+> `resolveAlias` exists in two near-identical implementations —
+> `packages/hr-service/src/services/alias-resolver.ts` (DB-direct
+> against `cip_hr.routing_rules` + `tenant_settings.routing_overrides`,
+> 79 LOC) and `packages/teams-bot/src/intent/alias-resolver.ts`
+> (HTTP against hr-service's existing `GET /admin/routing-rules`,
+> 80 LOC). 58E collapses both into a single shared HTTP variant
+> at `@cip/shared/clients/litellm-alias-resolver.ts`, since the
+> HTTP path is the only one that works across the doc-service
+> DB split (and across any future non-HR consumer). hr-service
+> activities accept one HTTP self-call per cache miss (5-min TTL
+> per pod per tenant-service pair) — net cost is negligible and
+> the implementation drift goes away. The earlier deferral was
+> right that nothing forced the move; it was wrong that the
+> cross-DB framing made it impossible. The bot's HTTP variant
+> already proved the path. doc-service does not become a consumer
+> in this slice (it still hardcodes `cip-classifier`, `cip-vision`,
+> etc.) — that ships when a tenant first asks for an override.
 
 ---
 
@@ -76,6 +95,24 @@ packages/hr-service/src/db/migrations/
 packages/hr-service/src/services/permission-catalog-seed.ts          MOD (add documents.admin.routing_map.write to the catalog)
 
 scripts/provision-tenant.sh                                          MOD (after tenant provisioning, copy default routing_map rows for the new tenant)
+
+# ─── Alias-resolver consolidation ──────────────────────────────────
+packages/shared/src/clients/litellm-alias-resolver.ts                NEW (HTTP variant; merges the bot's resolver into shared)
+packages/shared/src/index.ts                                         MOD (re-export resolveAlias + types)
+
+packages/hr-service/src/services/alias-resolver.ts                   DELETED (replaced by shared HTTP variant)
+packages/teams-bot/src/intent/alias-resolver.ts                      DELETED (replaced by shared HTTP variant)
+
+# Caller import updates (no logic change at the call sites):
+packages/hr-service/src/modules/certifications/activities/match-employee.activity.ts          MOD
+packages/hr-service/src/modules/certifications/activities/match-cert-definition.activity.ts   MOD
+packages/hr-service/src/modules/certifications/activities/extract-cert-features.activity.ts   MOD
+packages/hr-service/src/modules/certifications/agents/vision-agent/nodes.ts                   MOD
+packages/teams-bot/src/langgraph/nodes/triage.ts                                              MOD
+packages/teams-bot/src/langgraph/nodes/plan.ts                                                MOD
+packages/teams-bot/src/langgraph/nodes/summarize.ts                                           MOD
+# (Note: match-employee.activity.ts is also rewritten elsewhere in this slice — keep
+#  the alias-resolver import update aligned with that rewrite.)
 ```
 
 ---
@@ -105,6 +142,16 @@ scripts/provision-tenant.sh                                          MOD (after 
 6. **No code in routing tries multiple downstreams.** One doc → one
    downstream workflow. Reclassification (58F) is the path to "this
    was misclassified, route somewhere else."
+7. **Alias-resolver becomes HTTP-only and lives in `@cip/shared`.**
+   No service may keep its own copy. The shared module is the only
+   consumer of `GET /admin/routing-rules`. hr-service's
+   `db/queries/routing-rules.ts` (the data layer behind the
+   endpoint) stays put — only the resolver wrapper consolidates.
+   Backwards-compatible: the FALLBACK_ALIAS (`'cip-chat'`), 5-min
+   per-tenant cache TTL, and the resolution order
+   (tenant override → global rule → fallback) MUST match the
+   pre-58E behavior exactly. Verify with the existing alias-resolver
+   tests (which move to `packages/shared/test/`).
 
 ---
 
@@ -319,6 +366,15 @@ new tenant created post-58E.
 7. The legacy `process_document` MCP tool no longer registered on
    hr-service (verified by listing tools through the bot — only
    `document_process` on doc-service for upload).
+8. **Alias-resolver consolidation: zero behavior change.** Cert
+   workflow + bot LangGraph nodes resolve the same aliases as
+   pre-58E for the same `(tenantId, service, purpose)` triples
+   (verified against the existing alias-resolver test set, now
+   moved to `@cip/shared`). The two old files are gone; no service
+   imports them anymore. `pnpm -r run typecheck` passes. The 5-min
+   cache hit rate is observable as before (hr-service activities
+   now hitting hr-service's own `/admin/routing-rules` ~once per
+   5 min per pod per tenant-service pair is acceptable).
 
 ---
 
