@@ -103,8 +103,11 @@ export async function computeLayoutFingerprintActivity(
       tenantId,
       documentId,
       actorRole:  'system',
-      eventType:  'layout_fingerprinted',
-      payload:    { fingerprint, mimeType: doc.mimeType },
+      // 'state_transition' is the closest fit in the audit_events
+      // event_type CHECK; the layout fingerprint is an attribute, not
+      // its own lifecycle event. Payload carries the actual fingerprint.
+      eventType:  'state_transition',
+      payload:    { kind: 'layout_fingerprinted', fingerprint, mimeType: doc.mimeType },
     })
   })
 

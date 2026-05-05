@@ -136,7 +136,7 @@ export async function extractGenericFeaturesActivity(
       tenantId,
       documentId,
       actorRole:  'system',
-      eventType:  'features_extracted',
+      eventType:  'generic_features_extracted',
       payload: { layoutType: features.layoutType, pageCount: features.pageCount, ocrTextLength: features.ocrTextLength },
     })
   })
