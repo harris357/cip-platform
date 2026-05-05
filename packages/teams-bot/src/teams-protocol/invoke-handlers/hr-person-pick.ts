@@ -4,26 +4,22 @@
 // (notify-person-pickcard activity on hr-service) carries
 // `resolutionId` + `employeeId` per button. On click we:
 //
-//   1. Look up the resolution row from person_match_resolutions
-//      (read-only, scoped to the resolver's tenant via RLS GUC).
+//   1. Fetch the resolution row from hr-service via the
+//      `/internal/resolutions/:id` endpoint (slice 58D-A). The bot
+//      does NOT connect directly to DATABASE_URL_HR for this — every
+//      cross-service read goes through hr-service's HTTP surface so
+//      the data layer stays owned by one service.
 //   2. authorizedUser hook:
-//        - audience='uploader' → return context_meta.uploaderEmployeeId
+//        - audience='uploader' → return contextMeta.uploaderEmployeeId
 //          (AAD object id) so the router rejects clicks from anyone
 //          else.
-//        - audience='admin'    → return undefined (any user in the
-//          conversation may click; the handler does the
-//          permission check).
+//        - audience='admin'    → return undefined (the handler refuses
+//          admin clicks below; admins use match_person_resolve MCP).
 //   3. handle:
 //        - re-fetch the row (router & handler are independent calls)
-//        - if audience='admin', verify the clicker has hr.people.match
-//          via Keycloak token introspection. (For 58D-A the lighter
-//          path is to skip the Keycloak round-trip and simply trust
-//          the router's authorization step for uploader cards;
-//          admin cards in 58D-A are listed via match_person_list /
-//          resolved via match_person_resolve, not clicked from the
-//          pickcard. The handler still gates here so a future
-//          admin-tier proactive pickcard works without further
-//          changes.)
+//        - if audience='admin', refuse — admin tier must go through
+//          match_person_resolve MCP for proper Keycloak permission
+//          stack
 //        - signal MatchPersonWorkflow with PersonPickedSignal
 //        - return a "Resolved" replacement card.
 //
@@ -38,38 +34,43 @@ import type {
   InvokeHandler,
   InvokeResult,
 } from '../invoke-router.js';
-import { tryGetPool } from '../../db/pool.js';
 
 const CARD_CONTENT_TYPE = 'application/vnd.microsoft.card.adaptive';
 
-interface ResolutionRow {
-  id:                   string;
-  tenant_id:            string;
-  workflow_id:          string;
-  outcome:              string;
-  hitl_audience:        string | null;
-  context_meta:         Record<string, unknown> | null;
+interface ResolutionResponse {
+  id:           string;
+  tenantId:     string;
+  workflowId:   string;
+  outcome:      string;
+  hitlAudience: string | null;
+  contextMeta:  Record<string, unknown> | null;
 }
 
-async function fetchResolution(resolutionId: string): Promise<ResolutionRow | null> {
-  const pool = tryGetPool();
-  if (!pool) return null;
-  // No tenant filter here — the resolutionId is a UUID and the bot's
-  // pool talks to the hr DB. We rely on the resolutionId being
-  // unguessable and (more importantly) on the router's authorizedUser
-  // hook + the handler's permission check to gate the click. RLS would
-  // additionally require setting app.current_tenant_id which we don't
-  // have on the click-side cheaply (the click envelope doesn't carry
-  // CIP tenantId without a resolve trip). Acceptable trade-off for
-  // 58D-A: the pickcard's verb is ours and the data shape is ours.
-  const result = await pool.query<ResolutionRow>(
-    `SELECT id, tenant_id, workflow_id, outcome, hitl_audience, context_meta
-       FROM person_match_resolutions
-      WHERE id = $1
-      LIMIT 1`,
-    [resolutionId],
-  );
-  return result.rows[0] ?? null;
+async function fetchResolution(resolutionId: string): Promise<ResolutionResponse | null> {
+  const baseUrl = process.env['HR_SERVICE_URL'];
+  const token   = process.env['PLATFORM_ADMIN_TOKEN'];
+  if (!baseUrl || !token) {
+    console.warn('[hr-person-pick] HR_SERVICE_URL or PLATFORM_ADMIN_TOKEN missing — cannot fetch resolution');
+    return null;
+  }
+  const url = `${baseUrl}/internal/resolutions/${encodeURIComponent(resolutionId)}`;
+
+  let resp: Response;
+  try {
+    resp = await fetch(url, {
+      headers: { 'x-platform-admin-token': token },
+    });
+  } catch (err) {
+    console.warn(`[hr-person-pick] fetch threw: ${err instanceof Error ? err.message : String(err)}`);
+    return null;
+  }
+
+  if (resp.status === 404) return null;
+  if (!resp.ok) {
+    console.warn(`[hr-person-pick] fetch failed: HTTP ${resp.status}`);
+    return null;
+  }
+  return (await resp.json()) as ResolutionResponse;
 }
 
 function resolvedCardReplacement(employeeId: string): InvokeResult {
@@ -124,8 +125,8 @@ export const hrPersonPickHandler: InvokeHandler = {
     const row = await fetchResolution(click.resolutionId);
     if (!row) return undefined;
 
-    if (row.hitl_audience === 'uploader') {
-      const meta = row.context_meta ?? {};
+    if (row.hitlAudience === 'uploader') {
+      const meta = row.contextMeta ?? {};
       const uploaderAad = meta['uploaderEmployeeId'];
       if (typeof uploaderAad === 'string' && uploaderAad.length > 0) {
         return uploaderAad;
@@ -137,7 +138,7 @@ export const hrPersonPickHandler: InvokeHandler = {
       return undefined;
     }
     // audience='admin' or null → opt out of router check; handler
-    // verifies hr.people.match permission separately.
+    // refuses admin clicks below.
     return undefined;
   },
 
@@ -163,12 +164,7 @@ export const hrPersonPickHandler: InvokeHandler = {
     // surface and we can't resolve permissions is to refuse — admins
     // have the MCP tool path that goes through the proper Keycloak
     // permission stack.
-    if (row.hitl_audience === 'admin') {
-      // We don't have a cached JWT for arbitrary clickers in this
-      // handler's context (the bot tracks tokens per
-      // teams-conversation user; an admin-tier pickcard delivered
-      // proactively may not have a cached token for the clicker).
-      // Route admins to the MCP tool path.
+    if (row.hitlAudience === 'admin') {
       return alreadyHandledCard(
         'Admin resolution must go through `match_person_resolve` (MCP tool).',
       );
@@ -179,7 +175,7 @@ export const hrPersonPickHandler: InvokeHandler = {
       ((ctx.context.activity.from as unknown) as Record<string, unknown> | undefined)?.['aadObjectId'] as
         string | undefined;
     const client = await createTemporalClient();
-    const handle = client.workflow.getHandle(row.workflow_id);
+    const handle = client.workflow.getHandle(row.workflowId);
     try {
       await handle.signal('personPicked', {
         employeeId: click.employeeId,
@@ -188,7 +184,7 @@ export const hrPersonPickHandler: InvokeHandler = {
       });
     } catch (err) {
       // Workflow not found (already terminated) → already handled.
-      console.warn(`[hr-person-pick] signal failed for workflow ${row.workflow_id}: ${err instanceof Error ? err.message : String(err)}`);
+      console.warn(`[hr-person-pick] signal failed for workflow ${row.workflowId}: ${err instanceof Error ? err.message : String(err)}`);
       return alreadyHandledCard('This match has already been resolved.');
     }
 

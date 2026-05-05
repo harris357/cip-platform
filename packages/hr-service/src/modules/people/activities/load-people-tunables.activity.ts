@@ -16,23 +16,20 @@ const DEFAULTS = {
   uploaderTtlHours:   24,
   adminTtlHours:      168,
   shortlistMax:       5,
-  canonicalizeModel:  'cip-classifier',
 } as const;
 
 const KEYS = {
-  autoThreshold:     'hr.person_match_auto_threshold',
-  uploaderTtlHours:  'hr.person_match_uploader_ttl_hours',
-  adminTtlHours:     'hr.person_match_admin_ttl_hours',
-  shortlistMax:      'hr.person_match_shortlist_max',
-  canonicalizeModel: 'hr.person_match_canonicalize_model',
+  autoThreshold:    'hr.person_match_auto_threshold',
+  uploaderTtlHours: 'hr.person_match_uploader_ttl_hours',
+  adminTtlHours:    'hr.person_match_admin_ttl_hours',
+  shortlistMax:     'hr.person_match_shortlist_max',
 } as const;
 
 export const PeopleTunablesSchema = z.object({
-  autoThreshold:     z.number().min(0).max(1),
-  uploaderTtlHours:  z.number().int().positive(),
-  adminTtlHours:     z.number().int().positive(),
-  shortlistMax:      z.number().int().positive(),
-  canonicalizeModel: z.string().min(1),
+  autoThreshold:    z.number().min(0).max(1),
+  uploaderTtlHours: z.number().int().positive(),
+  adminTtlHours:    z.number().int().positive(),
+  shortlistMax:     z.number().int().positive(),
 });
 export type PeopleTunables = z.infer<typeof PeopleTunablesSchema>;
 
@@ -46,13 +43,8 @@ function asNumber(v: unknown, fallback: number): number {
   return Number.isFinite(n) ? n : fallback;
 }
 
-function asString(v: unknown, fallback: string): string {
-  if (typeof v === 'string') return v;
-  return fallback;
-}
-
 /**
- * Single round-trip read of the 5 matcher tunables, with per-tenant
+ * Single round-trip read of the 4 matcher tunables, with per-tenant
  * shadowing the zero-UUID defaults. Failure = log + return defaults
  * (the matcher is non-critical and a single bad row shouldn't kill the
  * whole workflow).
@@ -80,10 +72,9 @@ export async function loadPeopleTunablesActivity(
   }
 
   return PeopleTunablesSchema.parse({
-    autoThreshold:     asNumber(raw[KEYS.autoThreshold],     DEFAULTS.autoThreshold),
-    uploaderTtlHours:  asNumber(raw[KEYS.uploaderTtlHours],  DEFAULTS.uploaderTtlHours),
-    adminTtlHours:     asNumber(raw[KEYS.adminTtlHours],     DEFAULTS.adminTtlHours),
-    shortlistMax:      asNumber(raw[KEYS.shortlistMax],      DEFAULTS.shortlistMax),
-    canonicalizeModel: asString(raw[KEYS.canonicalizeModel], DEFAULTS.canonicalizeModel),
+    autoThreshold:    asNumber(raw[KEYS.autoThreshold],    DEFAULTS.autoThreshold),
+    uploaderTtlHours: asNumber(raw[KEYS.uploaderTtlHours], DEFAULTS.uploaderTtlHours),
+    adminTtlHours:    asNumber(raw[KEYS.adminTtlHours],    DEFAULTS.adminTtlHours),
+    shortlistMax:     asNumber(raw[KEYS.shortlistMax],     DEFAULTS.shortlistMax),
   });
 }

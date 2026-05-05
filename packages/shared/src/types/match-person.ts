@@ -50,11 +50,20 @@ export const MatchPersonInputSchema = z.object({
 
   policy: z.object({
     /** What to do when zero candidates remain after scoring.
-     *  - 'fail'         : return outcome='no_resolution'
-     *  - 'admin_queue'  : pickcard goes straight to admin audience
-     *  - 'create_stub'  : reserved; throws not-implemented in 58D-A
+     *  - 'admin_queue'  : (default) skip uploader stage; admins discover
+     *                     via match_person_list MCP and resolve via
+     *                     match_person_resolve with any tenant employeeId.
+     *  - 'fail'         : return outcome='no_resolution' immediately.
+     *  - 'create_stub'  : reserved; throws not-implemented in 58D-A.
+     *
+     * Default flipped to 'admin_queue' on 2026-05-05 because zero
+     * pg_trgm matches typically means typo/onboarding-gap/contractor —
+     * admin authority + full employee list resolves more cleanly than
+     * silently failing the doc. (Spelling-variant cases produce LOW-score
+     * candidates rather than zero, so they go through the existing
+     * uploader-pickcard path.)
      */
-    onNoMatch:       z.enum(['fail', 'admin_queue', 'create_stub']).default('fail'),
+    onNoMatch:       z.enum(['fail', 'admin_queue', 'create_stub']).default('admin_queue'),
     /** What to do when multiple candidates tie or no candidate clears
      *  autoThreshold.
      *  - 'uploader_pickcard' : 1:1 pickcard to uploader (cascades to admin on TTL)

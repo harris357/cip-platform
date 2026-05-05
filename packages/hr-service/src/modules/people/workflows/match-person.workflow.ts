@@ -121,7 +121,6 @@ export async function MatchPersonWorkflow(
     tenantId:        input.tenantId,
     candidateText:   input.candidateText,
     ...(input.structuredHints !== undefined && { structuredHints: input.structuredHints }),
-    modelAlias:      tunables.canonicalizeModel,
   });
 
   const shortlist = await loadEmployeeShortlistActivity({
@@ -208,13 +207,21 @@ export async function MatchPersonWorkflow(
     ? 'admin' as const
     : decideAudience(input.policy.onAmbiguous, scored.length);
 
-  await notifyPersonPickcardActivity({
-    tenantId:     input.tenantId,
-    resolutionId,
-    audience,
-    candidates:   scored,
-    ...(input.context.conversationId !== undefined && { conversationId: input.context.conversationId }),
-  });
+  // Skip the card send when the shortlist is empty: there are no
+  // candidates to render. Admins discover the resolution via the
+  // match_person_list MCP tool and resolve via match_person_resolve
+  // (which accepts any active tenant employeeId, not just shortlist
+  // members). The persist step still runs so the row records the
+  // hitl_offered phase and audience.
+  if (scored.length > 0) {
+    await notifyPersonPickcardActivity({
+      tenantId:     input.tenantId,
+      resolutionId,
+      audience,
+      candidates:   scored,
+      ...(input.context.conversationId !== undefined && { conversationId: input.context.conversationId }),
+    });
+  }
   await persistPersonMatchResolutionActivity({
     phase:        'hitl_offered',
     tenantId:     input.tenantId,

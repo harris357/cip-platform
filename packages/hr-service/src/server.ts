@@ -7,6 +7,7 @@ import { adminRoutingRouter } from './routes/admin-routing.js';
 import { adminToolRetrievalRouter } from './routes/admin-tool-retrieval.js';
 import { adminBotTunablesRouter } from './routes/admin-bot-tunables.js';
 import { adminToolMetadataRouter } from './routes/admin-tool-metadata.js';
+import { internalResolutionsRouter } from './routes/internal-resolutions.js';
 
 export function createApp(): Express {
   const app = express();
@@ -23,6 +24,11 @@ export function createApp(): Express {
   // Slice 39A: routing rules read by the bot's alias-resolver. Same
   // platform-admin token, mounted before the tenant JWT middleware.
   app.use(adminRoutingRouter);
+
+  // Slice 58D-A: person_match_resolutions lookup for the bot's
+  // hr-person-pick invoke handler. Same platform-admin token; mounted
+  // before the tenant JWT middleware.
+  app.use(internalResolutionsRouter);
 
   // Slice 44: tool-retrieval endpoint called by the bot's discoverTools
   // to narrow the LLM-visible tool set via vector similarity. Same

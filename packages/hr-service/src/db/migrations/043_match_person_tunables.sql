@@ -15,7 +15,9 @@ INSERT INTO bot_tunables (tenant_id, key, value_json, notes) VALUES
   ('00000000-0000-0000-0000-000000000000', 'hr.person_match_admin_ttl_hours',    '168',
    'Admin queue TTL (default 7 days). On expiry the matcher returns outcome=no_resolution with reason=hitl_ttl_exhausted.'),
   ('00000000-0000-0000-0000-000000000000', 'hr.person_match_shortlist_max',      '5',
-   'Max candidates returned by the pg_trgm shortlist activity. Higher gives the LLM canonicalizer more to pick from but slows the workflow.'),
-  ('00000000-0000-0000-0000-000000000000', 'hr.person_match_canonicalize_model', '"cip-classifier"',
-   'LiteLLM alias for the canonicalization step (resolved via the alias-resolver / routing_rules layer at activity entry).')
+   'Max candidates returned by the pg_trgm shortlist activity. Higher gives the LLM canonicalizer more to pick from but slows the workflow.')
+-- Canonicalization model alias is NOT a tunable — it routes through
+-- alias-resolver via (service='hr-service', purpose='people_canonicalize'),
+-- the same path every other LLM call uses. Per-tenant overrides live in
+-- routing_rules / tenant_settings.routing_overrides, not bot_tunables.
 ON CONFLICT (tenant_id, key) DO NOTHING;

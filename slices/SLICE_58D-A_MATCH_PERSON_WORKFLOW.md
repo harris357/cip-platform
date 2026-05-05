@@ -1,5 +1,24 @@
 # Slice 58D-A — generic person matcher (`MatchPersonWorkflow`)
 
+> **Patches landed 2026-05-05** (post-implementation review):
+> - Default `policy.onNoMatch` flipped from `'fail'` to `'admin_queue'`
+>   so zero pg_trgm matches go to admin HITL rather than silently
+>   failing the doc.
+> - Empty-shortlist + admin tier path: workflow skips the
+>   `notifyPersonPickcardActivity` call (no candidates to render);
+>   admins discover the resolution via `match_person_list` and resolve
+>   via `match_person_resolve` (which already accepts any tenant
+>   employeeId, not just shortlist members).
+> - Tunable `hr.person_match_canonicalize_model` removed. Per-tenant
+>   canonicalization-model overrides go through `alias-resolver`
+>   (`service='hr-service', purpose='people_canonicalize'`) — the same
+>   path every other LLM call uses. One source of truth.
+> - Bot's `hr-person-pick` handler reads resolution rows via
+>   hr-service's new `GET /internal/resolutions/:id` endpoint instead
+>   of connecting directly to `DATABASE_URL_HR`. Mirrors the bot's
+>   existing `/admin/routing-rules` consumption pattern.
+
+
 > **Why this exists:** Multiple HR-adjacent flows need to resolve "who
 > is this about?" from free-text hints, NER hits, or extracted fields —
 > cert (now), incident reports (future), training enrollment (future),

@@ -40,8 +40,6 @@ export const CanonicalizePersonHintInputSchema = z.object({
   /** Same shape as MatchPersonInput.structuredHints — intentionally a
    *  loose record here so the activity can be called with partial info. */
   structuredHints: z.record(z.unknown()).optional(),
-  /** LiteLLM alias (resolved at workflow entry from the tunable). */
-  modelAlias: z.string().optional(),
 });
 export type CanonicalizePersonHintInput = z.infer<typeof CanonicalizePersonHintInputSchema>;
 
@@ -72,15 +70,15 @@ export async function canonicalizePersonHintActivity(
 
   const client = createLiteLLMClient({ tenantId: validated.tenantId, virtualKey });
 
-  // Tunable wins; otherwise resolve via routing rules with the canonical
-  // (service, purpose). Either way the LLM call gets a tenant-scoped
-  // alias.
-  const alias = validated.modelAlias
-    ?? await resolveAlias({
-      service:  'hr-service',
-      purpose:  'people_canonicalize',
-      tenantId: validated.tenantId,
-    });
+  // Single source of truth: alias-resolver. Per-tenant overrides live in
+  // routing_rules / tenant_settings.routing_overrides. No matcher-specific
+  // tunable for the model alias — every LLM call in the codebase routes
+  // through this path uniformly.
+  const alias = await resolveAlias({
+    service:  'hr-service',
+    purpose:  'people_canonicalize',
+    tenantId: validated.tenantId,
+  });
 
   // Try Langfuse first; fall back to the local FALLBACK prompt body if
   // langfuse returns the global empty fallback (the slice-41 registry
