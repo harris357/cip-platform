@@ -49,21 +49,19 @@ spec:
               memory: {{ .Values.resources.requests.memory | quote }}
             limits:
               memory: {{ .Values.resources.limits.memory | quote }}
+          # tcpSocket instead of exec PING/PONG: official clamav/clamav:1.4 image
+          # ships without `nc`, so `echo PING | nc | grep PONG` always fails.
+          # TCP-level reachability is sufficient — if clamd accepts on 3310 it
+          # is functional; the EICAR integration test verifies actual scanning.
           readinessProbe:
-            exec:
-              command:
-                - /bin/sh
-                - -c
-                - 'echo PING | nc -w 2 localhost 3310 | grep -q PONG'
+            tcpSocket:
+              port: 3310
             initialDelaySeconds: {{ .Values.probes.startupGraceSeconds }}
             periodSeconds: 15
             failureThreshold: 3
           livenessProbe:
-            exec:
-              command:
-                - /bin/sh
-                - -c
-                - 'echo PING | nc -w 2 localhost 3310 | grep -q PONG'
+            tcpSocket:
+              port: 3310
             initialDelaySeconds: 120          # generous — DB load + warm-up
             periodSeconds: 60
             failureThreshold: {{ .Values.probes.livenessFailureThreshold }}
