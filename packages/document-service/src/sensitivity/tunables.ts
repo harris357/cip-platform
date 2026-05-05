@@ -22,6 +22,16 @@ export const DOCUMENTS_TUNABLE_KEYS = [
   'documents.progress_subscription_ttl_seconds',
   // Slice 58C — below this confidence the classifier shunts to HITL.
   'documents.classify_confidence_threshold',
+  // Slice 58C-FIX — MIME-aware extraction tunables. Note prefix: kickoff
+  // doc uses `lg.extract_*`; we follow the kickoff verbatim. Future
+  // 58E may rename these to `documents.extract_*` for namespace
+  // consistency — flagged in cross-slice notes.
+  'lg.extract_token_budget',
+  'lg.cert_text_extraction_min_chars',
+  'lg.extract_image_ocr_model',
+  'lg.extract_pdf_text_first',
+  'lg.extract_pdf_text_min_chars',
+  'lg.extract_office_image_render',
 ] as const
 export type DocumentsTunableKey = typeof DOCUMENTS_TUNABLE_KEYS[number]
 
@@ -33,6 +43,18 @@ export interface DocumentsTunables {
   progressSubscriptionTtlSeconds:  number
   /** Slice 58C — minimum classifier confidence to skip HITL admin queue. */
   classifyConfidenceThreshold:     number
+  /** Slice 58C-FIX — max chars of ocrText persisted to generic_features. */
+  extractTokenBudget:              number
+  /** Slice 58C-FIX — cert strategy uses text path when ocrText >= this. */
+  certTextExtractionMinChars:      number
+  /** Slice 58C-FIX — LiteLLM alias for image OCR (page-1 PDF render fallback + raw images). */
+  extractImageOcrModel:            string
+  /** Slice 58C-FIX — try pdfjs text layer before render-fallback (default true). */
+  extractPdfTextFirst:             boolean
+  /** Slice 58C-FIX — below this many chars the PDF is treated as scanned-image. */
+  extractPdfTextMinChars:          number
+  /** Slice 58C-FIX — rasterise office docs (docx/pptx) to images? Default false. */
+  extractOfficeImageRender:        boolean
 }
 
 /** Code-resident fallbacks — used when the DB row is missing entirely. */
@@ -46,6 +68,12 @@ export const DEFAULTS: DocumentsTunables = {
   avMaxFileSizeMb:                 25,
   progressSubscriptionTtlSeconds:  300,
   classifyConfidenceThreshold:     0.75,
+  extractTokenBudget:              30_000,
+  certTextExtractionMinChars:      200,
+  extractImageOcrModel:            'cip-vision',
+  extractPdfTextFirst:             true,
+  extractPdfTextMinChars:          100,
+  extractOfficeImageRender:        false,
 }
 
 interface CacheEntry {
@@ -83,6 +111,9 @@ function asTier(v: unknown, fallback: DocumentsTunables['tierOverrideFloor']): D
   }
   return fallback
 }
+function asString(v: unknown, fallback: string): string {
+  return typeof v === 'string' && v.length > 0 ? v : fallback
+}
 
 /**
  * Returns the merged tunables for a tenant, with 5-minute in-memory cache.
@@ -117,6 +148,12 @@ export async function loadDocumentsTunables(tenantId: string): Promise<Documents
     avMaxFileSizeMb:                 asInt(merged['documents.av_max_file_size_mb'], DEFAULTS.avMaxFileSizeMb),
     progressSubscriptionTtlSeconds:  asInt(merged['documents.progress_subscription_ttl_seconds'], DEFAULTS.progressSubscriptionTtlSeconds),
     classifyConfidenceThreshold:     asNumber(merged['documents.classify_confidence_threshold'], DEFAULTS.classifyConfidenceThreshold),
+    extractTokenBudget:              asInt(merged['lg.extract_token_budget'],            DEFAULTS.extractTokenBudget),
+    certTextExtractionMinChars:      asInt(merged['lg.cert_text_extraction_min_chars'],  DEFAULTS.certTextExtractionMinChars),
+    extractImageOcrModel:            asString(merged['lg.extract_image_ocr_model'],      DEFAULTS.extractImageOcrModel),
+    extractPdfTextFirst:             asBool(merged['lg.extract_pdf_text_first'],         DEFAULTS.extractPdfTextFirst),
+    extractPdfTextMinChars:          asInt(merged['lg.extract_pdf_text_min_chars'],      DEFAULTS.extractPdfTextMinChars),
+    extractOfficeImageRender:        asBool(merged['lg.extract_office_image_render'],    DEFAULTS.extractOfficeImageRender),
   }
 
   cache.set(tenantId, { value, expiresAt: Date.now() + TTL_MS })

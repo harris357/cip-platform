@@ -119,6 +119,11 @@ export async function runExtractionStrategyActivity(
   const workflowId =
     `ExtractionStrategy-${input.tenantId}-${input.documentId}-${input.module}-${input.docType}`
 
+  // Slice 58C-FIX — emit extraction_started before dispatch so the
+  // audit trail captures every attempt, even ones that subsequently
+  // crash mid-strategy.
+  await recordStarted(input, strategy.strategyName, strategy.taskQueue, strategy.activityName)
+
   // Workflow ID pattern: {workflowType}-{tenantId}-{entityId}
   const handle = await client.workflow.start('ExecuteExtractionStrategyWorkflow', {
     workflowId,
@@ -142,6 +147,30 @@ export async function runExtractionStrategyActivity(
   const parsed: ExtractionOutput = ExtractionOutputSchema.parse(raw)
   await persistExtraction(input, strategy.strategyName, parsed)
   return parsed
+}
+
+async function recordStarted(
+  input:        RunExtractionStrategyInput,
+  strategyName: string,
+  taskQueue:    string,
+  activityName: string,
+): Promise<void> {
+  const db = getDb()
+  await withActorContext(db, systemActorContext(input.tenantId), async (tx) => {
+    await tx.insert(auditEvents).values({
+      tenantId:   input.tenantId,
+      documentId: input.documentId,
+      actorRole:  'system',
+      eventType:  'extraction_started',
+      payload: {
+        strategyName,
+        module:  input.module,
+        docType: input.docType,
+        taskQueue,
+        activityName,
+      },
+    })
+  })
 }
 
 async function recordFailure(
@@ -183,7 +212,7 @@ async function persistExtraction(
       tenantId:   input.tenantId,
       documentId: input.documentId,
       actorRole:  'system',
-      eventType:  'extracted',
+      eventType:  'extraction_completed',
       payload: {
         strategyName,
         module:        input.module,

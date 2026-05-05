@@ -1,9 +1,14 @@
-// Slice 58B — generic feature extraction (L1 features + lightweight OCR).
+// Slice 58B (initial) → 58C-FIX (MIME-aware extraction).
 //
-// PDF: pdfjs-dist for page count + text layer extraction (no OCR over
-// rasterised content; that's slice 58C's vision-agent territory).
-// Image MIMEs: sharp for dimensions + dominant colors. No text extracted.
-// Other MIMEs: minimal feature set, file-type for MIME confirmation.
+// Generic feature extraction: pageCount, layout heuristics, image
+// dimensions, and — new in 58C-FIX — uniform `ocrText` extraction
+// across the eight supported MIME classes. The classifier, embedding,
+// sensitivity scorer, and per-module strategies all consume `ocrText`
+// from generic_features.
+//
+// Architecture decision (kickoff): extraction lives UPSTREAM in
+// doc-service, not duplicated into each module's strategy. Strategies
+// receive richer ocrText and don't re-extract.
 //
 // Output is Zod-parsed before return (Non-Negotiable #5).
 
@@ -15,7 +20,15 @@ import { z } from 'zod'
 import { getDb } from '../../../db/index.js'
 import { systemActorContext, withActorContext } from '../../../db/rls.js'
 import { documents, auditEvents } from '../../../db/schema.js'
-import { assertCanTransition } from '../../../lifecycle/states.js'
+import {
+  classifyMime,
+  extractFromAny,
+  truncateToBudget,
+  type MimeClass,
+  type ExtractionResult,
+  type ExtractFromAnyOptions,
+} from '../../../extraction/index.js'
+import { loadDocumentsTunables } from '../../../sensitivity/tunables.js'
 
 export interface ExtractGenericFeaturesInput {
   tenantId:   string
@@ -35,6 +48,12 @@ export const GenericFeaturesSchema = z.object({
   fileName:         z.string(),
   mimeType:         z.string(),
   imageDimensions:  z.object({ w: z.number().int(), h: z.number().int() }).optional(),
+  // Slice 58C-FIX — provenance: which extractor ran + key params.
+  extractionEvidence: z.record(z.unknown()).optional(),
+  // Slice 58C-FIX — coarse class so downstream consumers can branch
+  // (cert strategy uses this to short-circuit when class is image and
+  // ocrText is sparse).
+  mimeClass:        z.enum(['pdf', 'image', 'plain_text', 'docx', 'xlsx', 'pptx', 'unsupported']).optional(),
 })
 export type GenericFeatures = z.infer<typeof GenericFeaturesSchema>
 
@@ -55,17 +74,13 @@ function getS3(): S3Client {
   return _s3
 }
 
-const PDFJS_BUILD = 'pdfjs-dist/legacy/build/pdf.mjs'
-
 export async function extractGenericFeaturesActivity(
   input: ExtractGenericFeaturesInput,
 ): Promise<GenericFeatures> {
   const { tenantId, documentId } = input
   const db = getDb()
 
-  // 1. Look up doc. We expect it to be in 'scanning' (just-scanned by the
-  // prior activity); if not, fail fast — the workflow logic is broken
-  // somewhere upstream.
+  // 1. Look up doc.
   const doc = await withActorContext(db, systemActorContext(tenantId), async (tx) => {
     const rows = await tx.select({
       id:             documents.id,
@@ -93,42 +108,138 @@ export async function extractGenericFeaturesActivity(
     const det = await fileTypeFromBuffer(buffer)
     if (det?.mime) detectedMime = det.mime
   } catch (err) {
-    // Not fatal — we keep the claimed MIME. Log for diagnostics.
     console.warn(`[extract-generic] file-type failed: ${err instanceof Error ? err.message : String(err)}`)
   }
 
-  // 4. Branch by MIME.
-  let features: GenericFeatures
-  if (detectedMime === 'application/pdf' || doc.mimeType === 'application/pdf') {
-    features = await extractPdfFeatures(buffer, doc.fileName, detectedMime)
-  } else if (detectedMime.startsWith('image/')) {
-    features = await extractImageFeatures(buffer, doc.fileName, detectedMime)
-  } else {
-    features = {
-      pageCount: 0,
-      hasTable: false,
-      hasSignature: false,
-      hasHandwriting: false,
-      layoutType: 'mixed',
-      dominantColors: [],
-      languageHint: 'und',
-      ocrTextLength: 0,
+  // 4. Load tunables (token budget, vision model alias, PDF text-first
+  // toggle, etc.).
+  const tunables = await loadDocumentsTunables(tenantId)
+
+  // 5. Classify MIME and route.
+  const mimeClass: MimeClass = classifyMime(detectedMime, doc.fileName)
+
+  let extraction: ExtractionResult
+  let imageDimensions: { w: number; h: number } | undefined
+  let dominantColors: string[] = []
+  let pageCount = 0
+
+  if (mimeClass === 'unsupported') {
+    // Persist a clean failure marker rather than throwing — the
+    // workflow can still progress to classify with empty text and the
+    // classifier will route to HITL on low confidence. The audit event
+    // captures the reason.
+    extraction = {
       ocrText: '',
-      fileName: doc.fileName,
-      mimeType: detectedMime,
+      evidence: { source: 'unsupported_mime', detectedMime, claimedMime: doc.mimeType, fileName: doc.fileName },
+    }
+  } else {
+    // Vision credentials — only assembled when the MIME class might
+    // need them (image, or pdf-with-render-fallback).
+    const virtualKey = process.env['LITELLM_VIRTUAL_KEY']
+    const visionOpts = virtualKey ? {
+      tenantId,
+      modelAlias: tunables.extractImageOcrModel,
+      virtualKey,
+      ...(process.env['LITELLM_BASE_URL'] ? { baseURL: process.env['LITELLM_BASE_URL'] } : {}),
+    } : undefined
+
+    const opts: ExtractFromAnyOptions = {
+      ...(visionOpts ? { vision: visionOpts } : {}),
+      pdf: {
+        textLayerFirst:    tunables.extractPdfTextFirst,
+        minTextLayerChars: tunables.extractPdfTextMinChars,
+        maxPages:          50,
+      },
+    }
+
+    try {
+      extraction = await extractFromAny(buffer, detectedMime, doc.fileName, opts)
+    } catch (err) {
+      // ApplicationFailure preserves nonRetryable; rethrow so workflow's
+      // retry policy sees it.
+      if (err instanceof ApplicationFailure) {
+        await recordExtractionFailure(tenantId, documentId, mimeClass, err.message)
+        throw err
+      }
+      // Unknown error — surface as a generic extraction failure (retryable).
+      const msg = err instanceof Error ? err.message : String(err)
+      await recordExtractionFailure(tenantId, documentId, mimeClass, msg)
+      throw err
     }
   }
 
-  // 5. Persist genericFeatures (excluding ocrText to keep the row reasonable).
-  // ocrText is kept ephemeral — passed through to embedding + sensitivity
-  // activities only; long-term storage of OCR text isn't owned by 58B
-  // (58C's extraction strategy will decide whether/how to persist).
-  const { ocrText: _ocrText, ...persistedFeatures } = features
-  void _ocrText
+  // 6. Truncate to budget at the extractor layer (kickoff hard rule #3).
+  const truncated = truncateToBudget(extraction.ocrText, tunables.extractTokenBudget)
+
+  // 7. Type-specific augmentation: image MIMEs still need sharp for
+  // dimensions + dominant colours. PDFs get pageCount from extraction
+  // evidence. Plain-text/office formats: pageCount=0, no dims.
+  if (mimeClass === 'image') {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const sharpMod = (await import('sharp')).default as any
+      const meta = await sharpMod(buffer).metadata()
+      if (meta.width && meta.height) imageDimensions = { w: meta.width, h: meta.height }
+      try {
+        const stats = await sharpMod(buffer).stats()
+        if (stats.dominant) {
+          const { r, g, b } = stats.dominant
+          dominantColors = [`#${[r, g, b].map((v: number) => Math.max(0, Math.min(255, v)).toString(16).padStart(2, '0')).join('')}`]
+        }
+      } catch { /* nice-to-have */ }
+    } catch (err) {
+      console.warn(`[extract-generic] sharp failed: ${err instanceof Error ? err.message : String(err)}`)
+    }
+    pageCount = 1
+  } else if (mimeClass === 'pdf') {
+    const ev = extraction.evidence as { pageCount?: number }
+    pageCount = ev.pageCount ?? 0
+  } else if (mimeClass === 'pptx') {
+    const ev = extraction.evidence as { slideCount?: number }
+    pageCount = ev.slideCount ?? 0
+  } else if (mimeClass === 'xlsx') {
+    const ev = extraction.evidence as { sheetCount?: number }
+    pageCount = ev.sheetCount ?? 0
+  }
+
+  // 8. Heuristics over the (possibly truncated) text.
+  const hasTable        = mimeClass === 'xlsx' || /\b(\|\s+\|)|(\s+\|\s+)/.test(truncated) || /\btable\b/i.test(truncated)
+  const hasSignature    = /\b(signature|signed by|\/s\/)\b/i.test(truncated)
+  const hasHandwriting  = false   // vision-augmented signal — left to per-module strategies
+  const layoutType: GenericFeatures['layoutType'] =
+      mimeClass === 'image' ? 'image_only'
+    : mimeClass === 'xlsx'  ? 'form'
+    : truncated.length > 200 ? 'prose'
+    : 'mixed'
+
+  const features: GenericFeatures = {
+    pageCount,
+    hasTable,
+    hasSignature,
+    hasHandwriting,
+    layoutType,
+    dominantColors,
+    languageHint:   guessLanguage(truncated),
+    ocrTextLength:  truncated.length,
+    ocrText:        truncated,
+    fileName:       doc.fileName,
+    mimeType:       detectedMime,
+    ...(imageDimensions ? { imageDimensions } : {}),
+    extractionEvidence: extraction.evidence,
+    mimeClass,
+  }
+
+  // 9. Persist genericFeatures (excluding ocrText for size). Persist
+  // ocrText IN the jsonb — kickoff explicitly says downstream consumers
+  // read it from generic_features.ocrText.
+  const { ocrText: _ocrTextWf, ...persistedFeatures } = features
+  void _ocrTextWf
 
   await withActorContext(db, systemActorContext(tenantId), async (tx) => {
     await tx.update(documents).set({
-      genericFeatures: persistedFeatures,
+      // Persist ocrText alongside the structural features. Bounded by
+      // truncateToBudget so the JSONB row stays <40KB in practice.
+      genericFeatures: { ...persistedFeatures, ocrText: truncated },
       updatedAt:       sql`NOW()`,
     }).where(eq(documents.id, documentId))
 
@@ -137,111 +248,42 @@ export async function extractGenericFeaturesActivity(
       documentId,
       actorRole:  'system',
       eventType:  'generic_features_extracted',
-      payload: { layoutType: features.layoutType, pageCount: features.pageCount, ocrTextLength: features.ocrTextLength },
+      payload: {
+        layoutType:    features.layoutType,
+        pageCount:     features.pageCount,
+        ocrTextLength: features.ocrTextLength,
+        mimeClass,
+        evidenceSource: (extraction.evidence as { source?: string }).source ?? 'unknown',
+      },
     })
   })
 
   return GenericFeaturesSchema.parse(features)
 }
 
-async function extractPdfFeatures(buffer: Buffer, fileName: string, mimeType: string): Promise<GenericFeatures> {
-  let pageCount = 0
-  let ocrText = ''
-  try {
-    // pdfjs-dist 5.x ships ESM as the default; the legacy build is more
-    // permissive about Node-side use without a DOM.
-    const pdfjs = await import(PDFJS_BUILD).catch(() => import('pdfjs-dist'))
-    // pdfjs expects a Uint8Array for `data` — Node Buffer is a subclass.
-    const docTask = pdfjs.getDocument({ data: new Uint8Array(buffer), useWorkerFetch: false })
-    const pdf = await docTask.promise
-    pageCount = pdf.numPages
-    for (let p = 1; p <= Math.min(pageCount, 50); p++) {
-      const page = await pdf.getPage(p)
-      const content = await page.getTextContent()
-      const items = content.items as Array<{ str?: string }>
-      ocrText += items.map(i => i.str ?? '').join(' ') + '\n'
-      page.cleanup()
-    }
-    pdf.cleanup()
-  } catch (err) {
-    // If pdfjs fails outright, the doc may be malformed — flag as
-    // CorruptDocument (non-retryable per workflow proxy) so Temporal
-    // doesn't infinitely retry. The workflow currently doesn't catch
-    // this, and that's fine — failing the workflow is correct here.
-    throw ApplicationFailure.create({
-      type: 'CorruptDocument',
-      message: `pdfjs failed: ${err instanceof Error ? err.message : String(err)}`,
-      nonRetryable: true,
+async function recordExtractionFailure(
+  tenantId:   string,
+  documentId: string,
+  mimeClass:  MimeClass,
+  message:    string,
+): Promise<void> {
+  const db = getDb()
+  await withActorContext(db, systemActorContext(tenantId), async (tx) => {
+    await tx.insert(auditEvents).values({
+      tenantId,
+      documentId,
+      actorRole:  'system',
+      eventType:  'extraction_failed',
+      payload: {
+        phase: 'generic_features',
+        mimeClass,
+        error: message,
+      },
     })
-  }
-
-  // Lightweight signal heuristics from text — sketchy but useful as a
-  // first-pass classification feature. 58C upgrades these via vision.
-  const hasTable        = /\b(\|\s+\|)|(\s+\|\s+)/.test(ocrText) || /\btable\b/i.test(ocrText)
-  const hasSignature    = /\b(signature|signed by|\/s\/)\b/i.test(ocrText)
-  const hasHandwriting  = false   // PDFs with text layers are typed; vision in 58C decides
-  const layoutType      = ocrText.length > 200 ? 'prose' : 'mixed'
-  const trimmed = ocrText.slice(0, 100_000)   // hard cap
-
-  return {
-    pageCount,
-    hasTable,
-    hasSignature,
-    hasHandwriting,
-    layoutType,
-    dominantColors: [],
-    languageHint:   guessLanguage(trimmed),
-    ocrTextLength:  trimmed.length,
-    ocrText:        trimmed,
-    fileName,
-    mimeType,
-  }
-}
-
-async function extractImageFeatures(buffer: Buffer, fileName: string, mimeType: string): Promise<GenericFeatures> {
-  // Sharp is dynamically imported so test machines without the native
-  // binary still typecheck; runtime in the deploy container has it.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let sharpMod: any
-  try {
-    sharpMod = (await import('sharp')).default
-  } catch (err) {
-    throw new Error(`sharp not available: ${err instanceof Error ? err.message : String(err)}`)
-  }
-
-  const img = sharpMod(buffer)
-  const meta = await img.metadata()
-  const dominantColors: string[] = []
-  try {
-    const stats = await sharpMod(buffer).stats()
-    if (stats.dominant) {
-      const { r, g, b } = stats.dominant
-      dominantColors.push(`#${[r, g, b].map(v => Math.max(0, Math.min(255, v)).toString(16).padStart(2, '0')).join('')}`)
-    }
-  } catch {
-    // dominant colors are nice-to-have; skip on failure
-  }
-
-  return {
-    pageCount:      1,
-    hasTable:       false,
-    hasSignature:   false,
-    hasHandwriting: false,
-    layoutType:     'image_only',
-    dominantColors,
-    languageHint:   'und',
-    ocrTextLength:  0,
-    ocrText:        '',
-    fileName,
-    mimeType,
-    imageDimensions: meta.width && meta.height ? { w: meta.width, h: meta.height } : undefined,
-  }
+  })
 }
 
 function guessLanguage(text: string): string {
-  // Crude heuristic — checks for common English stop-words.
-  // Slice 58C may upgrade this with a real langid library or vision-agent
-  // language hint. For now, returning 'und' on no signal is honest.
   if (!text || text.length < 50) return 'und'
   const lc = text.toLowerCase()
   const enHits = (lc.match(/\b(the|and|is|to|for|of|on|with|that|this|are|was|be)\b/g) ?? []).length
