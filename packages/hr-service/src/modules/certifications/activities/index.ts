@@ -23,6 +23,14 @@ export type { NotifyHitlInput } from './notify-hitl.activity.js';
 export { matchEmployee } from './match-employee.activity.js';
 export type { MatchEmployeeInput, MatchEmployeeOutput } from './match-employee.activity.js';
 
+// Slice 58D-B — terminal-failure activity for cert submissions whose
+// subject could not be resolved by MatchPersonWorkflow.
+export { rejectCertSubmissionActivity } from './reject-cert-submission.activity.js';
+export type {
+  RejectCertSubmissionInput,
+  RejectCertSubmissionOutput,
+} from './reject-cert-submission.activity.js';
+
 export { matchCertDefinition } from './match-cert-definition.activity.js';
 export type { MatchCertDefinitionInput, MatchCertDefinitionOutput } from './match-cert-definition.activity.js';
 

@@ -1,218 +1,102 @@
-import { z } from 'zod';
-import { eq } from 'drizzle-orm';
-import { callLLM, createLiteLLMClient, getPrompt } from '@cip/shared';
-import type { ExtractionResult } from '@cip/shared';
-import { getDb } from '../../../db/index.js';
-import { withTenantRLS } from '../../../db/rls.js';
-import { employees } from '../../../db/schema.js';
-import { resolveAlias } from '../../../services/alias-resolver.js';
-import { nameAliasSet } from './nickname-map.js';
+// Slice 58D-B — thin shim. The historical inline matching logic
+// (exact-email → fuzzy-name with static nickname map → LLM tiebreaker)
+// is replaced by the generic MatchPersonWorkflow on hr-service's
+// `cip-hr-tasks` queue (see slice 58D-A).
+//
+// This file is preserved (rather than deleted) so that:
+//   - Existing Temporal worker activity registration is unchanged.
+//   - In-flight workflow histories that referenced `matchEmployee` can
+//     replay deterministically: they will hit the shim, which starts
+//     MatchPersonWorkflow as a *peer* workflow via the Temporal client
+//     and awaits its result. Cert workflows started post-58D-B use
+//     `startChild('MatchPersonWorkflow', ...)` directly inside the
+//     workflow body (see certification-processing.workflow.ts) — this
+//     activity is only invoked by non-workflow callers (MCP tools,
+//     scripts) or replaying old histories.
+//
+// Slice 58E may remove this activity entirely as part of the Route-A
+// cert rewrite.
 
-// ── Zod schema ────────────────────────────────────────────────────────────────
+import { z } from 'zod';
+import { createTemporalClient } from '@cip/shared';
+import type { ExtractionResult, MatchPersonInput, MatchPersonOutput } from '@cip/shared';
+
+// ─── Adapter result shape (preserved for backwards compatibility) ───────────
+//
+// `method` is the legacy enum from the pre-58D-B activity. The new
+// 'hitl' value covers both uploader-pickcard and admin-queue resolutions
+// (the matcher distinguishes them via its `source` field, but cert
+// callers historically only branched on confidence + method).
+//
+// 'no_match' covers MatchPersonOutput.outcome='no_resolution'.
 
 export const EmployeeMatchResultSchema = z.object({
   matched:    z.boolean(),
   employeeId: z.string().uuid().optional(),
   confidence: z.number().min(0).max(1),
-  method:     z.enum(['exact_email', 'fuzzy_name', 'llm_tiebreaker', 'no_match']),
+  method:     z.enum(['exact_email', 'fuzzy_name', 'llm_tiebreaker', 'hitl', 'no_match']),
 });
-
 export type EmployeeMatchResult = z.infer<typeof EmployeeMatchResultSchema>;
-
-// ── Public types (legacy aliases kept for workflow compatibility) ──────────────
 
 export interface MatchEmployeeInput {
   tenantId:     string;
   submissionId: string;
   extraction:   ExtractionResult;
 }
-
 export type MatchEmployeeOutput = EmployeeMatchResult;
 
-// ── Name parsing helpers ──────────────────────────────────────────────────────
-
-function parseName(fullName: string): { first: string; last: string } | null {
-  const trimmed = fullName.trim();
-  if (trimmed.includes(',')) {
-    const commaIdx = trimmed.indexOf(',');
-    const last  = trimmed.slice(0, commaIdx).trim();
-    const first = trimmed.slice(commaIdx + 1).trim().split(/\s+/)[0] ?? '';
-    if (!last || !first) return null;
-    return { first, last };
+/** Map MatchPersonOutput.source → legacy `method`. The closest analogs:
+ *  - auto_self    → exact_email   (deterministic AAD match; treated as the
+ *                                  strongest signal, same as exact email was)
+ *  - auto_unique  → fuzzy_name    (single shortlist hit ≥ autoThreshold)
+ *  - hitl_*       → hitl          (covers both uploader and admin tiers)
+ *  - undefined (no_resolution) → no_match
+ */
+function adaptMethod(source: MatchPersonOutput['source']): EmployeeMatchResult['method'] {
+  switch (source) {
+    case 'auto_self':     return 'exact_email';
+    case 'auto_unique':   return 'fuzzy_name';
+    case 'hitl_uploader':
+    case 'hitl_admin':    return 'hitl';
+    default:              return 'no_match';
   }
-  const parts = trimmed.split(/\s+/);
-  if (parts.length < 2) return null;
-  return { first: parts[0]!, last: parts[parts.length - 1]! };
 }
-
-function fuzzyFirstNameMatch(a: string, b: string): boolean {
-  const aSet = nameAliasSet(a);
-  const bSet = nameAliasSet(b);
-  for (const av of aSet) {
-    if (bSet.has(av)) return true;
-  }
-  const aLower = a.toLowerCase();
-  const bLower = b.toLowerCase();
-  if (aLower.length >= 3 && bLower.startsWith(aLower)) return true;
-  if (bLower.length >= 3 && aLower.startsWith(bLower)) return true;
-  return false;
-}
-
-function scoreEmployee(
-  employee: { fullName: string; givenName: string | null; surname: string | null },
-  parsed: { first: string; last: string },
-): number {
-  const candidateSurname  = (employee.surname  ?? parseName(employee.fullName)?.last  ?? '').toLowerCase();
-  const candidateFirst    = (employee.givenName ?? parseName(employee.fullName)?.first ?? '').toLowerCase();
-  const targetSurname     = parsed.last.toLowerCase();
-  const targetFirst       = parsed.first.toLowerCase();
-
-  if (!candidateSurname || !candidateFirst) return 0;
-
-  const surnameScore    = candidateSurname === targetSurname ? 0.5 : 0;
-  const firstNameScore  = fuzzyFirstNameMatch(targetFirst, candidateFirst) ? 0.5 : 0;
-  return surnameScore + firstNameScore;
-}
-
-// ── LLM tiebreaker ────────────────────────────────────────────────────────────
-
-type EmployeeRow = { id: string; fullName: string; email: string };
-
-async function llmSelectEmployee(
-  tenantId: string,
-  virtualKey: string,
-  extractedName: string | null,
-  extractedEmail: string | null,
-  candidates: EmployeeRow[],
-): Promise<string | null> {
-  const client = createLiteLLMClient({ tenantId, virtualKey });
-  const alias = await resolveAlias({ service: 'hr-service', purpose: 'employee_match', tenantId });
-  const prompt = await getPrompt({ name: 'hr-service.employee_match', tenantId });
-
-  const list = candidates
-    .map((e, i) => `${i + 1}. REF=${i + 1} | Name="${e.fullName}" | Email="${e.email}"`)
-    .join('\n');
-
-  const promptText = prompt.compile({
-    extractedName:  extractedName ?? '(not found)',
-    extractedEmail: extractedEmail ?? '(not found)',
-    candidates:     list,
-  });
-
-  const response = await callLLM(client, {
-    model:        alias,
-    max_tokens:   8,
-    messages:     [{ role: 'user', content: promptText }],
-    purpose:      'hr-service.employee_match',
-    promptHandle: prompt,
-    tenantId,
-  });
-
-  const text = response.choices[0]?.message.content?.trim() ?? 'NO_MATCH';
-  if (text === 'NO_MATCH') return null;
-
-  const refNum = parseInt(text, 10);
-  if (isNaN(refNum) || refNum < 1 || refNum > candidates.length) return null;
-  return candidates[refNum - 1]!.id;
-}
-
-// ── Main activity ─────────────────────────────────────────────────────────────
 
 export async function matchEmployee(
   input: MatchEmployeeInput,
 ): Promise<MatchEmployeeOutput> {
-  const virtualKey = process.env['LITELLM_VIRTUAL_KEY'];
-  if (!virtualKey) throw new Error('LITELLM_VIRTUAL_KEY env var is required');
+  const { tenantId, submissionId, extraction } = input;
 
-  const { tenantId, extraction } = input;
-  const db = getDb();
+  const holderName  = extraction.extractedFields['holderName']  as string | undefined;
+  const holderEmail = extraction.extractedFields['holderEmail'] as string | undefined;
 
-  const holderEmail = extraction.extractedFields['holderEmail'] as string | null | undefined;
-  const holderName  = extraction.extractedFields['holderName']  as string | null | undefined;
+  const matchInput: MatchPersonInput = {
+    tenantId,
+    candidateText: holderName ?? holderEmail ?? '',
+    ...(holderEmail !== undefined && { structuredHints: { email: holderEmail } }),
+    context: {
+      source:             'cert_holder',
+      callerSubmissionId: submissionId,
+    },
+    policy: {
+      onNoMatch:       'admin_queue',
+      onAmbiguous:     'uploader_pickcard',
+      includeInactive: false,
+    },
+  };
 
-  // ── Pass 1: Exact email ──────────────────────────────────────────────────
-  if (holderEmail) {
-    const rows = await withTenantRLS(db, tenantId, (tx) =>
-      tx
-        .select({ id: employees.id, fullName: employees.fullName, email: employees.email })
-        .from(employees)
-        .where(eq(employees.email, holderEmail.toLowerCase()))
-        .limit(2),
-    );
-
-    if (rows.length === 1) {
-      return EmployeeMatchResultSchema.parse({
-        matched:    true,
-        employeeId: rows[0]!.id,
-        confidence: 1.0,
-        method:     'exact_email',
-      });
-    }
-
-    if (rows.length > 1) {
-      const picked = await llmSelectEmployee(tenantId, virtualKey, holderName ?? null, holderEmail, rows);
-      return EmployeeMatchResultSchema.parse({
-        matched:    picked !== null,
-        employeeId: picked ?? undefined,
-        confidence: picked !== null ? 0.9 : 0,
-        method:     picked !== null ? 'llm_tiebreaker' : 'no_match',
-      });
-    }
-  }
-
-  // ── Pass 2: Fuzzy name ───────────────────────────────────────────────────
-  if (holderName) {
-    const parsed = parseName(holderName);
-    if (parsed) {
-      const allEmployees = await withTenantRLS(db, tenantId, (tx) =>
-        tx
-          .select({
-            id:        employees.id,
-            fullName:  employees.fullName,
-            email:     employees.email,
-            givenName: employees.givenName,
-            surname:   employees.surname,
-          })
-          .from(employees),
-      );
-
-      const scored = allEmployees
-        .map((e) => ({ e, score: scoreEmployee(e, parsed) }))
-        .filter(({ score }) => score >= 0.5)
-        .sort((a, b) => b.score - a.score);
-
-      const highConfidence = scored.filter(({ score }) => score >= 0.8);
-      if (highConfidence.length === 1) {
-        return EmployeeMatchResultSchema.parse({
-          matched:    true,
-          employeeId: highConfidence[0]!.e.id,
-          confidence: highConfidence[0]!.score,
-          method:     'fuzzy_name',
-        });
-      }
-
-      // ── Pass 3: LLM tiebreaker ─────────────────────────────────────────
-      if (scored.length > 1) {
-        const candidates: EmployeeRow[] = scored.map(({ e }) => ({
-          id: e.id, fullName: e.fullName, email: e.email,
-        }));
-        const picked = await llmSelectEmployee(tenantId, virtualKey, holderName, holderEmail ?? null, candidates);
-        const matchedScore = picked !== null
-          ? (scored.find(({ e }) => e.id === picked)?.score ?? 0.7)
-          : 0;
-        return EmployeeMatchResultSchema.parse({
-          matched:    picked !== null,
-          employeeId: picked ?? undefined,
-          confidence: matchedScore,
-          method:     picked !== null ? 'llm_tiebreaker' : 'no_match',
-        });
-      }
-    }
-  }
+  const client = await createTemporalClient();
+  const handle = await client.workflow.start('MatchPersonWorkflow', {
+    args:       [matchInput],
+    workflowId: `MatchPerson-${tenantId}-${submissionId}`,
+    taskQueue:  process.env['TEMPORAL_TASK_QUEUE_HR'] ?? 'cip-hr-tasks',
+  });
+  const result = (await handle.result()) as MatchPersonOutput;
 
   return EmployeeMatchResultSchema.parse({
-    matched:    false,
-    confidence: 0,
-    method:     'no_match',
+    matched:    result.outcome === 'resolved',
+    employeeId: result.employeeId,
+    confidence: result.confidence ?? 0,
+    method:     adaptMethod(result.source),
   });
 }
