@@ -250,6 +250,13 @@ export class CIPTeamsBot extends TeamsActivityHandler {
         const tDl1 = Date.now();
         const conversationId = context.activity.conversation?.id ?? '';
         const sourceMessageId = context.activity.id;
+        // Mint a turnId for this upload turn. Same shape as the LangGraph
+        // runner (8-char hex slice of a UUID) so /turn <id> resolves
+        // identically. Threading turnId is what makes sendResponseTime
+        // render an adaptive card with 👍/👎/🔍 actions instead of a
+        // plain markdown footer (debug-banner.ts:131 gates the card
+        // branch on turnId presence).
+        const turnId = randomUUID().replace(/-/g, '').slice(0, 8);
         const args: Record<string, unknown> = {
           fileBase64: buffer.toString('base64'),
           fileName,
@@ -273,8 +280,9 @@ export class CIPTeamsBot extends TeamsActivityHandler {
         await sendResponseTime(context, Date.now() - tStart, {
           tool:   'document_process',
           execMs: tExec1 - tDl1,
+          turnId,
         });
-        console.log(`[turn] tenantId=${ctx.tenantId} mode=file path=docservice file=${fileName} docId=${docId ?? '?'} typing=${tTyping - tStart}ms auth=${tAuth - tTyping}ms registry=${tRegistry - tAuth}ms download=${tDl1 - tDl0}ms exec=${tExec1 - tDl1}ms render=${Date.now() - tExec1}ms total=${Date.now() - tStart}ms`);
+        console.log(`[turn] tenantId=${ctx.tenantId} mode=file path=docservice turnId=${turnId} file=${fileName} docId=${docId ?? '?'} typing=${tTyping - tStart}ms auth=${tAuth - tTyping}ms registry=${tRegistry - tAuth}ms download=${tDl1 - tDl0}ms exec=${tExec1 - tDl1}ms render=${Date.now() - tExec1}ms total=${Date.now() - tStart}ms`);
       }
       return;
     }
