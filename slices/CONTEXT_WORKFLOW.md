@@ -238,8 +238,8 @@ PENDING:    42A ──► 42C ──► 42B
 
 ### Drafted, not yet shipped
 
-Recommended order: **58B → 58C → 58D → 58E (cert E2E) → 58F/G → 58H/I → 49 → 51**.
-(Slice 53 shipped 2026-05-05 ahead of 58D so the invoke router exists when 58D's pickcard handler lands.)
+Recommended order: **58B → 58C → 58D-A → 58D-B → 58E (cert E2E) → 58F/G → 58H/I → 49 → 51**.
+(Slice 53 shipped 2026-05-05 ahead of 58D-A so the invoke router exists when 58D-A's `hr.person.pick` pickcard handler lands. The original SLICE_58D was split on 2026-05-05 — see superseded note in that doc.)
 
 #### Slice 58 — Generic document workflow (`@cip/document-service`)
 
@@ -251,8 +251,10 @@ operational follow-ons; H/I are growth investments.
 | **58A** — `@cip/document-service` foundation (schema, ClamAV, RLS, perms, contract, lifecycle) | [archive/SLICE_58A_DOCUMENT_SERVICE_FOUNDATION.md](./archive/SLICE_58A_DOCUMENT_SERVICE_FOUNDATION.md) | SHIPPED 2026-05-05 (`14235e4`,`6468010`,`2cde96f`,`dc6e15e`) |
 | **58B** — Ingest path (bot wiring + scan + features + sensitivity + workflow + bot-progress channel) | [SLICE_58B_INGEST_SCAN_FEATURES.md](./SLICE_58B_INGEST_SCAN_FEATURES.md) | SHIPPED 2026-05-05 (2a `31ab6df`; 2b `d23fdaf`,`ae92257`).  Cert legacy path stays alive until 58E. |
 | **58C** — Classification + per-type extraction strategy (cert as first consumer) | [SLICE_58C_CLASSIFY_AND_EXTRACT.md](./SLICE_58C_CLASSIFY_AND_EXTRACT.md) | DRAFTED |
-| **58D** — Subject resolution + HITL admin queue | [SLICE_58D_SUBJECT_RESOLUTION.md](./SLICE_58D_SUBJECT_RESOLUTION.md) | DRAFTED |
-| **58E** — Routing handoff + cert workflow as Route-A consumer + legacy removal | [SLICE_58E_ROUTING_AND_CERT_MIGRATION.md](./SLICE_58E_ROUTING_AND_CERT_MIGRATION.md) | DRAFTED |
+| **58D** — Subject resolution + HITL admin queue (original; superseded 2026-05-05 → 58D-A + 58D-B) | [SLICE_58D_SUBJECT_RESOLUTION.md](./SLICE_58D_SUBJECT_RESOLUTION.md) | SUPERSEDED |
+| **58D-A** — Generic person matcher (`MatchPersonWorkflow` + `person_match_resolutions` table + `hr.person.pick` bot verb + admin polling MCP tools + `hr.people.match` permission). Pure additive infra on hr-service. | [SLICE_58D-A_MATCH_PERSON_WORKFLOW.md](./SLICE_58D-A_MATCH_PERSON_WORKFLOW.md) | DRAFTED |
+| **58D-B** — Cert workflow consumes `MatchPersonWorkflow` (replaces `match-employee.activity.ts` inline logic with a child-workflow call). Behavior-equivalent refactor inside the current pre-Route-A cert workflow. | [SLICE_58D-B_CERT_SUBJECT_RESOLUTION.md](./SLICE_58D-B_CERT_SUBJECT_RESOLUTION.md) | DRAFTED |
+| **58E** — Routing handoff + cert workflow as Route-A consumer + alias-resolver consolidation + phase-2 mime_filter + tunable rename + legacy removal | [SLICE_58E_ROUTING_AND_CERT_MIGRATION.md](./SLICE_58E_ROUTING_AND_CERT_MIGRATION.md) | DRAFTED |
 | **58F** — Reclassification (phase-loop refactor of 58B + uploader self-serve in-flight + admin-approved post-route + revokeFor) | [SLICE_58F_RECLASSIFICATION.md](./SLICE_58F_RECLASSIFICATION.md) | DRAFTED |
 | **58G** — Soft-delete, hard-purge cron, audit retention 7y, GDPR strict erasure mode, restore semantics | [SLICE_58G_PURGE_AND_RETENTION.md](./SLICE_58G_PURGE_AND_RETENTION.md) | DRAFTED |
 | **58H** — Per-tenant doc-type sklearn classifier (mirrors 56N; trust ladder from 56L; sklearn-first in 58C with LLM fallback) | [SLICE_58H_PER_TENANT_DOC_CLASSIFIER.md](./SLICE_58H_PER_TENANT_DOC_CLASSIFIER.md) | DRAFTED |

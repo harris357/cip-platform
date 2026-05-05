@@ -82,7 +82,7 @@ packages/hr-service/src/modules/certifications/                      MOD
 │   ├── pre-classify-cert.activity.ts                                DELETED
 │   ├── run-vision-agent.activity.ts                                 DELETED (logic moved to 58C's extract-cert-features.activity.ts)
 │   ├── extract-cert-features.activity.ts                            (from 58C — kept; this is what doc-service calls)
-│   ├── match-employee.activity.ts                                   MOD (now takes pre-resolved subjectEmployeeId; deleted fuzzy-match path)
+│   ├── match-employee.activity.ts                                   (unchanged from 58D-B — thin shim that starts MatchPersonWorkflow as a child workflow; kept under this name for Temporal worker registration continuity)
 │   └── match-cert-definition.activity.ts                            (kept; runs against extracted_features now)
 ├── workflows/certification-processing.workflow.ts                   MOD (rewritten as Route-A consumer; takes ProcessDocumentInput; no fetch/preClassify/vision)
 └── mcp-tools/process-document.ts                                    DELETED (legacy entry — bot now goes through doc-service)
@@ -120,10 +120,13 @@ packages/teams-bot/src/langgraph/nodes/summarize.ts                             
 ## Hard rules
 
 1. **Cert workflow stops doing OCR/extraction.** It receives
-   `extractedFeatures` and `subjectEmployeeId` as input. If you find
-   yourself reaching for `documentBase64` or `runVisionAgent` in
-   58E's cert workflow, stop and re-read the locked decision
-   (Route A: cert is downstream, not parallel).
+   `extractedFeatures` (and uploader hint, etc.) as input but
+   **NOT** `subjectEmployeeId` — subject resolution is owned by the
+   cert workflow itself, via `MatchPersonWorkflow` (58D-A child
+   workflow), already integrated by 58D-B. If you find yourself
+   reaching for `documentBase64` or `runVisionAgent` in 58E's cert
+   workflow, stop and re-read the locked decision (Route A: cert is
+   downstream, not parallel).
 2. **Bot's legacy file fast-path is removed.** The block at
    `packages/teams-bot/src/bot.ts:202-219` (cert-only fast-path)
    becomes the doc-service `document_process` call. Cert behavior
@@ -183,7 +186,9 @@ if (!routing.matched) {
   // (recursive call would be unsafe in Temporal; instead loop with reassignment)
 }
 
-// Start downstream module workflow on its task queue
+// Start downstream module workflow on its task queue. ProcessDocumentInput
+// does NOT include subjectEmployeeId — module workflows resolve their own
+// subject via MatchPersonWorkflow (58D-A) when the domain requires it.
 const downstream = await startDownstreamWorkflowActivity({
   tenantId, documentId,
   taskQueue: routing.taskQueue,
@@ -191,13 +196,14 @@ const downstream = await startDownstreamWorkflowActivity({
   input: {
     tenantId, documentId,
     uploaderEmployeeId: input.uploaderEmployeeId,
-    subjectEmployeeId: subjectId!,                       // resolved in 58D
-    docType: cls.docType,
-    extractedFeatures: extracted.fields,
-    genericFeatures: generic,
-    sensitivityTier: sens.tier,
+    uploaderHintText:   input.uploaderHintText,
+    conversationId:     input.conversationId,
+    docType:            cls.docType,
+    extractedFeatures:  extracted.fields,
+    genericFeatures:    generic,
+    sensitivityTier:    sens.tier,
     s3Bucket: BUCKET, s3Key,
-    actorContext: extractActorContextForForwarding(input),
+    actorContext:       extractActorContextForForwarding(input),
   } as ProcessDocumentInput,
 });
 
@@ -222,15 +228,21 @@ await progress('archive', 'completed', { moduleRecordId: callback.moduleRecordId
 `packages/hr-service/src/modules/certifications/workflows/certification-processing.workflow.ts`:
 
 ```typescript
-import { proxyActivities, defineSignal, setHandler, condition } from '@temporalio/workflow';
-import type { ProcessDocumentInput } from '@cip/shared';
+import { proxyActivities, startChild, defineSignal, setHandler, condition, ApplicationFailure } from '@temporalio/workflow';
+import type { ProcessDocumentInput, MatchPersonInput, MatchPersonOutput } from '@cip/shared';
 import type { HITLDecisionSignal } from '@cip/shared';
 import type * as activities from '../activities/index.js';
+// MatchPersonWorkflow is referenced as a TYPE only — the cert worker registers
+// no implementation; it lives on the same hr-service worker pool and is started
+// as a child workflow on the same task queue.
+import type { MatchPersonWorkflow } from '@cip/shared';
 
 const {
   validateExtractionActivity,
   matchCertDefinition,
-  matchEmployee,                  // signature changed: now takes a pre-resolved subjectEmployeeId for verification only
+  // 58D-B: the legacy match-employee.activity.ts is now a thin shim that
+  // starts MatchPersonWorkflow. Some callers (existing pre-Route-A tests)
+  // still reach for it; new code uses startChild directly as below.
   notifyHitlActivity,
   persistCertActivity,
   publishCertProcessedActivity,
@@ -242,8 +254,8 @@ export const hitlDecisionSignal = defineSignal<[HITLDecisionSignal]>('hitlDecisi
 export async function CertificationProcessingWorkflow(input: ProcessDocumentInput): Promise<void> {
   // Workflow ID pattern: {workflowType}-{tenantId}-{entityId}
   // workflowId: `CertProcess-${input.tenantId}-${certSubmissionId}`
-  const { tenantId, documentId, subjectEmployeeId, extractedFeatures } = input;
-  const certSubmissionId = await createCertSubmissionRow({ tenantId, documentId, subjectEmployeeId });
+  const { tenantId, documentId, extractedFeatures, uploaderEmployeeId, uploaderHintText, conversationId } = input;
+  const certSubmissionId = await createCertSubmissionRow({ tenantId, documentId });
 
   let hitlDecision: HITLDecisionSignal | undefined;
   setHandler(hitlDecisionSignal, (decision) => { hitlDecision = decision; });
@@ -251,16 +263,56 @@ export async function CertificationProcessingWorkflow(input: ProcessDocumentInpu
   // No fetch/preClassify/vision — features come from doc-service.
   await validateExtractionActivity({ tenantId, certSubmissionId, extractedFeatures });
 
-  const [employeeMatch, certMatch] = await Promise.all([
-    matchEmployee({ tenantId, certSubmissionId, subjectEmployeeId, extractedFeatures }),
+  // Subject resolution + cert-definition match run in parallel. The matcher
+  // is a child workflow (58D-A); cert-def match is a synchronous activity.
+  const matchPersonHandle = await startChild<typeof MatchPersonWorkflow>('MatchPersonWorkflow', {
+    args: [{
+      tenantId,
+      candidateText: extractedFeatures.holderName ?? uploaderHintText ?? '',
+      structuredHints: extractedFeatures.holderName
+        ? { fullName: extractedFeatures.holderName }
+        : undefined,
+      context: {
+        source:               'cert_holder',
+        callerSubmissionId:   certSubmissionId,
+        ...(conversationId       !== undefined && { conversationId }),
+        ...(uploaderEmployeeId   !== undefined && { uploaderEmployeeId }),
+      },
+      policy: {
+        onNoMatch:    'fail',
+        onAmbiguous:  'uploader_pickcard',
+        // autoThreshold + includeInactive default from per-tenant tunables
+      },
+    } satisfies MatchPersonInput],
+    workflowId: `MatchPerson-${tenantId}-${certSubmissionId}`,
+    taskQueue:  'cip-hr-tasks',
+  });
+
+  const [personResult, certMatch] = await Promise.all([
+    matchPersonHandle.result() as Promise<MatchPersonOutput>,
     matchCertDefinition({ tenantId, certSubmissionId, extractedFeatures }),
   ]);
 
-  // employeeMatch is now a verification: confidence == 1.0 if subject was already resolved
+  if (personResult.outcome === 'no_resolution') {
+    // Matcher couldn't resolve and cert policy was 'fail'. Surface as a
+    // structured failure so doc-service routes the doc to its own admin
+    // queue (no_resolution is not a transient retry case).
+    await signalDocumentServiceCallback({
+      tenantId, documentId,
+      moduleRecordId: certSubmissionId,
+      status: 'rejected',
+      reason: 'subject_unresolved',
+    });
+    throw ApplicationFailure.create({ type: 'SubjectUnresolved', nonRetryable: true });
+  }
+  const subjectEmployeeId = personResult.employeeId!;
+
+  // Cert-DATA HITL (low-confidence extraction or low-confidence cert-def
+  // match). Subject ambiguity HITL is owned by MatchPersonWorkflow and
+  // never reaches this branch.
   const needsHitl =
-    input.extractedFeatures.overallConfidence < 0.85 ||
+    extractedFeatures.overallConfidence < 0.85 ||
     certMatch.confidence < 0.7;
-  // employee ambiguity is no longer possible — doc-service resolved it before we got here
 
   if (needsHitl) {
     await notifyHitlActivity({ tenantId, certSubmissionId, hitlReasonCode: 'low_confidence' });
@@ -280,15 +332,15 @@ export async function CertificationProcessingWorkflow(input: ProcessDocumentInpu
   await signalDocumentServiceCallback({
     tenantId, documentId,
     moduleRecordId: certificationId,
-    status: 'accepted',
+    status:         'accepted',
   });
 }
 ```
 
-The cert workflow shrinks substantially — three steps fewer. Keeps
-the HITL signal pattern for cert-specific low-confidence cases (like
-"we extracted 0.6 confidence on the cert number"). Subject ambiguity
-HITL is gone because doc-service already resolved it.
+The cert workflow shrinks substantially — three OCR/extract steps
+fewer. Subject resolution lives in `MatchPersonWorkflow` (58D-A
+infra; 58D-B integration). Cert-DATA HITL stays for low-confidence
+extraction or cert-definition matches.
 
 ---
 

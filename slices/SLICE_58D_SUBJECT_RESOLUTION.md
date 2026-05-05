@@ -1,4 +1,38 @@
-# Slice 58D — subject resolution + HITL admin queue
+# Slice 58D — subject resolution + HITL admin queue (SUPERSEDED 2026-05-05)
+
+> **⚠️ This slice has been superseded.** The original design put
+> subject resolution in **doc-service**, which forced a cross-DB
+> lookup against `cip_hr.employees` and embedded employee-matching
+> logic in a generic document pipeline.
+>
+> Replaced by:
+>
+> - [SLICE_58D-A_MATCH_PERSON_WORKFLOW.md](./SLICE_58D-A_MATCH_PERSON_WORKFLOW.md) —
+>   reusable `MatchPersonWorkflow` on hr-service (workflow + table +
+>   tunables + bot pickcard + admin polling tools + permission)
+> - [SLICE_58D-B_CERT_SUBJECT_RESOLUTION.md](./SLICE_58D-B_CERT_SUBJECT_RESOLUTION.md) —
+>   cert workflow becomes the matcher's first consumer (small refactor)
+>
+> 58E (routing + cert Route-A + adjuncts) integrates with the
+> matcher via the cert workflow, not via doc-service.
+>
+> **Why the change:**
+> 1. By the time we know to resolve a person, classify has already
+>    decided `module='certificate'` — we know it's HR. Resolution
+>    naturally belongs in the HR module workflow, not before.
+> 2. Person matching is needed by future modules (incident,
+>    training, reminders) — it earns its own reusable workflow.
+> 3. The DB-split between doc-service (`DATABASE_URL_DOCS`) and
+>    hr-service (`DATABASE_URL_HR`) means doc-service can't query
+>    `cip_hr.employees` natively. Moving resolution to hr-service
+>    sidesteps the cross-DB problem entirely.
+>
+> The text below is preserved for reference / commit history. **Do
+> not implement from this doc.**
+
+---
+
+
 
 > **Why this exists:** 58C leaves docs at `awaiting_subject` —
 > classified, extracted, but with no answer to "who is this
