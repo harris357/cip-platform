@@ -22,6 +22,11 @@ env:
   AWS_ENDPOINT_URL: https://s3.bhs.io.cloud.ovh.net
   AWS_REGION: BHS
   PORT: "3000"
+  # Slice 58B — NATS for best-effort progress publishing + LiteLLM gateway
+  # for embeddings + L3 sensitivity rubric. Same in-cluster URLs as
+  # hr-service uses; verified via `kubectl get deploy hr-service -o yaml`.
+  NATS_URL: nats://nats.cip-infra.svc.cluster.local:4222
+  LITELLM_BASE_URL: http://litellm.cip-app.svc.cluster.local:4000
 
 # Secrets injected via K8s secret reference.  Provisioned by
 # create-secrets.sh from .envrc.  Required keys:
@@ -30,7 +35,9 @@ env:
 #   AWS_SECRET_ACCESS_KEY
 #   TEMPORAL_NAMESPACE             e.g. 'cip-dev'
 #   TEMPORAL_ADDRESS               e.g. 'temporal.cip-infra.svc.cluster.local:7233'
-#   LANGFUSE_HOST / LANGFUSE_PUBLIC_KEY / LANGFUSE_SECRET_KEY    (consumed in 58B+)
+#   TEMPORAL_API_KEY               Temporal Cloud API key (Bearer auth)
+#   LANGFUSE_HOST / LANGFUSE_PUBLIC_KEY / LANGFUSE_SECRET_KEY    (L3 prompt fetch)
+#   LITELLM_VIRTUAL_KEY  or  LITELLM_MASTER_KEY                  (auth to LiteLLM gateway)
 envFrom:
   - secretRef:
       name: document-service-credentials

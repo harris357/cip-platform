@@ -1,20 +1,40 @@
-// Slice 58A — Temporal worker bootstrap.
+// Slice 58B — Temporal worker bootstrap.
 //
-// Intentionally a no-op in 58A: the SDK requires at least one of
-// `activities` or `workflowsPath` to be non-empty, and the slice
-// scope rule says no document-touching activities or workflows are
-// allowed yet.  Booting an empty worker would crash:
-//   "At least one task type must be enabled in `task_types`"
-//
-// 58B replaces this with the real worker that registers the ingest
-// activities + DocumentProcessingWorkflow.
+// Replaces 58A's no-op. Boots a single worker that consumes the
+// `cip-documents-tasks` queue, registering every activity exported
+// from `modules/ingest/activities` and the workflow bundle compiled
+// from `modules/ingest/workflows`.
+
+import { NativeConnection, Worker } from '@temporalio/worker'
+
+import * as ingestActivities from '../modules/ingest/activities/index.js'
 
 export async function startTemporalWorker(): Promise<void> {
-  const namespace = process.env['TEMPORAL_NAMESPACE'] ?? '(unset)'
+  const address   = process.env['TEMPORAL_ADDRESS']
+  const namespace = process.env['TEMPORAL_NAMESPACE']
+  const apiKey    = process.env['TEMPORAL_API_KEY']
   const taskQueue = process.env['TEMPORAL_TASK_QUEUE_DOCUMENTS'] ?? 'cip-documents-tasks'
-  console.log(
-    `[temporal-worker] no-op in slice 58A (target namespace=${namespace} queue=${taskQueue}). ` +
-    `58B will register the first activity and boot the worker.`,
-  )
-  // Resolve immediately; the caller in index.ts treats the worker as fire-and-forget.
+
+  if (!address || !namespace || !apiKey) {
+    throw new Error('Temporal worker: TEMPORAL_ADDRESS, TEMPORAL_NAMESPACE, TEMPORAL_API_KEY all required')
+  }
+
+  // Use the API-key flavour identical to hr-service. tls=true is
+  // mandatory for Temporal Cloud / managed namespace.
+  const connection = await NativeConnection.connect({
+    address,
+    tls: true,
+    metadata: { authorization: `Bearer ${apiKey}` },
+  })
+
+  const worker = await Worker.create({
+    connection,
+    namespace,
+    workflowsPath: new URL('../modules/ingest/workflows/index.js', import.meta.url).pathname,
+    activities: { ...ingestActivities },
+    taskQueue,
+  })
+
+  console.log(`[temporal-worker] document-service worker starting (queue=${taskQueue}, namespace=${namespace})`)
+  await worker.run()
 }
