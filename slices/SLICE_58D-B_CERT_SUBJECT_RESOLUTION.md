@@ -1,5 +1,21 @@
 # Slice 58D-B — cert workflow consumes `MatchPersonWorkflow`
 
+> **Drift reconciliation (2026-05-05) — read before implementing.**
+> The original 58D-B draft assumed cert workflow input fields that don't
+> exist today. Post-pass against current code (`certification-processing.workflow.ts`,
+> `match-employee.activity.ts`, schema):
+>
+> - `CertificationProcessingWorkflowInput` is `{ tenantId, submissionId, employeeId, objectStoreKey }`. The `employeeId` field is the **uploader** (set by the bot's `process_document` MCP call). No `uploaderHintText` or `conversationId` field exists today. **Don't expand the input shape in 58D-B** — that's 58E's job (Route-A rewrite). Pass available fields only.
+> - The extracted-features field is `extraction.extractedFields.holderName` (and `.holderEmail`), NOT `extractedFeatures.holderName`. Update the candidate-text expression accordingly.
+> - **Use `input.employeeId` (the uploader) as `context.uploaderEmployeeId`** in the matcher input. AAD pre-check works for self-uploads via this path. The bot has the uploader's AAD object id; we just thread it through.
+> - **Uploader pickcard is degraded in 58D-B**: `conversationId` is undefined (no thread on cert workflow input). The matcher's pickcard activity passes conversationId optionally, and the bot's proactive endpoint resolves channels by `channelType`, so this is a non-fatal degradation — uploader-1to1 cards may still deliver via the bot's existing channel registry. If they don't, the 24h TTL cascades to admin tier (matches the post-Q4 default `onNoMatch='admin_queue'` behavior).
+> - **`nickname-map.ts` (106 LOC of hand-curated static aliases at `packages/hr-service/src/modules/certifications/activities/nickname-map.ts`) becomes dead code** when match-employee.activity.ts becomes a shim. Per the no-static-nickname-maps rule (memory: `feedback_no_hardcoded_registries.md`), DELETE this file in 58D-B. It is the only consumer of itself outside the activity being replaced.
+> - **`rejectCertSubmissionActivity` does not exist.** Add a small new activity at `packages/hr-service/src/modules/certifications/activities/reject-cert-submission.activity.ts` (~30 LOC) that updates `cert_submissions.submission_status = 'failed'` (the existing CHECK enum allows it) and writes an audit row. Wire it through `activities/index.ts`.
+> - **Behavior-equivalent HITL gate**: today's `employeeMatch.confidence < 0.7` becomes `personResult.confidence < 0.7` (when `outcome === 'resolved'`). The HITL gate stays in cert (low-confidence cert-DATA HITL); subject ambiguity is owned by the matcher and never reaches this gate.
+>
+> Hard rule #4 of this slice still says "no deletes" — that rule was about preserving `match-employee.activity.ts` itself for Temporal worker continuity. `nickname-map.ts` is a private helper of that activity; deleting it is part of replacing the activity's logic, not a separate clean-up. Keep `match-employee.activity.ts` as the shim; delete `nickname-map.ts`.
+
+
 > **Why this exists:** 58D-A added a generic person matcher as
 > reusable infra. 58D-B is its first consumer: replaces cert's
 > existing `match-employee.activity.ts` subject-resolution path with
