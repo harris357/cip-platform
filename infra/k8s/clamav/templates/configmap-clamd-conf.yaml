@@ -1,0 +1,31 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: clamav-clamd-conf
+  namespace: cip-infra
+data:
+  clamd.conf: |
+    # Slice 58A — clamd config rendered from values.yaml.
+    # Demo-mode trims at the bottom save ~300MB resident memory; see
+    # values.yaml header for the full rationale and production-override
+    # helm flags.
+
+    TCPSocket 3310
+    TCPAddr 0.0.0.0
+    MaxFileSize {{ .Values.clamd.maxFileSize }}
+    MaxScanSize {{ .Values.clamd.maxScanSize }}
+    MaxRecursion {{ .Values.clamd.maxRecursion }}
+    MaxFiles {{ .Values.clamd.maxFiles }}
+    StreamMaxLength {{ .Values.clamd.streamMaxLength }}
+    ConcurrentDatabaseReload {{ .Values.clamd.concurrentDatabaseReload }}
+    LogTime yes
+    LogClean no
+    # Required for the official image's all-in-one mode.
+    Foreground yes
+
+    # ── Demo-mode memory trims ──
+    # DetectPUA off  → no Potentially Unwanted App signatures (~250MB saved)
+    # Bytecode  off  → no bytecode signature engine (~50MB saved)
+    # Both flip back to "yes" when run with --set clamd.detectPUA=true etc.
+    DetectPUA {{ if .Values.clamd.detectPUA }}yes{{ else }}no{{ end }}
+    Bytecode  {{ if .Values.clamd.bytecodeSignatures }}yes{{ else }}no{{ end }}

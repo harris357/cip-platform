@@ -10,13 +10,14 @@ on:
       - 'packages/platform-core/**'
       - 'packages/teams-bot/**'
       - 'packages/intent-classifier/**'
+      - 'packages/document-service/**'
 
 jobs:
   build:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        service: [hr-service, platform-core, teams-bot, intent-classifier]
+        service: [hr-service, platform-core, teams-bot, intent-classifier, document-service]
       max-parallel: 2
     permissions:
       contents: read

@@ -1,0 +1,22 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: clamav-allow-document-service
+  namespace: cip-infra
+spec:
+  podSelector:
+    matchLabels:
+      app: clamav
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: cip-app
+          podSelector:
+            matchLabels:
+              app: document-service
+      ports:
+        - protocol: TCP
+          port: 3310

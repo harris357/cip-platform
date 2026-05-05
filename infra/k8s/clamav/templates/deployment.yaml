@@ -1,0 +1,75 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: clamav
+  namespace: cip-infra
+  labels:
+    app: clamav
+spec:
+  replicas: 1                                 # one pod is enough for our volume
+  strategy:
+    type: Recreate                            # signature DB sync is per-pod; rolling = brief unavailability anyway
+  selector:
+    matchLabels:
+      app: clamav
+  template:
+    metadata:
+      labels:
+        app: clamav
+    spec:
+      containers:
+        - name: clamav
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: clamd
+              containerPort: 3310
+              protocol: TCP
+          env:
+            - name: CLAMAV_NO_CLAMD
+              value: "false"
+            - name: CLAMAV_NO_FRESHCLAMD
+              value: "false"
+            - name: FRESHCLAM_CHECKS
+              value: "{{ .Values.freshclam.checkIntervalHours }}"
+          volumeMounts:
+            - name: clamd-conf
+              mountPath: /etc/clamav/clamd.conf
+              subPath: clamd.conf
+              readOnly: true
+            - name: clamav-data
+              mountPath: /var/lib/clamav
+          # Slice 58A — sized for single-node demo by default (~750Mi resident).
+          # Full production protection requires ~1.5Gi resident; flip via
+          # --set resources.requests.memory=1.5Gi --set resources.limits.memory=2Gi.
+          # Rationale + restoration recipe: infra/k8s/clamav/values.yaml header.
+          resources:
+            requests:
+              cpu: {{ .Values.resources.requests.cpu | quote }}
+              memory: {{ .Values.resources.requests.memory | quote }}
+            limits:
+              memory: {{ .Values.resources.limits.memory | quote }}
+          readinessProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -c
+                - 'echo PING | nc -w 2 localhost 3310 | grep -q PONG'
+            initialDelaySeconds: {{ .Values.probes.startupGraceSeconds }}
+            periodSeconds: 15
+            failureThreshold: 3
+          livenessProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -c
+                - 'echo PING | nc -w 2 localhost 3310 | grep -q PONG'
+            initialDelaySeconds: 120          # generous — DB load + warm-up
+            periodSeconds: 60
+            failureThreshold: {{ .Values.probes.livenessFailureThreshold }}
+      volumes:
+        - name: clamd-conf
+          configMap:
+            name: clamav-clamd-conf
+        - name: clamav-data
+          emptyDir: {}                       # signature DB rebuilt by freshclam on each pod start (60s cost)

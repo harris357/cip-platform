@@ -7,6 +7,9 @@ export * from './types/events.js';
 export type { ExtractionResult, IntentResult } from './types/agent.js';
 export { ExtractionResultSchema, IntentResultSchema } from './types/agent.js';
 
+// Slice 58A — module-side contract for document consumers
+export * from './types/document-module-contract.js';
+
 // Clients
 export * from './clients/litellm.js';
 export * from './clients/langfuse.js';

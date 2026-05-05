@@ -1,0 +1,36 @@
+replicaCount: 1
+
+image:
+  repository: ghcr.io/harris357/document-service
+  tag: "latest"  # override per-deploy via helm --set image.tag=<sha>
+  pullPolicy: Always
+
+service:
+  type: ClusterIP
+  port: 3000
+
+env:
+  # Temporal — same cluster + namespace as hr-service for now.  Document
+  # workflows run on their own task queue so the workers don't interfere.
+  TEMPORAL_TASK_QUEUE_DOCUMENTS: cip-documents-tasks
+  # ClamAV in cip-infra namespace.  See infra/k8s/clamav.
+  CLAMAV_HOST: clamav.cip-infra.svc.cluster.local
+  CLAMAV_PORT: "3310"
+  # Object store — same OVH bucket as hr-service uses today.  Doc-service
+  # owns the {tenantId}/{documentId}/{filename} key prefix going forward.
+  OBJECT_STORE_BUCKET: cip-uploads
+  AWS_ENDPOINT_URL: https://s3.bhs.io.cloud.ovh.net
+  AWS_REGION: BHS
+  PORT: "3000"
+
+# Secrets injected via K8s secret reference.  Provisioned by
+# create-secrets.sh from .envrc.  Required keys:
+#   DATABASE_URL_DOCS              same Postgres as cip_hr; doc-service user with INSERT/UPDATE on permission_catalog
+#   AWS_ACCESS_KEY_ID
+#   AWS_SECRET_ACCESS_KEY
+#   TEMPORAL_NAMESPACE             e.g. 'cip-dev'
+#   TEMPORAL_ADDRESS               e.g. 'temporal.cip-infra.svc.cluster.local:7233'
+#   LANGFUSE_HOST / LANGFUSE_PUBLIC_KEY / LANGFUSE_SECRET_KEY    (consumed in 58B+)
+envFrom:
+  - secretRef:
+      name: document-service-credentials
