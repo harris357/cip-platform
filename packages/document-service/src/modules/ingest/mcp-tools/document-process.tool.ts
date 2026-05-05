@@ -24,6 +24,7 @@ import { getDb } from '../../../db/index.js'
 import { withActorContext } from '../../../db/rls.js'
 import { documents, auditEvents } from '../../../db/schema.js'
 import { extractAuthContext } from '../../../mcp-server/auth.js'
+import { loadDocumentsTunables } from '../../../sensitivity/tunables.js'
 import { DocumentProcessingWorkflow } from '../workflows/index.js'
 
 let _s3: S3Client | undefined
@@ -90,10 +91,22 @@ export function registerDocumentProcess(server: McpServer): void {
     async ({ fileBase64, fileName, mimeType, hintText, sourceMessageId, conversationId }, context) => {
       const { tenantId, employeeId } = extractAuthContext(context.authInfo)
 
-      // 1. Decode + sha256.
+      // 1. Decode + size guard + sha256.
       const buffer = Buffer.from(fileBase64, 'base64')
       if (buffer.length === 0) {
         throw new Error('document_process: empty file body')
+      }
+      // Enforce documents.av_max_file_size_mb at the MCP boundary.  Cheap
+      // reject-before-PutObject path; tunable read uses the per-tenant
+      // cache so this is sub-ms after the first call.
+      const tunables = await loadDocumentsTunables(tenantId)
+      const maxBytes = tunables.avMaxFileSizeMb * 1024 * 1024
+      if (buffer.length > maxBytes) {
+        throw new Error(
+          `document_process: file size ${buffer.length} bytes exceeds ` +
+          `tenant cap ${tunables.avMaxFileSizeMb}MB (documents.av_max_file_size_mb). ` +
+          `Reduce the file or have an admin raise the cap.`,
+        )
       }
       const sha256 = createHash('sha256').update(buffer).digest('hex')
 
