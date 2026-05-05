@@ -1,16 +1,16 @@
 // Slice 58B — perceptual hash of the document's first rendered page.
 //
-// PDF: render page 1 to PNG via pdfjs-dist + a node-canvas-free path
-//      (sharp consumes the rasterised buffer). For 58B we use a
-//      simplified approach: extract the first page's image OR fall
-//      back to a sha-of-text-layer when render isn't available.
+// PDF: render page 1 to RGBA via pdfjs-dist + @napi-rs/canvas (drop-in
+//      browser-canvas API in a ~5MB native binary; node-canvas would
+//      have added ~80MB and we're memory-constrained).  Then 8x8
+//      avg-hash via sharp.
 // Image MIMEs: hash the image directly via sharp.
 // Other MIMEs: hash the file SHA prefix (already stored on documents).
 //
-// pHash details: 8x8 average-hash via sharp (cheap, fast, identifies
-// near-duplicate scans of the same form). Not a security hash; useful
-// for the 58F reclassification "looks like another doc we already
-// processed" heuristic.
+// pHash details: 8x8 average-hash. Cheap, fast, identifies near-
+// duplicate scans of the same form.  Not a security hash; useful for
+// the 58F reclassification "looks like another doc we already
+// processed" heuristic and for 58I template-and-compare.
 
 import { GetObjectCommand, S3Client } from '@aws-sdk/client-s3'
 import { eq, sql } from 'drizzle-orm'
@@ -72,25 +72,24 @@ export async function computeLayoutFingerprintActivity(
   const buffer = Buffer.from(await obj.Body.transformToByteArray())
 
   let fingerprint: string
+  let source: 'image_pHash' | 'pdf_page1_pHash' | 'sha_prefix_fallback'
   try {
     if (doc.mimeType.startsWith('image/')) {
       fingerprint = await pHashImage(buffer)
+      source = 'image_pHash'
     } else if (doc.mimeType === 'application/pdf') {
-      // 58B simplification: derive fingerprint from the file's sha256
-      // prefix. Page-1 rendering needs node-canvas + native deps that
-      // aren't in the bundle yet; deferred to a follow-up tuning pass
-      // since pHash on a flat raster of a typed PDF is not particularly
-      // discriminative. The sha-prefix gives us exact-duplicate detect
-      // for free, which is what the cluster currently needs.
-      fingerprint = `sha256:${doc.sha256.slice(0, 32)}`
+      fingerprint = await pHashPdfPage1(buffer)
+      source = 'pdf_page1_pHash'
     } else {
       fingerprint = `sha256:${doc.sha256.slice(0, 32)}`
+      source = 'sha_prefix_fallback'
     }
   } catch (err) {
     // Don't take down the workflow over a fingerprint — fall back to sha-
     // prefix so downstream code always has a value.
     console.warn(`[layout-fingerprint] failed: ${err instanceof Error ? err.message : String(err)} — falling back to sha-prefix`)
     fingerprint = `sha256:${doc.sha256.slice(0, 32)}`
+    source = 'sha_prefix_fallback'
   }
 
   await withActorContext(db, systemActorContext(tenantId), async (tx) => {
@@ -107,17 +106,16 @@ export async function computeLayoutFingerprintActivity(
       // event_type CHECK; the layout fingerprint is an attribute, not
       // its own lifecycle event. Payload carries the actual fingerprint.
       eventType:  'state_transition',
-      payload:    { kind: 'layout_fingerprinted', fingerprint, mimeType: doc.mimeType },
+      payload:    { kind: 'layout_fingerprinted', fingerprint, source, mimeType: doc.mimeType },
     })
   })
 
   return ComputeLayoutFingerprintOutputSchema.parse({ fingerprint })
 }
 
+// ─── Hashers ────────────────────────────────────────────────────────────
+
 async function pHashImage(buffer: Buffer): Promise<string> {
-  // 8x8 average-hash. Resize → grayscale → sample 64 pixels → bit per
-  // pixel above the mean. 64-bit hex output. Not collision-resistant;
-  // not security-grade. Useful for "near-duplicate of another scan?".
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const sharpMod = (await import('sharp')).default as any
   const raw = await sharpMod(buffer)
@@ -125,7 +123,65 @@ async function pHashImage(buffer: Buffer): Promise<string> {
     .grayscale()
     .raw()
     .toBuffer()
-  if (raw.length < 64) return `phash:err`
+  return pHashFromGrayscale64(raw)
+}
+
+async function pHashPdfPage1(buffer: Buffer): Promise<string> {
+  // pdfjs-dist's render() expects a CanvasRenderingContext2D-shaped
+  // target.  @napi-rs/canvas is a drop-in implementation in a small
+  // native binary.
+  const pdfjs = await loadPdfjsForNode()
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const { createCanvas } = (await import('@napi-rs/canvas')) as any
+
+  // disableFontFace etc. — keeps pdfjs from trying to load fonts via
+  // OffscreenCanvas / browser APIs that don't exist server-side.
+  // (`isEvalSupported` was removed from DocumentInitParameters in
+  // pdfjs-dist v5.)
+  const loadingTask = pdfjs.getDocument({
+    data:                  new Uint8Array(buffer),
+    disableFontFace:       true,
+    useSystemFonts:        false,
+  })
+  const pdf = await loadingTask.promise
+
+  let canvas: ReturnType<typeof createCanvas> | undefined
+  try {
+    const page  = await pdf.getPage(1)
+    // 0.75 scale → typical letter-size page becomes ~612x792 → resampled
+    // to 8x8 by sharp.  Smaller scales are cheaper but lose layout signal.
+    const scale = 0.75
+    const view  = page.getViewport({ scale })
+    canvas = createCanvas(Math.ceil(view.width), Math.ceil(view.height))
+
+    // pdfjs-dist v5 takes `canvas` (the element) — it pulls the 2d
+    // context internally.  v4 took `canvasContext` directly; the cast
+    // keeps us compatible with napi-rs/canvas's type surface.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await page.render({ canvas: canvas as any, viewport: view }).promise
+
+    const rgba = canvas.toBuffer('image/png')
+    page.cleanup()
+    return await pHashImage(rgba)
+  } finally {
+    await pdf.destroy()
+    canvas = undefined
+  }
+}
+
+/**
+ * Lazy-import pdfjs-dist with the legacy entrypoint that does not assume
+ * a browser worker. Packaging-wise this matches the import pattern the
+ * extract-generic-features activity already uses.
+ */
+async function loadPdfjsForNode(): Promise<typeof import('pdfjs-dist/legacy/build/pdf.mjs')> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const mod = await import('pdfjs-dist/legacy/build/pdf.mjs') as any
+  return mod
+}
+
+function pHashFromGrayscale64(raw: Buffer): string {
+  if (raw.length < 64) return 'phash:err'
   let sum = 0
   for (let i = 0; i < 64; i++) sum += raw[i]!
   const mean = sum / 64
