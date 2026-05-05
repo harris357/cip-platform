@@ -30,7 +30,10 @@
     "sharp": "^0.34.0",
     "file-type": "^19.0.0",
     "openai": "^6.0.0",
-    "@napi-rs/canvas": "^0.1.65"
+    "@napi-rs/canvas": "^0.1.65",
+    "mammoth": "^1.6.0",
+    "xlsx": "^0.18.5",
+    "jszip": "^3.10.1"
   },
   "devDependencies": {
     "@types/express": "^4.17.0",
