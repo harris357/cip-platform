@@ -6,9 +6,9 @@ metadata:
 data:
   clamd.conf: |
     # Slice 58A — clamd config rendered from values.yaml.
-    # Demo-mode trims at the bottom save ~300MB resident memory; see
-    # values.yaml header for the full rationale and production-override
-    # helm flags.
+    # Demo-mode trims (DetectPUA + Bytecode disabled) save ~300MB
+    # resident vs full-mode defaults; see values.yaml header for
+    # rationale and production-override helm flags.
 
     TCPSocket 3310
     TCPAddr 0.0.0.0
@@ -20,12 +20,8 @@ data:
     ConcurrentDatabaseReload {{ .Values.clamd.concurrentDatabaseReload }}
     LogTime yes
     LogClean no
-    # Required for the official image's all-in-one mode.
     Foreground yes
 
-    # ── Demo-mode memory trims ──
-    # DetectPUA off  → no Potentially Unwanted App signatures (~250MB saved)
-    # Bytecode  off  → no bytecode signature engine (~50MB saved)
-    # Both flip back to "yes" when run with --set clamd.detectPUA=true etc.
+    # Demo-mode memory trims (~300MB saved):
     DetectPUA {{ if .Values.clamd.detectPUA }}yes{{ else }}no{{ end }}
     Bytecode  {{ if .Values.clamd.bytecodeSignatures }}yes{{ else }}no{{ end }}

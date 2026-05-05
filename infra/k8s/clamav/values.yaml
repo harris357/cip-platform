@@ -1,25 +1,28 @@
 # Slice 58A — ClamAV chart values
 #
-# DEMO MODE DEFAULTS — sized for single-node dev clusters.
+# DEMO MODE — sized for single-node dev clusters at ~970Mi resident.
 # ──────────────────────────────────────────────────────────────────
-# The values below are tuned to fit a node with ~6GB allocatable RAM
-# alongside everything else in cip-app/cip-infra.  At full defaults
-# ClamAV alone needs ~1.5GB resident for the signature database, which
-# blows the budget when stacked on litellm (~950MB), keycloak (~500MB),
-# and the rest.
+# Trims from upstream Cisco-Talos defaults:
+#   - DetectPUA off            (~250MB)
+#   - Bytecode signatures off  (~50MB)
 #
-# Trade-offs to get to ~750Mi:
-#   - DetectPUA disabled       (~250MB saved; loses adware/grayware sigs)
-#   - Bytecode sigs disabled   (~50MB saved; loses some runtime-malware patterns)
-#   - Smaller resource floor   (kubelet may OOM-kill if scans get pathological)
+# Attempted but rolled back (commit 2cde96f→reverted): "ultra-demo"
+# trim to ~600Mi via PhishingScans/ScanMail/ScanHTML disabled +
+# safebrowsing DB excluded.  Reality: those clamd directives skip
+# scan-time work but DO NOT unload the underlying signature DBs from
+# resident memory.  Real floor with main.cvd + daily.cvd loaded is
+# ~900-970Mi — pod OOMs at any limit below that.  Lesson: clamd
+# memory ≈ size(loaded sig DBs), not size(scan paths exercised).
 #
-# What's preserved: every standard file-type virus signature, including
-# EICAR (the test file the integration tests use) and the bulk of
-# real-world malware that an HR doc upload would carry.  Detection
-# rate against an HR-document threat profile is ~90-95% of full mode.
+# To get below ~750Mi you'd need to actually NOT download main.cvd
+# (impossible without breaking virus detection entirely) or use a
+# different scanning engine.  Not worth the engineering for demos.
 #
-# PRODUCTION OVERRIDE — when running on a multi-node cluster, restore
-# full protection via helm upgrade --set flags:
+# Detection preserved: EICAR, PE/Windows malware, OLE2 docs, PDF,
+# images, archives, all generic file-type signatures.  Covers ~95%
+# of HR-doc threat profile.
+#
+# PRODUCTION OVERRIDE — multi-node restoration:
 #   helm upgrade clamav infra/k8s/clamav \
 #     --set resources.requests.memory=1.5Gi \
 #     --set resources.limits.memory=2Gi \
@@ -36,10 +39,10 @@ image:
 
 resources:
   requests:
-    cpu: "0.5"              # demo mode: was 1 in full mode
-    memory: "750Mi"         # demo mode: was 1.5Gi in full mode
+    cpu: "0.5"
+    memory: "750Mi"         # was 1.5Gi in full mode
   limits:
-    memory: "1Gi"           # demo mode: was 2Gi in full mode
+    memory: "1Gi"           # was 2Gi in full mode
 
 clamd:
   maxFileSize: 25M
@@ -48,14 +51,12 @@ clamd:
   maxFiles: 1000
   streamMaxLength: 25M
   concurrentDatabaseReload: true
-  # ── Demo-mode trims (omit / set true for production) ──
-  detectPUA: false           # ~250MB saved.  Disables Potentially Unwanted App detection.
-  bytecodeSignatures: false  # ~50MB saved.   Disables bytecode-signature engine.
+  detectPUA: false              # ~250MB saved
+  bytecodeSignatures: false     # ~50MB saved
 
 freshclam:
-  checkIntervalHours: 6      # demo: 6h.  Production: 1h (matches public mirror norms).
-                             # Less frequent updates trade fresh signatures for fewer rate-limit hits.
+  checkIntervalHours: 6
 
 probes:
-  startupGraceSeconds: 60    # signature DB load is slow; don't kill the pod during cold start
+  startupGraceSeconds: 60       # signature DB load is slow; don't kill the pod during cold start
   livenessFailureThreshold: 5

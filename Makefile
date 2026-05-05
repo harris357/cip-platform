@@ -63,6 +63,25 @@ status:       ## Show pod states, PVC states, node state
 	@echo "--- Pods ---"
 	@kubectl get pods -A 2>/dev/null || echo "No pods"
 
+resources:    ## Capacity, live usage, requests committed, top consumers
+	@echo "════════════════ Node capacity ════════════════"
+	@kubectl get nodes -o custom-columns='NAME:.metadata.name,CPU:.status.capacity.cpu,MEM:.status.capacity.memory,ALLOC_CPU:.status.allocatable.cpu,ALLOC_MEM:.status.allocatable.memory' 2>/dev/null || echo "No nodes"
+	@echo ""
+	@echo "════════════════ Live usage (metrics-server) ════════════════"
+	@kubectl top nodes 2>/dev/null || echo "metrics-server not ready"
+	@echo ""
+	@echo "════════════════ Committed requests/limits per node ════════════════"
+	@for n in $$(kubectl get nodes -o jsonpath='{.items[*].metadata.name}' 2>/dev/null); do \
+	  echo "── $$n ──"; \
+	  kubectl describe node "$$n" | awk '/Allocated resources:/,/Events:/' | grep -E "cpu|memory" | grep -v "^Events" | head -6; \
+	  echo ""; \
+	done
+	@echo "════════════════ Top 10 memory consumers ════════════════"
+	@kubectl top pod -A --sort-by=memory 2>/dev/null | head -11
+	@echo ""
+	@echo "════════════════ Top 10 CPU consumers ════════════════"
+	@kubectl top pod -A --sort-by=cpu 2>/dev/null | head -11
+
 forward:      ## Port-forward NATS (4222) and PostgreSQL (5432) for local dev
 	@kubectl port-forward -n cip-infra svc/nats 4222:4222 &
 	@kubectl port-forward -n cip-infra svc/postgres-postgresql 5432:5432 &
