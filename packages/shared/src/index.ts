@@ -13,6 +13,9 @@ export * from './types/document-module-contract.js';
 // Slice 58C — per-doc-type extraction strategy contract (cross-service activity surface)
 export * from './types/extraction-strategy.js';
 
+// Slice 58D-A — generic person matcher contract (MatchPersonWorkflow)
+export * from './types/match-person.js';
+
 // Slice 58B — bot-progress NATS channel (publisher: doc-service, subscriber: teams-bot)
 export * from './types/bot-progress-event.js';
 export * from './nats/progress-subjects.js';

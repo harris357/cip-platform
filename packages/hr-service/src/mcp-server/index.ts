@@ -5,6 +5,7 @@ import { registerAdminTools } from '../modules/admin/mcp-tools/index.js'
 import { registerCertificationTools } from '../modules/certifications/mcp-tools/index.js'
 import { registerComplianceTools } from '../modules/compliance/mcp-tools/index.js'
 import { registerEmployeeTools } from '../modules/employees/mcp-tools/index.js'
+import { registerPeopleTools } from '../modules/people/mcp-tools/index.js'
 import { registerSettingsTools } from '../modules/settings/mcp-tools/index.js'
 import { getPool } from '../db/index.js'
 import { seedPermissionCatalog } from '../services/permission-catalog-seed.js'
@@ -30,6 +31,7 @@ function createRegisteredServer(): McpServer {
   registerCertificationTools(s)
   registerComplianceTools(s)
   registerEmployeeTools(s)
+  registerPeopleTools(s)
   registerSettingsTools(s)
   return s
 }

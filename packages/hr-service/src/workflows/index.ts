@@ -38,3 +38,11 @@ export type {
 // the named extract-*-features activity locally and returns its result.
 export { ExecuteExtractionStrategyWorkflow } from '../modules/certifications/workflows/execute-extraction-strategy.workflow.js';
 export type { ExecuteExtractionStrategyInput } from '../modules/certifications/workflows/execute-extraction-strategy.workflow.js';
+
+// Slice 58D-A: generic person-matcher workflow. Started as a child
+// workflow by module workflows (cert today via 58D-B; future incident
+// / training-enrollment / reminders) on the same cip-hr-tasks queue.
+export {
+  MatchPersonWorkflow,
+  personPickedSignal,
+} from '../modules/people/workflows/match-person.workflow.js';

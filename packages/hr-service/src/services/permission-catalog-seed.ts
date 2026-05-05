@@ -10,7 +10,10 @@ import type { Pool } from 'pg';
 
 interface CatalogEntry {
   service:     'hr-service';
-  module:      'cert' | 'employee' | 'compliance' | 'tenant';
+  // Slice 58D-A: 'people' added — the cross-module person-matcher's
+  // admin queue. The (service, module, permission) PK accepts new
+  // module values without schema migration.
+  module:      'cert' | 'employee' | 'compliance' | 'tenant' | 'people';
   permission:  string;
   description: string;
 }
@@ -25,6 +28,10 @@ const HR_SERVICE_CATALOG: CatalogEntry[] = [
   // compliance module
   { service: 'hr-service', module: 'compliance', permission: 'compliance.view',     description: 'View tenant-wide compliance reports' },
   { service: 'hr-service', module: 'compliance', permission: 'compliance.view_own', description: 'View personal compliance status' },
+
+  // people module — Slice 58D-A
+  { service: 'hr-service', module: 'people', permission: 'hr.people.match',
+    description: 'Resolve ambiguous person-match queue items (cross-module HITL)' },
 
   // employee module
   { service: 'hr-service', module: 'employee', permission: 'employee.assign_role',       description: 'Assign Keycloak realm role' },

@@ -10,8 +10,7 @@
 //
 // Examples currently used / planned:
 //   - bot.write_confirm.respond           (this slice's only consumer)
-//   - documents.subject.pick              (slice 58D)
-//   - documents.subject.escalate          (slice 58D)
+//   - hr.person.pick                      (slice 58D-A — generic matcher pickcard)
 //   - documents.reclassify.submit         (slice 58F)
 //   - documents.reclassify.approve        (slice 58F)
 //   - cert.template.diff.approve          (slice 58I)

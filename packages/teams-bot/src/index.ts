@@ -7,6 +7,7 @@ import { app } from './server.js';
 import { ensureCheckpointerReady } from './langgraph/checkpointer.js';
 import { registerInvokeHandler } from './teams-protocol/invoke-router.js';
 import { confirmWriteHandler } from './teams-protocol/invoke-handlers/confirm-write.js';
+import { hrPersonPickHandler } from './teams-protocol/invoke-handlers/hr-person-pick.js';
 
 const port = parseInt(process.env['PORT'] ?? '3978', 10);
 
@@ -15,6 +16,7 @@ const port = parseInt(process.env['PORT'] ?? '3978', 10);
 // a programming error worth surfacing loudly. Future slices (58D,
 // 58F, 58I) add their own handlers via the same call.
 registerInvokeHandler(confirmWriteHandler);
+registerInvokeHandler(hrPersonPickHandler);
 
 async function main(): Promise<void> {
   await ensureCheckpointerReady();

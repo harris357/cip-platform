@@ -1,5 +1,5 @@
 import {
-  pgTable, uuid, text, boolean, integer, numeric,
+  pgTable, uuid, text, boolean, integer, numeric, doublePrecision,
   timestamp, date, jsonb, primaryKey,
 } from 'drizzle-orm/pg-core'
 
@@ -227,6 +227,43 @@ export const workflowStepCosts = pgTable('workflow_step_costs', {
   costUsd:      numeric('cost_usd', { precision: 10, scale: 6 }),
   modelUsed:    text('model_used'),
   recordedAt:   timestamp('recorded_at', { withTimezone: true }).defaultNow(),
+})
+
+// Slice 58D-A: generic person-match resolution table. One row per
+// MatchPersonWorkflow execution; updated as the workflow progresses.
+// See migration 042_person_match_resolutions.sql for the full DDL.
+export const personMatchResolutions = pgTable('person_match_resolutions', {
+  id:                   uuid('id').primaryKey().defaultRandom(),
+  tenantId:             uuid('tenant_id').notNull(),
+  workflowId:           text('workflow_id').notNull(),
+  callerSubmissionId:   text('caller_submission_id').notNull(),
+  initiatedAt:          timestamp('initiated_at', { withTimezone: true }).notNull().defaultNow(),
+  resolvedAt:           timestamp('resolved_at',  { withTimezone: true }),
+
+  // Inputs
+  source:               text('source').notNull(),
+  candidateText:        text('candidate_text').notNull(),
+  structuredHints:      jsonb('structured_hints'),
+  contextMeta:          jsonb('context_meta').notNull(),
+  policy:               jsonb('policy').notNull(),
+
+  // Process
+  canonicalization:     jsonb('canonicalization'),
+  shortlist:            jsonb('shortlist'),
+  scoredCandidates:     jsonb('scored_candidates'),
+  hitlOffered:          boolean('hitl_offered').notNull().default(false),
+  hitlOfferedAt:        timestamp('hitl_offered_at', { withTimezone: true }),
+  hitlAudience:         text('hitl_audience'),
+  hitlActorEmployeeId:  uuid('hitl_actor_employee_id'),
+  hitlActorRole:        text('hitl_actor_role'),
+
+  // Outcome
+  resolvedEmployeeId:   uuid('resolved_employee_id'),
+  resolutionSource:     text('resolution_source'),
+  confidence:           doublePrecision('confidence'),
+  outcome:              text('outcome').notNull().default('pending'),
+
+  evidence:             jsonb('evidence'),
 })
 
 export const agentRuns = pgTable('agent_runs', {
