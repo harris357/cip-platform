@@ -9,7 +9,6 @@ import { resolveTenantContext, type TenantContext } from './auth/tenant-resolver
 import { updateChannelRegistry } from './teams-protocol/channel-registry.js';
 import {
   detectFileAttachments,
-  downloadToObjectStore,
   downloadAttachmentToBuffer,
   guessMimeType,
 } from './teams-protocol/file-handler.js';
@@ -21,7 +20,6 @@ import { discoverTools } from './mcp/tool-discovery.js';
 import { runLangGraph } from './langgraph/runner.js';
 import { dispatchSlashCommand } from './slash-commands/dispatch.js';
 import { buildWelcomeChips } from './slash-commands/welcome-chips.js';
-import { getTunables, getTunable } from './langgraph/tunables.js';
 
 export function buildWelcomeMessage(): string {
   return (
@@ -226,51 +224,26 @@ export class CIPTeamsBot extends TeamsActivityHandler {
     await updateChannelRegistry(context, ctx.tenantId, ctx.bearerToken);
     const tRegistry = Date.now();
 
-    // File-attachment fast path. Slice 58B-2b: branches on the
-    // `documents.cert_legacy_path` tunable. While the legacy path is
-    // enabled (default through 58B), the bot uploads to OVH itself
-    // and calls hr-service `process_document(objectStoreKey)`. When
-    // flipped false (target state at 58E), the bot streams CDN bytes
-    // straight into doc-service `document_process(...)` and subscribes
-    // to per-conversation NATS progress events.
+    // File-attachment fast path. Bot streams CDN bytes straight into
+    // doc-service `document_process(...)` and subscribes to per-
+    // conversation NATS progress events. Doc-service does the OVH
+    // PutObject. Hard rule #3: bytes flow bot → doc-service → S3 once.
     //
-    // Both paths coexist by design — the cert flow MUST stay alive
-    // until 58E removes it. Hard rule #7.
+    // (The legacy `documents.cert_legacy_path` branch was retired once
+    // the new path was verified live.  hr-service still hosts the
+    // `process_document` MCP tool — slice 58E removes it as part of the
+    // cert workflow rewrite into a Route-A consumer.)
     if (fileAttachments.length > 0) {
-      const tunables = await getTunables(ctx.tenantId);
-      const certLegacyPath = getTunable<boolean>(tunables, 'documents.cert_legacy_path', true);
-
       // Warm the multi-server tool catalog so executeTool routes
-      // `document_process` (doc-service) and `process_document`
-      // (hr-service) correctly. discoverTools is cached 5-min per
-      // (tenant, employee), so this is sub-ms after the first turn.
-      // Any failure falls back to the hr-service default in
-      // executeTool — which keeps the legacy path working even if
-      // doc-service is briefly unreachable.
+      // `document_process` to doc-service. discoverTools is cached 5-min
+      // per (tenant, employee), so this is sub-ms after the first turn.
       try {
         await discoverTools(ctx);
       } catch (err) {
-        console.warn(`[bot] tool catalog warmup failed: ${err instanceof Error ? err.message : String(err)} — falling back to hr-service-only routing`);
+        console.warn(`[bot] tool catalog warmup failed: ${err instanceof Error ? err.message : String(err)}`);
       }
 
       for (const file of fileAttachments) {
-        if (certLegacyPath) {
-          // ── LEGACY PATH ─────────────────────────────────────────────
-          const tDl0 = Date.now();
-          const key = await downloadToObjectStore(file, ctx);
-          const tDl1 = Date.now();
-          const result = await executeTool('process_document', { objectStoreKey: key }, ctx);
-          const tExec1 = Date.now();
-          await renderResponse(context, result);
-          await sendResponseTime(context, Date.now() - tStart, {
-            tool:   'process_document',
-            execMs: tExec1 - tDl1,
-          });
-          console.log(`[turn] tenantId=${ctx.tenantId} mode=file path=legacy file=${file.name ?? '?'} typing=${tTyping - tStart}ms auth=${tAuth - tTyping}ms registry=${tRegistry - tAuth}ms download=${tDl1 - tDl0}ms exec=${tExec1 - tDl1}ms render=${Date.now() - tExec1}ms total=${Date.now() - tStart}ms`);
-          continue;
-        }
-
-        // ── NEW PATH (58B+) ─────────────────────────────────────────
         const tDl0 = Date.now();
         const { buffer, mimeType, fileName } = await downloadAttachmentToBuffer(file);
         const tDl1 = Date.now();

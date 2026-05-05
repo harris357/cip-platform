@@ -15,7 +15,6 @@ import { getPool } from '../db/index.js'
 const GLOBAL_SENTINEL = '00000000-0000-0000-0000-000000000000'
 
 export const DOCUMENTS_TUNABLE_KEYS = [
-  'documents.cert_legacy_path',
   'documents.l3_enabled',
   'documents.tier_override_floor',
   'documents.l1_keywords',
@@ -25,7 +24,6 @@ export const DOCUMENTS_TUNABLE_KEYS = [
 export type DocumentsTunableKey = typeof DOCUMENTS_TUNABLE_KEYS[number]
 
 export interface DocumentsTunables {
-  certLegacyPath:                  boolean
   l3Enabled:                       boolean
   tierOverrideFloor:               'public' | 'internal' | 'confidential' | 'restricted'
   l1Keywords:                      string[]
@@ -35,7 +33,6 @@ export interface DocumentsTunables {
 
 /** Code-resident fallbacks — used when the DB row is missing entirely. */
 export const DEFAULTS: DocumentsTunables = {
-  certLegacyPath:                  true,
   l3Enabled:                       true,
   tierOverrideFloor:               'public',
   l1Keywords:                      [
@@ -105,7 +102,6 @@ export async function loadDocumentsTunables(tenantId: string): Promise<Documents
   }
 
   const value: DocumentsTunables = {
-    certLegacyPath:                  asBool(merged['documents.cert_legacy_path'], DEFAULTS.certLegacyPath),
     l3Enabled:                       asBool(merged['documents.l3_enabled'], DEFAULTS.l3Enabled),
     tierOverrideFloor:               asTier(merged['documents.tier_override_floor'], DEFAULTS.tierOverrideFloor),
     l1Keywords:                      asStringArray(merged['documents.l1_keywords'], DEFAULTS.l1Keywords),
