@@ -207,6 +207,22 @@ PENDING:    42A ──► 42C ──► 42B
   in Teams once the bot pod is rolled to the new image; cert flow
   preserved while the tunable is on.
 
+- **Slice 58C-FIX** (2026-05-05, commits TBD by user push)
+  — MIME-aware extraction in doc-service (8 classes: pdf, image, txt,
+  md, csv, docx, xlsx, pptx) + cert strategy text-vs-vision branching
+  + audit_events CHECK extension. Drops the "PDF bytes sent as
+  data:image/jpeg" bug that blocked `david_lee_whs_induction.pdf`.
+  New: `packages/document-service/src/extraction/` (classify-mime,
+  extract-from-{pdf,image,text,docx,xlsx,pptx}, token-budget, index).
+  Tunables seeded `lg.extract_*` (kept `lg.` namespace per kickoff
+  doc; cleanup to `documents.extract_*` is a 58E concern). Migration
+  009 extends `audit_events_event_type_check` to include
+  `extraction_started`/`extraction_completed`/`extraction_failed`
+  (and 58D anticipations `classify_failed`,
+  `subject_resolution_failed`). 12 new unit tests green; pdfjs text-
+  layer + DOCX (mammoth) + XLSX (SheetJS) + PPTX (jszip slide-XML
+  walk) all exercised on inline-authored fixtures.
+
 - **Slice 53** (2026-05-05, `f378c0b`,`36623b4`)
   — Card-driven write-action confirm + invoke router. Adaptive Card
   v1.5 with `Action.Execute` `[Confirm] [Cancel]` replaces the 46b
@@ -241,6 +257,7 @@ operational follow-ons; H/I are growth investments.
 | **58G** — Soft-delete, hard-purge cron, audit retention 7y, GDPR strict erasure mode, restore semantics | [SLICE_58G_PURGE_AND_RETENTION.md](./SLICE_58G_PURGE_AND_RETENTION.md) | DRAFTED |
 | **58H** — Per-tenant doc-type sklearn classifier (mirrors 56N; trust ladder from 56L; sklearn-first in 58C with LLM fallback) | [SLICE_58H_PER_TENANT_DOC_CLASSIFIER.md](./SLICE_58H_PER_TENANT_DOC_CLASSIFIER.md) | DRAFTED |
 | **58I** — Cert template-and-compare (canonical template versioning + auto-derive via DBSCAN + field-rule diff HITL) | [SLICE_58I_CERT_TEMPLATE_COMPARE.md](./SLICE_58I_CERT_TEMPLATE_COMPARE.md) | DRAFTED |
+| **58J** — Generic field-extraction agent (vision + text). Cert vision-agent generalised to a system-wide tool: any module registers `(prompt, output schema, confidence threshold, HITL mode)` and gets the LangGraph orchestration for free. Cert becomes the first consumer; future modules (training, contracts, invoices, expense receipts) plug in their own config. Best after 58C-FIX. | [SLICE_58J_GENERIC_EXTRACTION_AGENT.md](./SLICE_58J_GENERIC_EXTRACTION_AGENT.md) | DRAFTED |
 
 - **Slice 49 (merged)** — Bot memory (factual + semantic) via LangGraph
   `PostgresStore`. Single store instance with two namespaces per user:
