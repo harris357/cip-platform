@@ -20,12 +20,17 @@
 
 import { proxyActivities } from '@temporalio/workflow';
 
-import {
-  ExtractionInputSchema,
-  ExtractionOutputSchema,
-  type ExtractionInput,
-  type ExtractionOutput,
-} from '@cip/shared';
+// TYPE-ONLY import from @cip/shared. Workflow bundles run in Temporal's
+// sandboxed isolate — webpack must NOT pull `@cip/shared`'s value
+// exports because they transitively reach `node:tls` (via @temporalio
+// /client, pg, etc.) and the bundler can't process the `node:` scheme.
+// Type-only imports are erased at compile time so webpack never sees them.
+//
+// Zod runtime validation moved to the activity layer
+// (`extractCertFeaturesActivity` already calls `ExtractionInputSchema.parse`
+// + `ExtractionOutputSchema.parse`). Defense-in-depth at the workflow
+// layer would be nice but webpack vs node:tls makes it not worth it.
+import type { ExtractionInput, ExtractionOutput } from '@cip/shared';
 
 // We type the proxy as a generic Record<string, fn> because the activity
 // to call is named at runtime via input.activityName. Each registered
@@ -47,16 +52,12 @@ export interface ExecuteExtractionStrategyInput {
 export async function ExecuteExtractionStrategyWorkflow(
   args: ExecuteExtractionStrategyInput,
 ): Promise<ExtractionOutput> {
-  // Validate at the workflow boundary too — if the doc-service-side
-  // payload was tampered with mid-flight (it shouldn't be, but defense
-  // in depth), we throw before touching the LLM.
-  const validated = ExtractionInputSchema.parse(args.input);
-
   const fn = activities[args.activityName];
   if (typeof fn !== 'function') {
     throw new Error(`ExecuteExtractionStrategyWorkflow: unknown activity '${args.activityName}'`);
   }
-
-  const out = await fn(validated);
-  return ExtractionOutputSchema.parse(out);
+  // Activity validates input + output against the Zod schemas; no extra
+  // parse here (the schemas would force a value-import of @cip/shared
+  // which breaks the workflow webpack bundle).
+  return fn(args.input);
 }
