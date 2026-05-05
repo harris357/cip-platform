@@ -10,6 +10,10 @@ export { ExtractionResultSchema, IntentResultSchema } from './types/agent.js';
 // Slice 58A — module-side contract for document consumers
 export * from './types/document-module-contract.js';
 
+// Slice 58B — bot-progress NATS channel (publisher: doc-service, subscriber: teams-bot)
+export * from './types/bot-progress-event.js';
+export * from './nats/progress-subjects.js';
+
 // Clients
 export * from './clients/litellm.js';
 export * from './clients/langfuse.js';
