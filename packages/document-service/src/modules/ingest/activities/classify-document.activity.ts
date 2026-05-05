@@ -39,7 +39,7 @@ Choose the (module, doc_type) that best matches the inputs and output ONE JSON o
   module:       short module name from the catalog below (e.g. "certificate")
   doc_type:     specific type within that module (e.g. "cpr"), or "*" if not yet specialized
   confidence:   number in [0,1] — your confidence that the (module, doc_type) is correct
-  alternatives: array of up to 2 runner-ups, each shaped {"module":"...","docType":"...","confidence":0.NN}
+  alternatives: array of up to 2 runner-ups, each shaped {"module":"...","doc_type":"...","confidence":0.NN}
   reasoning:    one short sentence explaining the choice (visible in audit logs)
 
 Available (module, doc_type) catalog for this tenant (each row may include hints):
@@ -63,15 +63,31 @@ Inputs:
 
 Return ONLY the JSON object, no preamble, no code fence.`
 
+// Tolerate both snake_case and camelCase from the model — LLMs frequently
+// drift to whichever convention is dominant in the prompt/output. We
+// normalize to camelCase before persisting.
+const AlternativeSchema = z.preprocess(
+  (raw) => {
+    if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+      const r = raw as Record<string, unknown>
+      if (r['doc_type'] !== undefined && r['docType'] === undefined) {
+        return { ...r, docType: r['doc_type'] }
+      }
+    }
+    return raw
+  },
+  z.object({
+    module:     z.string(),
+    docType:    z.string(),
+    confidence: z.number().min(0).max(1),
+  }),
+)
+
 const ClassifyResponseSchema = z.object({
   module:     z.string().min(1).max(64),
   doc_type:   z.string().min(1).max(64),
   confidence: z.number().min(0).max(1),
-  alternatives: z.array(z.object({
-    module:     z.string(),
-    docType:    z.string(),
-    confidence: z.number().min(0).max(1),
-  })).max(5).optional().default([]),
+  alternatives: z.array(AlternativeSchema).max(5).optional().default([]),
   reasoning:  z.string().max(500).optional().default(''),
 })
 
