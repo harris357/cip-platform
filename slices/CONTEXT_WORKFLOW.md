@@ -207,9 +207,23 @@ PENDING:    42A ──► 42C ──► 42B
   in Teams once the bot pod is rolled to the new image; cert flow
   preserved while the tunable is on.
 
+- **Slice 53** (2026-05-05, `f378c0b`,`36623b4`)
+  — Card-driven write-action confirm + invoke router. Adaptive Card
+  v1.5 with `Action.Execute` `[Confirm] [Cancel]` replaces the 46b
+  text confirm; verb-dispatched router (additive, returns null on
+  miss) so 58D/58F/58I can register their own card verbs at boot.
+  New `authorizedUser` hook on the router does the wrong-user check
+  once per dispatch (handlers don't re-implement). Migration 040
+  seeds three tunables: `lg.confirm_render_mode` (default `"card"`,
+  `"text"` is the per-tenant kill switch back to 46b), `_card_ttl_seconds`
+  (default 600), `_card_max_arg_chars` (default 300). Verb namespace
+  convention: `<module>.<feature>.<action>` — confirm gate uses
+  `bot.write_confirm.respond`. 39 unit tests green.
+
 ### Drafted, not yet shipped
 
-Recommended order: **58B → 58C → 58D → 58E (cert E2E) → 58F/G → 58H/I → 53 → 49 → 51**.
+Recommended order: **58B → 58C → 58D → 58E (cert E2E) → 58F/G → 58H/I → 49 → 51**.
+(Slice 53 shipped 2026-05-05 ahead of 58D so the invoke router exists when 58D's pickcard handler lands.)
 
 #### Slice 58 — Generic document workflow (`@cip/document-service`)
 
@@ -245,17 +259,6 @@ operational follow-ons; H/I are growth investments.
   connects to a separate `cip_hr_studio` local DB; never points at
   production.
   See `slices/SLICE_51_LANGGRAPH_STUDIO.md`.
-
-- **Slice 53** — Card-driven write-action confirm + invoke router.
-  Replaces the Slice 46b text "Reply yes/no." with an Adaptive Card
-  (`Action.Execute` `[Confirm] [Cancel]`). Lays the verb-dispatched
-  invoke router that future card flows (cert submit dialog,
-  employee-detail action panel) will register against. Three new
-  tunables (`lg.confirm_render_mode` default `"card"`,
-  `lg.confirm_card_ttl_seconds`, `lg.confirm_card_max_arg_chars`).
-  Per-tenant kill switch back to text via render-mode tunable. No
-  state-shape change; same `interrupt()` mechanism as 46b.
-  See `slices/SLICE_53_CARD_CONFIRM.md`.
 
 ### Proposed (not yet drafted)
 
