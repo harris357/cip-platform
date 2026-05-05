@@ -14,6 +14,7 @@ import {
 } from './teams-protocol/file-handler.js';
 import { renderResponse } from './teams-protocol/card-renderer.js';
 import { startProgressRenderer } from './teams-protocol/progress-renderer.js';
+import { dispatchInvoke } from './teams-protocol/invoke-router.js';
 import { sendResponseTime } from './intent/debug-banner.js';
 import { executeTool } from './mcp/tool-executor.js';
 import { discoverTools } from './mcp/tool-discovery.js';
@@ -285,6 +286,11 @@ export class CIPTeamsBot extends TeamsActivityHandler {
   }
 
   // signin/failure is NOT routed through onSigninInvokeActivity — catch it here first.
+  // Slice 53: `adaptiveCard/action` invokes route through the verb-dispatched
+  // invoke router BEFORE falling through to `super.onInvokeActivity`. The
+  // router returns null on miss, so unmatched verbs (none today; future
+  // cards may add more without re-touching this method) and signin/* both
+  // continue to work. The router is purely additive.
   protected override async onInvokeActivity(context: TurnContext): Promise<{ status: number; body?: unknown }> {
     if (context.activity.name === 'signin/failure') {
       const err = context.activity.value as { code?: string; message?: string } | undefined;
@@ -294,6 +300,23 @@ export class CIPTeamsBot extends TeamsActivityHandler {
         'Check Azure AD app registration or contact your administrator.',
       );
       return { status: 200 };
+    }
+    if (context.activity.name === 'adaptiveCard/action') {
+      try {
+        const result = await dispatchInvoke(context);
+        if (result) {
+          return { status: result.statusCode, body: result.body };
+        }
+      } catch (err) {
+        // A handler threw. Surface a 500 so Teams logs it; the user
+        // sees the original card stay in place. Don't crash the
+        // adapter; let other invoke types (signin/*, future verbs)
+        // keep working.
+        console.error(`[invoke-router] handler threw: ${err instanceof Error ? err.stack ?? err.message : String(err)}`);
+        return { status: 500 };
+      }
+      // No handler matched → fall through to default. The default
+      // `onAdaptiveCardInvoke` returns 501 unless overridden.
     }
     return super.onInvokeActivity(context);
   }

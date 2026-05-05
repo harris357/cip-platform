@@ -25,6 +25,7 @@ import { buildGraph } from './graph.js';
 import { sendResponseTime } from '../intent/debug-banner.js';
 import { writeTurnMetric } from './util/turn-metrics.js';
 import { getTunables, getTunable } from './tunables.js';
+import { buildConfirmCard } from '../teams-protocol/cards/confirm.js';
 import type { ConfirmInterruptPayload } from './nodes/confirm.js';
 import type { BotAuthContext } from '../auth/resolve-context.js';
 
@@ -170,9 +171,31 @@ export async function runLangGraph(args: {
   const allMessages  = result.messages ?? [];
   const turnMessages = allMessages.slice(priorMessageCount);
 
+  // Slice 53: card-mode rendering. When the graph just suspended at a
+  // confirm interrupt, branch on `lg.confirm_render_mode`:
+  //   - 'card' (default): build the confirm card and send as attachment.
+  //   - 'text':           Slice 46b prose + pattern-matched yes/no.
+  // Per-tenant tunable; both modes feed the same `interrupt()`-style
+  // resume (text → string, card → { decision } structured object).
+  const renderMode = getTunable<string>(tunables, 'lg.confirm_render_mode', 'card');
+  const maxArgChars = getTunable<number>(tunables, 'lg.confirm_card_max_arg_chars', 300);
+
   let outbound: string | null = null;
+  let outboundConfirmCard: unknown | null = null;
   if (newInterrupt) {
-    outbound = `About to: \`${newInterrupt.payload.summary}\`\n\nReply **yes** to confirm or **no** to cancel.`;
+    if (renderMode === 'card') {
+      outboundConfirmCard = buildConfirmCard({
+        turnId:      newInterrupt.payload.turnId ?? turnId,
+        threadId,
+        summary:     newInterrupt.payload.summary,
+        toolName:    newInterrupt.payload.toolName,
+        toolArgs:    newInterrupt.payload.toolArgs,
+        proposedAt:  newInterrupt.payload.proposedAt ?? Date.now(),
+        maxArgChars,
+      });
+    } else {
+      outbound = `About to: \`${newInterrupt.payload.summary}\`\n\nReply **yes** to confirm or **no** to cancel.`;
+    }
   } else {
     // Search ONLY this turn's messages — never echo a prior turn's reply.
     // Slice 56D follow-up: use isAIMessage helper instead of instanceof
@@ -214,9 +237,20 @@ export async function runLangGraph(args: {
     }
   }
 
-  // Slice 55: when respond emitted an adaptive card (e.g., disambiguation),
-  // send it as an attachment instead of the plain-text fallback.
-  if ((result as { outboundCard?: unknown }).outboundCard) {
+  // Slice 53: card-mode confirm — send the confirm card as an attachment.
+  // The click later arrives as `adaptiveCard/action` and routes through
+  // `dispatchInvoke` (bot.ts) → `confirmWriteHandler`. The handler
+  // resumes the graph with `Command({ resume: { decision } })`; the
+  // confirm node's classifier accepts the structured payload.
+  // Slice 55: respond may emit a non-confirm card (disambiguation, etc.).
+  if (outboundConfirmCard) {
+    await context.sendActivity(Activity.fromObject({
+      type: 'message',
+      attachments: [
+        { contentType: 'application/vnd.microsoft.card.adaptive', content: outboundConfirmCard },
+      ],
+    }));
+  } else if ((result as { outboundCard?: unknown }).outboundCard) {
     await context.sendActivity(Activity.fromObject({
       type: 'message',
       attachments: [

@@ -32,7 +32,23 @@ export interface ConfirmInterruptPayload {
   toolName:   string;
   toolArgs:   Record<string, unknown>;
   toolCallId: string;
+  // Slice 53: card-mode rendering needs these in the suspended payload.
+  // Card click data carries `turnId` + `proposedAt` so the handler can
+  // correlate the click against the suspended task and TTL-check it.
+  turnId:     string;
+  proposedAt: number;
 }
+
+/**
+ * Decision delivered by `Command({resume: ...})`:
+ *   - text-mode (Slice 46b path): a raw string ("yes", "no", "do it"…)
+ *   - card-mode (Slice 53 path):  a structured `{ decision: 'confirm' | 'cancel' }`
+ *
+ * `classifyConfirmReply` accepts the union and normalises both.
+ */
+export type ConfirmResume =
+  | string
+  | { decision: 'confirm' | 'cancel' };
 
 export async function confirmNode(state: State): Promise<Partial<State>> {
   if (!state.pendingWriteCall) {
@@ -47,11 +63,18 @@ export async function confirmNode(state: State): Promise<Partial<State>> {
     toolName:   state.pendingWriteCall.toolName,
     toolArgs:   state.pendingWriteCall.toolArgs,
     toolCallId: state.pendingWriteCall.toolCallId,
+    // Slice 53: stamped here so the rendered card carries them. The
+    // runner reads the same payload off the suspended state to build
+    // the card; both sources MUST agree, so the node is the canonical
+    // origin.
+    turnId:     state.turnId,
+    proposedAt: Date.now(),
   };
 
   // SUSPEND. The checkpoint captures this point. On resume,
-  // `decision` is whatever string the runner passed to Command({resume}).
-  const decision = interrupt<ConfirmInterruptPayload, string>(payload);
+  // `decision` is whatever the runner passed to Command({resume}) —
+  // a string in text mode, or a structured object in card mode.
+  const decision = interrupt<ConfirmInterruptPayload, ConfirmResume>(payload);
 
   const tunables = await getTunables(state.tenantId);
   const affirm = getTunable<string[]>(tunables, 'lg.affirmation_patterns',
