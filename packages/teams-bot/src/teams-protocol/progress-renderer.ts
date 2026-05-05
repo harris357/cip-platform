@@ -32,10 +32,24 @@ import {
 
 import { getTunables, getTunable } from '../langgraph/tunables.js';
 
-// `adapter` is the CloudAdapter constructed in server.ts. Importing the
-// module-level singleton lets us call `continueConversation` from a
-// background async iterator without holding any TurnContext at all.
-import { adapter } from '../server.js';
+// `adapter` is the CloudAdapter constructed in server.ts. Resolved
+// lazily so unit tests can import this module without bootstrapping
+// the express app + Bot Framework auth config that server.ts builds at
+// module-load time.
+type Adapter = {
+  continueConversation: (
+    botAppId: string,
+    ref:      ConversationReference,
+    cb:       (ctx: TurnContext) => Promise<void>,
+  ) => Promise<void>;
+};
+let _adapter: Adapter | undefined;
+async function getAdapter(): Promise<Adapter> {
+  if (_adapter) return _adapter;
+  const mod = await import('../server.js');
+  _adapter = mod.adapter as unknown as Adapter;
+  return _adapter;
+}
 
 interface ActiveSubscription {
   conversationRef: Partial<ConversationReference>;
@@ -113,7 +127,8 @@ async function sendProactive(
   text: string,
 ): Promise<void> {
   const botAppId = process.env['BOT_APP_ID'] ?? '';
-  await adapter.continueConversation(
+  const ad = await getAdapter();
+  await ad.continueConversation(
     botAppId,
     ref as ConversationReference,
     async (ctx: TurnContext) => {

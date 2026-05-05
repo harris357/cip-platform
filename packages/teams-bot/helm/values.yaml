@@ -52,6 +52,13 @@ env:
   HR_SERVICE_URL: http://hr-service.cip-app.svc.cluster.local:3000
   # new keys — stubs; override at deploy time or via secret
   MCP_SERVER_URL: http://hr-service.cip-app.svc.cluster.local:4001/mcp
+  # Slice 58B-2b: bot fans MCP discovery + execution across two servers.
+  # MCP_SERVER_URL still points to hr-service for the legacy single-server
+  # callers (auth/resolve-context, channel-registry) until those are
+  # migrated to the multi-server registry. The two URLs below are the
+  # canonical names the new code reads.
+  HR_SERVICE_MCP_URL:       http://hr-service.cip-app.svc.cluster.local:4001/mcp
+  DOCUMENT_SERVICE_MCP_URL: http://document-service.cip-app.svc.cluster.local:3000/mcp
   KEYCLOAK_CLIENT_ID: teams-bot
   OBJECT_STORE_BUCKET: cip-uploads     # override at deploy time per environment
   AWS_ENDPOINT_URL: https://s3.bhs.io.cloud.ovh.net
