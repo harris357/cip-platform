@@ -63,6 +63,8 @@ env:
   # canonical names the new code reads.
   HR_SERVICE_MCP_URL:       http://hr-service.cip-app.svc.cluster.local:4001/mcp
   DOCUMENT_SERVICE_MCP_URL: http://document-service.cip-app.svc.cluster.local:3000/mcp
+  # Slice 66: platform-core MCP server hosts sync_user (and grows in slice 69).
+  PLATFORM_CORE_MCP_URL:    http://platform-core.cip-app.svc.cluster.local:3001/mcp/platform
   KEYCLOAK_CLIENT_ID: teams-bot
   OBJECT_STORE_BUCKET: cip-uploads     # override at deploy time per environment
   AWS_ENDPOINT_URL: https://s3.bhs.io.cloud.ovh.net

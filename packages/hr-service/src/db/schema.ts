@@ -164,12 +164,16 @@ export const employees = pgTable('employees', {
   // surname, aad_oid, keycloak_id, identity_type). Read identity via
   // findEmployeeWithUser → user.{email,fullName,...}. KC subject via
   // identity-links.ts → getKeycloakSubject(db, userId).
-  phone:          text('phone'),
-  employmentType: text('employment_type').notNull().default('employee').references(() => employmentTypes.code),
-  dateOfBirth:    date('date_of_birth'),
-  createdAt:      timestamp('created_at', { withTimezone: true }).defaultNow(),
-  updatedAt:      timestamp('updated_at', { withTimezone: true }).defaultNow(),
-  disabledAt:     timestamp('disabled_at', { withTimezone: true }),  // Slice 33
+  phone:             text('phone'),
+  employmentType:    text('employment_type').notNull().default('employee').references(() => employmentTypes.code),
+  dateOfBirth:       date('date_of_birth'),
+  // Slice 66: how this employee was provisioned: 'admin' (employee.create),
+  // 'workflow' (HRIS integration), 'self' (auto-onboarded by ensure_employee),
+  // 'unknown' (pre-66 backfill).
+  onboardingSource:  text('onboarding_source').notNull().default('unknown'),
+  createdAt:         timestamp('created_at', { withTimezone: true }).defaultNow(),
+  updatedAt:         timestamp('updated_at', { withTimezone: true }).defaultNow(),
+  disabledAt:        timestamp('disabled_at', { withTimezone: true }),  // Slice 33
 })
 
 // employeeGroupAssignments was used in 42A (transitional) and dropped by

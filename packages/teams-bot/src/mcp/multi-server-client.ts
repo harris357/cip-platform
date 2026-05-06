@@ -24,7 +24,7 @@
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 
-export type ServerName = 'hr-service' | 'document-service';
+export type ServerName = 'hr-service' | 'document-service' | 'platform-core';
 
 export interface ServerEntry {
   name: ServerName;
@@ -43,9 +43,16 @@ function resolveServers(): ServerEntry[] {
     process.env['DOCUMENT_SERVICE_MCP_URL'] ??
     'http://document-service.cip-app.svc.cluster.local:3000/mcp';
 
+  // Slice 66: platform-core MCP at /mcp/platform on its HTTP server (port 3001).
+  // Initially exposes sync_user only; slice 69 expands.
+  const platformUrl =
+    process.env['PLATFORM_CORE_MCP_URL'] ??
+    'http://platform-core.cip-app.svc.cluster.local:3001/mcp/platform';
+
   return [
-    { name: 'hr-service',       url: hrUrl  },
-    { name: 'document-service', url: docUrl },
+    { name: 'hr-service',       url: hrUrl       },
+    { name: 'document-service', url: docUrl      },
+    { name: 'platform-core',    url: platformUrl },
   ];
 }
 

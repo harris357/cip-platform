@@ -37,12 +37,16 @@ export const tenantIdentityProviders = cipPlatform.table('tenant_identity_provid
 }))
 
 export const tenantSettings = cipPlatform.table('tenant_settings', {
-  id:                uuid('id').primaryKey().defaultRandom(),
-  tenantId:          uuid('tenant_id').notNull().unique().references(() => tenants.id, { onDelete: 'cascade' }),
-  litellmVirtualKey: text('litellm_virtual_key').notNull().default(''),
-  channelConfig:     jsonb('channel_config').notNull().default({}),
-  routingOverrides:  jsonb('routing_overrides').notNull().default({}),
-  updatedAt:         timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  id:                    uuid('id').primaryKey().defaultRandom(),
+  tenantId:              uuid('tenant_id').notNull().unique().references(() => tenants.id, { onDelete: 'cascade' }),
+  litellmVirtualKey:     text('litellm_virtual_key').notNull().default(''),
+  channelConfig:         jsonb('channel_config').notNull().default({}),
+  routingOverrides:      jsonb('routing_overrides').notNull().default({}),
+  // Slice 66: gate for auto-creating Employee on first HR access. Default
+  // true preserves current behavior; flip false for tenants where Employee
+  // = explicit HR onboarding only.
+  autoOnboardEmployees:  boolean('auto_onboard_employees').notNull().default(true),
+  updatedAt:             timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 })
 
 // ── Routing (global, no RLS) ─────────────────────────────────────────────

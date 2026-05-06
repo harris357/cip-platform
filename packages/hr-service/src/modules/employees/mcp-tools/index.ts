@@ -2,7 +2,10 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { registerListStaff } from './list-staff.js';
 import { registerGetEmployeePermissions } from './get-employee-permissions.tool.js';
 import { registerEmployeeGet } from './employee.get.tool.js';
-import { registerSyncEmployee } from './sync-employee.js';
+// Slice 66: ensure_employee replaces sync_employee. The bot calls
+// platform-core's sync_user first (creates User + identity links); then
+// invokes this tool only when an HR-flavored tool is in the candidate set.
+import { registerEnsureEmployee } from './ensure-employee.js';
 
 // Slice 33: HR management tools — all gated on the 'hr' realm role.
 import { registerEmployeeCreate }          from './employee.create.tool.js';
@@ -19,8 +22,8 @@ import { registerEmployeeGrantPermission }  from './employee.grant-permission.to
 import { registerEmployeeRevokePermission } from './employee.revoke-permission.tool.js';
 
 export function registerEmployeeTools(server: McpServer): void {
-  // Existing (every authenticated user)
-  registerSyncEmployee(server);
+  // Slice 66: ensure_employee (was sync_employee). Per-turn HR provisioning gate.
+  registerEnsureEmployee(server);
   registerListStaff(server);
   registerGetEmployeePermissions(server);
 
