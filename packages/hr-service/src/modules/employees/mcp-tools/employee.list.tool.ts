@@ -2,7 +2,7 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { getDb } from '../../../db/index.js';
 import { withTenantRLS } from '../../../db/rls.js';
-import { employees } from '../../../db/schema.js';
+import { employees, users } from '../../../db/schema.js';
 import { extractAuthContext } from '../../../mcp-server/auth.js';
 import { eq } from 'drizzle-orm';
 import { ok, refused } from './_envelope.js';
@@ -66,10 +66,23 @@ export function registerEmployeeList(server: McpServer): void {
         return refused('forbidden', 'employee_list requires the hr realm role');
       }
       const db = getDb();
+      // Slice 65: identity moved to cip_platform.users — JOIN to read fullName/email/identityType.
       const rows = await withTenantRLS(db, ctx.tenantId, async (tx) => {
-        let q = tx.select().from(employees).$dynamic();
+        let q = tx
+          .select({
+            id:           employees.id,
+            userId:       employees.userId,
+            disabledAt:   employees.disabledAt,
+            employmentType: employees.employmentType,
+            fullName:     users.fullName,
+            email:        users.email,
+            identityType: users.identityType,
+          })
+          .from(employees)
+          .innerJoin(users, eq(users.id, employees.userId))
+          .$dynamic();
         if (args.identityType) {
-          q = q.where(eq(employees.identityType, args.identityType));
+          q = q.where(eq(users.identityType, args.identityType));
         }
         const result = await q.limit(args.limit);
         return result;
@@ -79,10 +92,6 @@ export function registerEmployeeList(server: McpServer): void {
             args.status === 'active' ? r.disabledAt === null : r.disabledAt !== null,
           )
         : rows;
-      // Slice 56D follow-up: render a user-facing message with names,
-      // not just a count. respond.ts surfaces this verbatim in Teams,
-      // so the user gets `**3 employees:** Alice <a@x>, Bob <b@x>, …`
-      // instead of the previous bare count from the distill fallback.
       let userMessage: string;
       if (filtered.length === 0) {
         userMessage = '_No employees match._';

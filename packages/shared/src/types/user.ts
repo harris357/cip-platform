@@ -29,10 +29,8 @@ export const UserSchema = z.object({
   fullName:     z.string().min(1),
   givenName:    z.string().nullable(),
   surname:      z.string().nullable(),
-  // Slice 64: denormalized cache columns for the most common providers.
-  // The source of truth is user_identity_links. Slice 65+ may drop these.
-  keycloakId:   z.string().nullable(),
-  aadOid:       z.string().nullable(),
+  // Slice 65: keycloak_id and aad_oid removed from User type. Source of truth
+  // is user_identity_links. Use getKeycloakSubject(db, userId) etc. when needed.
   identityType: IdentityTypeSchema,
   createdAt:    z.string(),
   updatedAt:    z.string(),

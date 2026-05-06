@@ -65,6 +65,8 @@ export const tenantSettings = cipPlatform.table('tenant_settings', {
 // Slice 64: cip_platform.users + cip_platform.user_identity_links cross-schema
 // references. hr-service reads/writes both via the same DATABASE_URL_HR pool
 // (cross-schema works same DB; future DB split = HTTP/MCP API call).
+// Slice 65: keycloak_id and aad_oid columns dropped — source of truth is
+// user_identity_links (queried via identity-links.ts helpers).
 export const users = cipPlatform.table('users', {
   id:           uuid('id').primaryKey().defaultRandom(),
   tenantId:     uuid('tenant_id').notNull(),
@@ -72,8 +74,6 @@ export const users = cipPlatform.table('users', {
   fullName:     text('full_name').notNull(),
   givenName:    text('given_name'),
   surname:      text('surname'),
-  keycloakId:   text('keycloak_id'),
-  aadOid:       text('aad_oid'),
   identityType: text('identity_type').notNull(),
   createdAt:    timestamp('created_at', { withTimezone: true }).defaultNow(),
   updatedAt:    timestamp('updated_at', { withTimezone: true }).defaultNow(),
@@ -157,17 +157,14 @@ export const permissionCatalog = pgTable('permission_catalog', {
 export const employees = pgTable('employees', {
   id:             uuid('id').primaryKey().defaultRandom(),
   tenantId:       uuid('tenant_id').notNull(),
-  // Slice 64: linkage to cip_platform.users.id (1:1 mapping for now). Not a
-  // Postgres FK — application enforces integrity via sync-employee triple-write.
+  // Slice 64: linkage to cip_platform.users.id (1:1). Not a Postgres FK —
+  // application enforces integrity via sync-employee + ensure_employee.
   userId:         uuid('user_id').notNull(),
-  email:          text('email').notNull(),
-  fullName:       text('full_name').notNull(),
-  givenName:      text('given_name'),
-  surname:        text('surname'),
+  // Slice 65: identity columns dropped (email, full_name, given_name,
+  // surname, aad_oid, keycloak_id, identity_type). Read identity via
+  // findEmployeeWithUser → user.{email,fullName,...}. KC subject via
+  // identity-links.ts → getKeycloakSubject(db, userId).
   phone:          text('phone'),
-  aadOid:         text('aad_oid'),
-  keycloakId:     text('keycloak_id'),
-  identityType:   text('identity_type').notNull().references(() => identityTypes.code),
   employmentType: text('employment_type').notNull().default('employee').references(() => employmentTypes.code),
   dateOfBirth:    date('date_of_birth'),
   createdAt:      timestamp('created_at', { withTimezone: true }).defaultNow(),

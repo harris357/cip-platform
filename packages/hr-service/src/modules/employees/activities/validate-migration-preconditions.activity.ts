@@ -1,6 +1,9 @@
 import { z } from 'zod';
-import { getPool } from '../../../db/index.js';
+import { getDb, getPool } from '../../../db/index.js';
 import { findEmployeeById } from '../../../db/queries/employees-extra.js';
+import { findEmployeeWithUser } from '../../../db/queries/employee-with-user.js';
+import { getKeycloakSubject } from '../../../db/queries/identity-links.js';
+import { withTenantRLS } from '../../../db/rls.js';
 
 export interface ValidateMigrationPreconditionsInput {
   tenantId:           string;
@@ -29,13 +32,21 @@ export async function validateMigrationPreconditionsActivity(
     const emp = await findEmployeeById(client, input.tenantId, input.employeeId);
     await client.query('COMMIT');
     if (!emp) throw new Error(`employee ${input.employeeId} not found in tenant ${input.tenantId}`);
-    if (!emp.keycloakId) throw new Error(`employee ${input.employeeId} has no keycloak_id; onboarding incomplete`);
-    if (emp.identityType === input.targetIdentityType) {
+
+    // Slice 65: identity moved to cip_platform.users + user_identity_links.
+    const db = getDb();
+    const eu = await withTenantRLS(db, input.tenantId, (tx) =>
+      findEmployeeWithUser(tx, input.tenantId, input.employeeId),
+    );
+    if (!eu) throw new Error(`employee ${input.employeeId} has no user record`);
+    const keycloakId = await withTenantRLS(db, input.tenantId, (tx) => getKeycloakSubject(tx, emp.userId));
+    if (!keycloakId) throw new Error(`employee ${input.employeeId} has no keycloak identity link; onboarding incomplete`);
+    if (eu.user.identityType === input.targetIdentityType) {
       throw new Error(`employee already has identity_type=${input.targetIdentityType} — no-op migration`);
     }
     return OutputSchema.parse({
-      keycloakId:          emp.keycloakId,
-      currentIdentityType: emp.identityType,
+      keycloakId,
+      currentIdentityType: eu.user.identityType,
     });
   } catch (err) {
     await client.query('ROLLBACK').catch(() => undefined);

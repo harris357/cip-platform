@@ -15,7 +15,7 @@ import { eq, and, isNull, sql } from 'drizzle-orm';
 
 import { getDb, type Db } from '../../../db/index.js';
 import { withTenantRLS } from '../../../db/rls.js';
-import { employees } from '../../../db/schema.js';
+import { employees, userIdentityLinks } from '../../../db/schema.js';
 
 // Self-referential phrases. Tested against the lower-cased candidate
 // text after collapsing whitespace. Order doesn't matter — we OR them.
@@ -58,16 +58,16 @@ export async function aadPrecheckActivity(
 
   const db = getDb();
   const uploaderEmployeeId = validated.uploaderEmployeeId;
+  // Slice 65: AAD subject moved to user_identity_links. JOIN on user_id.
   const rows = await withTenantRLS(db, validated.tenantId, (tx: Db) =>
     tx
       .select({ id: employees.id })
       .from(employees)
+      .innerJoin(userIdentityLinks, eq(userIdentityLinks.userId, employees.userId))
       .where(and(
         eq(employees.tenantId, validated.tenantId),
-        // The uploader's AAD object id is what the bot resolves and
-        // forwards as `uploaderEmployeeId`. employees.aadOid is the
-        // canonical column for AAD federation; fall through if not set.
-        eq(employees.aadOid, uploaderEmployeeId),
+        eq(userIdentityLinks.provider, 'aad'),
+        eq(userIdentityLinks.subject, uploaderEmployeeId),
         // Active = disabled_at IS NULL (slice 33 model).
         isNull(employees.disabledAt),
       ))

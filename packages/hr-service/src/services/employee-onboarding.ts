@@ -115,26 +115,37 @@ export async function onboardEmployee(
         );
       }
 
-      // Insert employees row. keycloak_id is null until the workflow's
-      // createKeycloakUserActivity completes; a future activity (Slice 31
-      // optional follow-up) writes it back.
-      // Slice 64: id is reused as both employee.id and user.id (1:1 mapping).
-      // sync-employee handles the user + links insert separately on the bot's
-      // first sync; this onboarding path is admin-driven and writes only the
-      // employee row. The user_id column gets the same UUID — when sync-employee
-      // later runs for this user (their first login), it'll find the user row
-      // (created here with this same id) and update it via the keycloak link.
+      // Slice 65: identity moved to cip_platform.users. Admin-driven onboarding
+      // creates the user row + AAD link (if any) here; sync_user (slice 66) is
+      // the runtime equivalent for self-onboarding. employees.id == users.id.
+      const identityType = IdentityTypeSchema.parse(input.identityType);
+      await client.query(
+        `INSERT INTO cip_platform.users
+           (id, tenant_id, email, full_name, identity_type)
+         VALUES ($1, $2, $3, $4, $5)
+         ON CONFLICT (id) DO UPDATE SET
+           email = EXCLUDED.email,
+           full_name = EXCLUDED.full_name,
+           identity_type = EXCLUDED.identity_type,
+           updated_at = NOW()`,
+        [id, input.tenantId, email, input.fullName, identityType],
+      );
+      if (input.aadOid) {
+        await client.query(
+          `INSERT INTO cip_platform.user_identity_links
+             (user_id, tenant_id, provider, subject)
+           VALUES ($1, $2, 'aad', $3)
+           ON CONFLICT (user_id, provider) DO UPDATE
+             SET subject = EXCLUDED.subject, updated_at = NOW()`,
+          [id, input.tenantId, input.aadOid],
+        );
+      }
       await upsertEmployee(client, {
         id,
         tenantId:       input.tenantId,
         userId:         id,
-        email,
-        fullName:       input.fullName,
-        identityType:   IdentityTypeSchema.parse(input.identityType),
         employmentType: EmploymentTypeSchema.parse(employmentType),
-        aadOid:         input.aadOid    ?? null,
         phone:          input.phone     ?? null,
-        keycloakId:     null,
       });
 
       await client.query('COMMIT');

@@ -184,9 +184,10 @@ export function registerSyncEmployee(server: McpServer): void {
 
         if (linkRow.length > 0) {
           userId = linkRow[0]!.userId
+          // Slice 65: keycloak_id and aad_oid no longer on users.
           await tx
             .update(users)
-            .set({ email, fullName, givenName, surname, keycloakId, aadOid, updatedAt: sql`NOW()` })
+            .set({ email, fullName, givenName, surname, updatedAt: sql`NOW()` })
             .where(eq(users.id, userId))
         } else {
           userId = randomUUID()
@@ -198,8 +199,6 @@ export function registerSyncEmployee(server: McpServer): void {
             fullName,
             givenName,
             surname,
-            keycloakId,
-            aadOid,
             identityType: 'aad_federated',
           })
         }
@@ -215,7 +214,8 @@ export function registerSyncEmployee(server: McpServer): void {
             })
         }
 
-        // 3. Upsert employee with userId linkage. employees.id == users.id (1:1).
+        // 3. Upsert employee with HR-only fields (slice 65: identity dropped).
+        // employees.id == users.id (1:1).
         const existingEmp = await tx
           .select({ id: employees.id })
           .from(employees)
@@ -225,20 +225,13 @@ export function registerSyncEmployee(server: McpServer): void {
         if (existingEmp.length > 0) {
           await tx
             .update(employees)
-            .set({ email, fullName, givenName, surname, aadOid, keycloakId, updatedAt: sql`NOW()` })
+            .set({ updatedAt: sql`NOW()` })
             .where(eq(employees.id, existingEmp[0]!.id))
         } else {
           await tx.insert(employees).values({
             id: userId,            // 1:1 with users.id
             tenantId,
             userId,
-            email,
-            fullName,
-            givenName,
-            surname,
-            aadOid,
-            keycloakId,
-            identityType: 'aad_federated',
             employmentType: 'employee',
           })
         }

@@ -60,6 +60,8 @@ export const routingRules = cipPlatform.table('routing_rules', {
 
 // ── Users (tenant-scoped, RLS) ───────────────────────────────────────────
 
+// Slice 65: keycloak_id and aad_oid columns dropped — source of truth is
+// user_identity_links.
 export const users = cipPlatform.table('users', {
   id:           uuid('id').primaryKey().defaultRandom(),
   tenantId:     uuid('tenant_id').notNull(),
@@ -67,8 +69,6 @@ export const users = cipPlatform.table('users', {
   fullName:     text('full_name').notNull(),
   givenName:    text('given_name'),
   surname:      text('surname'),
-  keycloakId:   text('keycloak_id'),
-  aadOid:       text('aad_oid'),
   identityType: text('identity_type').notNull(),
   createdAt:    timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt:    timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),

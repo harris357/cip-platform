@@ -46,7 +46,12 @@ export async function migrateEmployeeIdentity(
     if (!target) {
       throw new AppError('not_found', 404, `employee ${input.employeeId} not found`);
     }
-    if (target.identityType === input.targetIdentityType) {
+    // Slice 65: identity_type lives on cip_platform.users (cross-schema read).
+    const targetIdentity = await client.query<{ identity_type: string }>(
+      `SELECT identity_type FROM cip_platform.users WHERE id = $1 LIMIT 1`,
+      [target.userId],
+    );
+    if (targetIdentity.rows[0]?.identity_type === input.targetIdentityType) {
       throw new AppError('migration_no_op', 409, 'target identity_type matches current');
     }
 

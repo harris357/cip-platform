@@ -1,12 +1,11 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
+import { eq } from 'drizzle-orm'
 import type { McpModuleResponse } from '@cip/shared'
 import { getDb } from '../../../db/index.js'
 import { withTenantRLS } from '../../../db/rls.js'
-import { employees } from '../../../db/schema.js'
+import { employees, users } from '../../../db/schema.js'
 import { extractAuthContext } from '../../../mcp-server/auth.js'
-import { buildStaffCard } from './cards/staff-card.js'
-
-type EmployeeRow = typeof employees.$inferSelect
+import { buildStaffCard, type StaffCardRow } from './cards/staff-card.js'
 
 export function registerListStaff(server: McpServer): void {
   server.tool(
@@ -42,12 +41,26 @@ export function registerListStaff(server: McpServer): void {
     async (_args, context) => {
       const { tenantId } = extractAuthContext(context.authInfo)
       const db = getDb()
+      // Slice 65: identity moved to cip_platform.users — JOIN to read fullName/email.
       const staff = await withTenantRLS(db, tenantId, (tx) =>
-        tx.select().from(employees),
+        tx
+          .select({
+            id:             employees.id,
+            employmentType: employees.employmentType,
+            fullName:       users.fullName,
+            email:          users.email,
+          })
+          .from(employees)
+          .innerJoin(users, eq(users.id, employees.userId)),
       )
-      const response: McpModuleResponse<EmployeeRow[]> = {
+      const cardRows: StaffCardRow[] = staff.map(s => ({
+        fullName:       s.fullName,
+        email:          s.email,
+        employmentType: s.employmentType,
+      }))
+      const response: McpModuleResponse<typeof staff> = {
         data: staff,
-        card: buildStaffCard(staff),
+        card: buildStaffCard(cardRows),
         message: `${staff.length} employee(s) found.`,
       }
       return { content: [{ type: 'text' as const, text: JSON.stringify(response) }] }

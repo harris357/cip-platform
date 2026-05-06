@@ -1,8 +1,13 @@
-import type { employees } from '../../../../db/schema.js'
+// Slice 65: receives the joined { employee, user } shape now. The card pulls
+// fullName/email from user; employmentType from employee.
 
-type EmployeeRow = typeof employees.$inferSelect
+export interface StaffCardRow {
+  fullName:       string
+  email:          string
+  employmentType: string
+}
 
-export function buildStaffCard(staff: EmployeeRow[]): object {
+export function buildStaffCard(staff: StaffCardRow[]): object {
   return {
     type: 'AdaptiveCard',
     version: '1.5',

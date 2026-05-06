@@ -76,8 +76,15 @@ export function registerEmployeeRevokeRole(server: McpServer): void {
         actorEmployeeId = actor.id;
         const target = await findEmployeeById(client, ctx.tenantId, args.employeeId);
         if (!target)            return refused('not_found', `employee ${args.employeeId} not found`);
-        if (!target.keycloakId) return refused('not_found', 'target employee has no keycloak_id');
-        kcUserId = target.keycloakId;
+        // Slice 65: keycloak subject moved to user_identity_links.
+        const kcLookup = await client.query<{ subject: string }>(
+          `SELECT subject FROM cip_platform.user_identity_links
+            WHERE user_id = $1 AND provider = 'keycloak' LIMIT 1`,
+          [target.userId],
+        );
+        const kcSubject = kcLookup.rows[0]?.subject;
+        if (!kcSubject) return refused('not_found', 'target user has no keycloak identity link');
+        kcUserId = kcSubject;
         await client.query('COMMIT');
       } catch (err) {
         await client.query('ROLLBACK').catch(() => undefined);

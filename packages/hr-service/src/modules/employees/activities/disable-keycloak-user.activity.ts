@@ -1,6 +1,8 @@
 import { z } from 'zod';
-import { getPool } from '../../../db/index.js';
+import { getDb, getPool } from '../../../db/index.js';
 import { findEmployeeById } from '../../../db/queries/employees-extra.js';
+import { getKeycloakSubject } from '../../../db/queries/identity-links.js';
+import { withTenantRLS } from '../../../db/rls.js';
 import { getKcAdmin, kcAdminRequest } from '../../../services/keycloak-admin.js';
 
 export interface DisableKeycloakUserInput {
@@ -27,8 +29,10 @@ export async function disableKeycloakUserActivity(
     const emp = await findEmployeeById(client, input.tenantId, input.employeeId);
     await client.query('COMMIT');
     if (!emp) throw new Error(`employee ${input.employeeId} not found`);
-    if (!emp.keycloakId) throw new Error(`employee ${input.employeeId} has no keycloak_id`);
-    keycloakId = emp.keycloakId;
+    // Slice 65: keycloak subject moved to user_identity_links.
+    const kc = await withTenantRLS(getDb(), input.tenantId, (tx) => getKeycloakSubject(tx, emp.userId));
+    if (!kc) throw new Error(`employee ${input.employeeId} has no keycloak identity link`);
+    keycloakId = kc;
   } catch (err) {
     await client.query('ROLLBACK').catch(() => undefined);
     throw err;

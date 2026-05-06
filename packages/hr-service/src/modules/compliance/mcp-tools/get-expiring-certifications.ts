@@ -4,7 +4,7 @@ import { and, eq, gt, lte } from 'drizzle-orm'
 import type { McpModuleResponse } from '@cip/shared'
 import { getDb } from '../../../db/index.js'
 import { withTenantRLS } from '../../../db/rls.js'
-import { certifications, employees, certificateDefinitions } from '../../../db/schema.js'
+import { certifications, employees, certificateDefinitions, users } from '../../../db/schema.js'
 import { extractAuthContext } from '../../../mcp-server/auth.js'
 import { buildExpiryCard, type ExpiringCertGroup } from './cards/expiry-card.js'
 
@@ -62,17 +62,19 @@ export function registerGetExpiringCertifications(server: McpServer): void {
       const now = new Date()
       const cutoff = new Date(now.getTime() + daysAhead * 24 * 60 * 60 * 1000)
 
+      // Slice 65: identity moved to cip_platform.users — JOIN to read fullName/email.
       const rows = await withTenantRLS(db, tenantId, (tx) =>
         tx
           .select({
             employeeId: employees.id,
-            fullName: employees.fullName,
-            email: employees.email,
+            fullName: users.fullName,
+            email: users.email,
             displayName: certificateDefinitions.displayName,
             expiresAt: certifications.expiresAt,
           })
           .from(certifications)
           .innerJoin(employees, eq(certifications.employeeId, employees.id))
+          .innerJoin(users, eq(users.id, employees.userId))
           .innerJoin(certificateDefinitions, eq(certifications.certDefId, certificateDefinitions.id))
           .where(
             and(
