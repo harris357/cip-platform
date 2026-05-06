@@ -62,6 +62,19 @@ export async function findEmployeeByUserId(
   return r.rows[0] ? rowToEmployee(r.rows[0]) : null;
 }
 
+// Aliased version of EMPLOYEE_COLUMNS for queries that JOIN other tables
+// having overlapping column names (id, tenant_id). Prefix every column
+// with `e.` so Postgres doesn't throw "column reference is ambiguous".
+const EMPLOYEE_COLUMNS_E = `
+  e.id,
+  e.tenant_id       AS "tenantId",
+  e.user_id         AS "userId",
+  e.phone,
+  e.employment_type AS "employmentType",
+  e.created_at      AS "createdAt",
+  e.updated_at      AS "updatedAt"
+`;
+
 // Slice 65: keycloak subject moved to cip_platform.user_identity_links.
 // This helper resolves the user via the link, then finds the employee.
 export async function findEmployeeByKeycloakId(
@@ -70,7 +83,7 @@ export async function findEmployeeByKeycloakId(
   keycloakSub: string,
 ): Promise<Employee | null> {
   const r = await client.query(
-    `SELECT ${EMPLOYEE_COLUMNS}
+    `SELECT ${EMPLOYEE_COLUMNS_E}
        FROM cip_platform.user_identity_links uil
        JOIN employees e ON e.user_id = uil.user_id
       WHERE uil.tenant_id = $1
@@ -89,7 +102,7 @@ export async function findEmployeeByEmail(
   email: string,
 ): Promise<Employee | null> {
   const r = await client.query(
-    `SELECT ${EMPLOYEE_COLUMNS}
+    `SELECT ${EMPLOYEE_COLUMNS_E}
        FROM cip_platform.users u
        JOIN employees e ON e.user_id = u.id
       WHERE u.tenant_id = $1 AND u.email = $2
