@@ -24,7 +24,7 @@ SELECT
   e.identity_type,
   COALESCE(e.created_at, NOW()),
   COALESCE(e.updated_at, NOW())
-FROM cip_hr.employees e
+FROM public.employees e
 ON CONFLICT (id) DO UPDATE SET
   tenant_id     = EXCLUDED.tenant_id,
   email         = EXCLUDED.email,

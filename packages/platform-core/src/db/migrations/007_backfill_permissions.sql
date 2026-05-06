@@ -10,7 +10,7 @@ INSERT INTO cip_platform.roles
   (id, tenant_id, code, label, description, keycloak_role, is_system_role, created_at)
 SELECT
   id, tenant_id, code, label, description, keycloak_role, is_system_role, created_at
-FROM cip_hr.roles
+FROM public.roles
 ON CONFLICT (id) DO UPDATE SET
   code           = EXCLUDED.code,
   label          = EXCLUDED.label,
@@ -27,7 +27,7 @@ SELECT
   id, tenant_id, code, label, description, service, module, permissions,
   COALESCE(is_system_role, false),
   created_at
-FROM cip_hr.permission_groups
+FROM public.permission_groups
 ON CONFLICT (id) DO UPDATE SET
   code        = EXCLUDED.code,
   label       = EXCLUDED.label,
@@ -39,7 +39,7 @@ ON CONFLICT (id) DO UPDATE SET
 
 -- 3. role_groups (mapping table)
 INSERT INTO cip_platform.role_groups (role_id, group_id)
-SELECT role_id, group_id FROM cip_hr.role_groups
+SELECT role_id, group_id FROM public.role_groups
 ON CONFLICT (role_id, group_id) DO NOTHING;
 
 -- 4. employee_role_assignments → user_role_assignments
@@ -54,8 +54,8 @@ SELECT
   r.tenant_id,
   era.granted_by,
   era.granted_at
-FROM cip_hr.employee_role_assignments era
-JOIN cip_hr.roles r ON r.id = era.role_id
+FROM public.employee_role_assignments era
+JOIN public.roles r ON r.id = era.role_id
 ON CONFLICT (user_id, role_id) DO UPDATE SET
   tenant_id  = EXCLUDED.tenant_id,
   granted_by = EXCLUDED.granted_by,
@@ -65,7 +65,7 @@ ON CONFLICT (user_id, role_id) DO UPDATE SET
 INSERT INTO cip_platform.permission_catalog
   (service, module, permission, description)
 SELECT service, module, permission, description
-FROM cip_hr.permission_catalog
+FROM public.permission_catalog
 ON CONFLICT (service, module, permission) DO UPDATE SET
   description = EXCLUDED.description;
 

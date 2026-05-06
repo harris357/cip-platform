@@ -15,7 +15,7 @@ INSERT INTO cip_platform.tenants
 SELECT
   id, display_name, status, tier, admin_email, realm,
   created_at, updated_at, suspended_at, deleted_at
-FROM cip_hr.tenants
+FROM public.tenants
 ON CONFLICT (id) DO UPDATE SET
   display_name = EXCLUDED.display_name,
   status       = EXCLUDED.status,
@@ -34,7 +34,7 @@ INSERT INTO cip_platform.tenant_identity_providers
 SELECT
   id, tenant_id, provider_type, alias, enabled, config, secret_ref,
   created_at, updated_at
-FROM cip_hr.tenant_identity_providers
+FROM public.tenant_identity_providers
 ON CONFLICT (id) DO UPDATE SET
   tenant_id     = EXCLUDED.tenant_id,
   provider_type = EXCLUDED.provider_type,
@@ -51,7 +51,7 @@ SELECT
   id, tenant_id, litellm_virtual_key, channel_config,
   COALESCE(routing_overrides, '{}'::jsonb),
   updated_at
-FROM cip_hr.tenant_settings
+FROM public.tenant_settings
 ON CONFLICT (id) DO UPDATE SET
   tenant_id           = EXCLUDED.tenant_id,
   litellm_virtual_key = EXCLUDED.litellm_virtual_key,
@@ -64,7 +64,7 @@ INSERT INTO cip_platform.routing_rules
   (service, purpose, alias, notes, updated_at, updated_by)
 SELECT
   service, purpose, alias, notes, updated_at, updated_by
-FROM cip_hr.routing_rules
+FROM public.routing_rules
 ON CONFLICT (service, purpose) DO UPDATE SET
   alias      = EXCLUDED.alias,
   notes      = EXCLUDED.notes,
