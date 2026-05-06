@@ -1,4 +1,17 @@
-# Slice 61 — remove the intent-classifier subsystem
+# Slice 61 — remove the intent-classifier subsystem AND the grammar/extractor pre-router
+
+> **Expanded 2026-05-06:** original 61 deleted only the sklearn classifier
+> half. The bot also has a grammar-pattern pre-router + per-tool
+> argument extractors (slice 55) that hardcode HR domain vocabulary
+> (`employee_disable`, `off-board`, `field_employee`, `aad_federated`,
+> `cert*`, `roles`, `permissions`) AND directly query
+> `cip_hr.employees` from the bot's pg.Pool — both architectural
+> violations of the principle "no business/domain logic in teams-bot."
+>
+> Same measurement that justified deleting the classifier (LLM-only
+> tool-selection is fast + accurate at 1.3–1.9s) justifies deleting
+> the grammar pre-router. Both layers existed to bypass perceived-slow
+> LLM tool selection. That perception is no longer accurate.
 
 > **Why this exists:** Slice 56 built a Python sklearn intent classifier
 > (with retrain workflow, trainer cron, training_data tables, helm chart,
@@ -74,6 +87,27 @@ packages/teams-bot/src/intent/embed-cache.ts                  DELETED (embedding
 packages/teams-bot/src/intent/add-to-training-card.ts         DELETED (writes to training_data)
 ```
 
+### DELETE — Bot grammar pre-router + per-tool extractors (the "no domain logic in bot" violation)
+
+```
+packages/teams-bot/src/intent/grammar/                        DELETED (entire directory)
+└── patterns.ts                                               (78 lines of HR-tool regex patterns)
+
+packages/teams-bot/src/intent/extractors/                     DELETED (entire directory, 10 files)
+├── auth-helpers.ts
+├── db-helpers.ts                                             ← bot reaching into cip_hr.employees via pg.Pool — violation
+├── employee-disable.ts                                       (knows `employee_disable` tool's arg shape)
+├── employee-find.ts                                          (knows `employee_find` tool)
+├── employee-list.ts                                          (extracts identity_type enum: 'field_employee' | 'aad_federated')
+├── get-employee-permissions.ts                               (knows `get_employee_permissions` tool)
+├── get-my-certifications.ts                                  (knows cert tools)
+├── get-staff-certifications.ts                               (knows cert tools, self-vs-other distinction)
+├── index.ts                                                  (EXTRACTORS registry)
+└── types.ts                                                  (Extractor / ExtractionResult types)
+
+packages/teams-bot/src/langgraph/nodes/grammar-route.ts       DELETED (the graph node that runs patterns + extractors)
+```
+
 ### DELETE — Slash command handlers feeding training_data
 
 ```
@@ -102,8 +136,10 @@ packages/hr-service/src/db/queries/bot-intent-training-data.ts DELETED
 ```
 packages/hr-service/src/workflows/index.ts                    MOD (remove RetrainModelWorkflow + adminApprovalSignal + types)
 packages/hr-service/src/workers/temporal-worker.ts            MOD (remove `import * as classifierLifecycleActivities` + spread)
-packages/teams-bot/src/langgraph/runner.ts                    MOD (remove the classify node from the graph wiring; runner goes straight from ingest → grammar → triage)
-packages/teams-bot/src/langgraph/nodes/index.ts               MOD (drop classify export)
+packages/teams-bot/src/langgraph/runner.ts                    MOD (remove BOTH classify and grammar-route nodes; runner goes ingest → triage → plan → execute → summarize)
+packages/teams-bot/src/langgraph/nodes/index.ts               MOD (drop classify + grammar-route exports)
+packages/teams-bot/src/langgraph/util/turn-metrics.ts         MOD (strip the slice-55 grammar router + extractor telemetry fields; new rows write NULL for those columns until a future cleanup migration drops them)
+packages/teams-bot/src/db/pool.ts                             KEEP (still used by langgraph checkpointer + turn-metrics writer; just loses the extractor consumers)
 packages/hr-service/src/mcp-server/index.ts                   MOD (drop classifier-retrain tool registration)
 packages/teams-bot/src/slash-commands/handlers/turn-feedback.ts MOD (rewrite — see "Preserved with rewrite" below)
 ```
@@ -113,21 +149,25 @@ packages/teams-bot/src/slash-commands/handlers/turn-feedback.ts MOD (rewrite —
 ```
 packages/hr-service/src/db/migrations/045_remove_intent_classifier.sql  NEW
 
-  -- Tunable rows (5–6 keys, exact list confirmed by grep before run)
+  -- Tunable rows: classifier (slice 56) + grammar router (slice 27).
   DELETE FROM bot_tunables WHERE key LIKE 'lg.classifier_%';
+  DELETE FROM bot_tunables WHERE key LIKE 'lg.grammar_router_%';
 
-  -- Intent-classifier data tables (per user direction 2026-05-06: drop now)
-  -- IF EXISTS guards the renames in slice 029; CASCADE handles any
-  -- residual indexes / RLS policies / FK references.
-  DROP TABLE IF EXISTS training_data        CASCADE;
-  DROP TABLE IF EXISTS bot_intent_examples  CASCADE;
-  DROP TABLE IF EXISTS model_runs           CASCADE;
-  DROP TABLE IF EXISTS bot_turn_feedback    CASCADE;
+  -- Intent-classifier data tables (per user direction 2026-05-06).
+  DROP TABLE IF EXISTS training_data         CASCADE;
+  DROP TABLE IF EXISTS bot_intent_examples   CASCADE;
+  DROP TABLE IF EXISTS model_runs            CASCADE;
+  DROP TABLE IF EXISTS bot_turn_feedback     CASCADE;
+
+  -- Grammar router metrics (slice 26 created the table; deleting now
+  -- since the writer goes away). IF EXISTS in case the table was
+  -- never created or already dropped.
+  DROP TABLE IF EXISTS grammar_router_metrics CASCADE;
 ```
 
 ```
 packages/hr-service/src/db/schema.ts                                   MOD
-  - Remove drizzle table definitions for the 4 dropped tables (if present)
+  - Remove drizzle table definitions for the 4+1 dropped tables (if present)
   - Remove any related types/exports
 ```
 
@@ -158,26 +198,41 @@ slices/CONTEXT_WORKFLOW.md                                     MOD (update 58H s
    of (or in addition to) a `training_data` row. See "Preserved with
    rewrite" below.
 
-3. **The bot's LangGraph runner must NOT have a classify node** after
-   this slice. The graph shape becomes:
+3. **The bot's LangGraph runner must NOT have a classify node OR a
+   grammar-route node** after this slice. Final graph shape:
 
    ```
-   ingest → grammar → triage → plan → execute → summarize
+   ingest → triage → plan → execute → summarize
    ```
 
-   Removing the classify node is a structural change; ensure the runner
-   still handles the cases the classify node previously short-circuited
-   (clarify, narrow_plan, disambiguation). Most of those are dead in
-   shadow mode anyway since `lg.classifier_honor_decisions=false`.
+   Both pre-LLM optimization layers are removed. Triage is the LLM;
+   it picks tools from MCP descriptions directly. Disambiguation
+   (multiple matches for "Sarah") is handled by **the tool itself**:
+   tools return a structured 422 with `candidates: [...]` when ambiguous;
+   the bot renders a generic disambiguation card from any tool's
+   structured ambiguity response. **No per-tool extractor or hardcoded
+   pattern lives in the bot.**
 
-4. **No new infra dependencies.** This is a removal slice; nothing new
+4. **Bot has no domain knowledge.** After this slice, no file under
+   `packages/teams-bot/src/` references HR-specific tool names, HR
+   vocabulary (cert, role, off-board, etc.), or HR DB tables. Adding a
+   new module (incident, training, etc.) requires zero bot code
+   changes. Verify with grep before merge:
+   ```bash
+   grep -rln "employee_disable\|employee_list\|employee_find\|get_employee_permissions\|get_my_certifications\|get_staff_certifications\|cert\|off-board\|field_employee\|aad_federated" packages/teams-bot/src/
+   ```
+   Should return zero matches in src/ post-slice (matches in archived
+   slice docs are fine).
+
+5. **No new infra dependencies.** This is a removal slice; nothing new
    should be introduced. If the LLM-only path needs a small helper
    (e.g., a few-shot example block in the triage prompt), do it as a
    separate follow-up — not 61.
 
-5. **Test before delete.** Verify `lg.classifier_enabled=false`
-   everywhere first. The pod-restart test on 2026-05-06 was on a single
-   tenant; deletions ride on that being correct platform-wide.
+6. **Test before delete.** Verify `lg.classifier_enabled=false` AND
+   `lg.grammar_router_enabled=false` everywhere first. The pod-restart
+   test on 2026-05-06 was on a single tenant; deletions ride on that
+   being correct platform-wide.
 
 6. **Cluster pod cleanup.** After deletion + redeploy, run
    `kubectl -n cip-app delete deploy intent-classifier` to remove the
@@ -229,6 +284,58 @@ No DB-side feedback write — Langfuse is the only canonical store.
 
 ---
 
+## Disambiguation pattern post-grammar
+
+Today the grammar+extractor stack handles ambiguity (multiple "Sarah"s)
+inside the bot:
+- `db-helpers.resolveEmployeeByNameOrEmail()` queries `cip_hr.employees`
+- If multiple matches, returns `{kind: 'ambiguous', candidates: [...]}`
+- `disambiguation-card.ts` renders a pickcard
+
+Post-slice-61, **tools own ambiguity, not the bot**. New contract:
+
+When an MCP tool can't unambiguously resolve a reference, it returns
+a structured error response:
+
+```typescript
+// MCP tool response shape for ambiguity
+{
+  status: 'ambiguous',
+  argName: 'employeeId',
+  message: "Multiple matches for 'Sarah'",
+  candidates: [
+    { id: '...', label: 'Sarah Jones', hint: 'jones@company.com' },
+    { id: '...', label: 'Sarah Kim',   hint: 'skim@company.com' },
+  ],
+}
+```
+
+The bot has a single **generic** disambiguation renderer:
+- Reads any tool response with `status: 'ambiguous'`
+- Renders a generic pickcard from `candidates: [...]`
+- On click, re-invokes the same tool with the picked `argName: id`
+
+The renderer is ~50 LOC and HR-domain-free. New modules (incident,
+training enrollment) get disambiguation for free as long as their tools
+return the same shape.
+
+**This pattern is NOT implemented by slice 61.** Slice 61 just removes
+the in-bot disambiguation. If a tool currently relied on the bot's
+extractor pre-resolving the employee (e.g., `employee_disable` was
+fed `{employeeId}` after the bot resolved name → uuid), it now needs
+to be invoked with `{reference: rawName}` and resolve internally —
+returning ambiguous-shape on multiple matches.
+
+This is **a follow-up slice** (call it 62 or fold into the next HR
+work). Slice 61's scope is removal only; the replacement disambiguation
+is done by individual MCP tools as they get touched. Until then, on
+the rare ambiguous case (admin types "off-board Sarah" with multiple
+Sarahs), the LLM agent will hopefully ask "Which Sarah?" in chat and
+get clarification — agentic behavior, slower than the deterministic
+card but functional.
+
+---
+
 ## What stays vs goes — summary table
 
 | Component | Action | Why |
@@ -239,14 +346,19 @@ No DB-side feedback write — Langfuse is the only canonical store.
 | hr-service `classifier-lifecycle` module | **DELETE** | Retrain orchestration |
 | Bot `classifier-client.ts`, `classify.ts` node | **DELETE** | Bot-side caller |
 | Bot `disambiguation-card`, `clarification-templates`, `embed-cache`, `add-to-training-card` | **DELETE** | Classifier-driven UX surfaces |
+| Bot `intent/grammar/` directory | **DELETE** | HR-tool regex patterns hardcoded in bot — domain leak |
+| Bot `intent/extractors/` directory | **DELETE** | Per-HR-tool arg extractors + cross-DB queries — domain leak + cross-DB violation |
+| Bot `langgraph/nodes/grammar-route.ts` | **DELETE** | Graph node for the deleted grammar pre-router |
 | `/turn-label`, `/teach` slash commands | **DELETE** | Training-data writers (no consumer left) |
 | `/turn-feedback` slash command | **KEEP, REWRITE** | Verdict UI is still useful — write to Langfuse score only |
 | `lg.classifier_*` tunables (5–6 rows) | **DELETE** (migration 045) | Disabled config |
+| `lg.grammar_router_*` tunables | **DELETE** (migration 045) | Pre-router gone, tunables irrelevant |
 | `training_data` table | **DROP** (migration 045) | User direction 2026-05-06 — full cleanup |
 | `bot_intent_examples` table | **DROP** (migration 045) | Per slice 029 may already be renamed; IF EXISTS guards |
 | `model_runs` table | **DROP** (migration 045) | Audit trail of the deleted system; not preserved |
 | `bot_turn_feedback` table | **DROP** (migration 045) | New `/turn-feedback` writes to Langfuse only |
-| Slice 56 family docs | **MARK SUPERSEDED** | Keep for history |
+| `grammar_router_metrics` table | **DROP** (migration 045) | Pre-router metrics table; nothing reads it |
+| Slice 55 + 56 family docs | **MARK SUPERSEDED** | Both built bot-side optimization layers we're removing |
 | Slice 58H | **MARK CANCELLED** | This slice cancels the plan |
 
 ---
@@ -285,16 +397,20 @@ activities: {
 ```typescript
 // packages/teams-bot/src/langgraph/runner.ts — REMOVE:
 
-import { classifyNode } from './nodes/classify.js';   // REMOVE
+import { classifyNode }     from './nodes/classify.js';      // REMOVE
+import { grammarRouteNode } from './nodes/grammar-route.js'; // REMOVE
 // …
-graph.addNode('classify', classifyNode);              // REMOVE
-graph.addEdge('grammar', 'classify');                 // REPLACE → addEdge('grammar', 'triage')
-graph.addEdge('classify', 'triage');                  // REMOVE
+graph.addNode('classify', classifyNode);                     // REMOVE
+graph.addNode('grammar', grammarRouteNode);                  // REMOVE
+graph.addEdge('ingest', 'grammar');                          // REPLACE → addEdge('ingest', 'triage')
+graph.addEdge('grammar', 'classify');                        // REMOVE
+graph.addEdge('classify', 'triage');                         // REMOVE
 ```
 
 (Exact line numbers will shift; the implementer reads the current
-runner and removes the classify node + reconnects edges so triage
-runs after grammar.)
+runner and removes both nodes, reconnects ingest directly to triage,
+and removes any short-circuit edges that the classify or grammar nodes
+emitted to `respond` / `execute`.)
 
 ---
 
@@ -314,18 +430,23 @@ runs after grammar.)
 
 4. **`kubectl -n cip-app get deploy`** does NOT list `intent-classifier`.
 
-5. **`grep -rn "classifier-client\|classifierLifecycle\|RetrainModelWorkflow\|callClassifier" packages/`** returns zero matches in `src/`.
+5. **`grep -rn "classifier-client\|classifierLifecycle\|RetrainModelWorkflow\|callClassifier\|grammar-route\|GRAMMAR_PATTERNS\|EXTRACTORS\|matchGrammar" packages/`** returns zero matches in `src/`.
+
+5a. **Bot has no domain knowledge.** Per hard rule #4:
+    `grep -rln "employee_disable\|employee_list\|employee_find\|get_employee_permissions\|get_my_certifications\|get_staff_certifications\|cert\|off-board\|field_employee\|aad_federated" packages/teams-bot/src/`
+    returns zero matches.
 
 6. **`/turn-feedback` still works.** Click 👍 on a turn → Langfuse trace
    gets a score of 1. Click 👎 → score of 0. Verify in Langfuse UI.
 
-7. **`bot_tunables` no longer has `lg.classifier_*` rows.** Migration
-   045 ran; `SELECT key FROM bot_tunables WHERE key LIKE 'lg.classifier_%'`
-   returns zero.
+7. **`bot_tunables` no longer has `lg.classifier_*` OR `lg.grammar_router_*` rows.**
+   Migration 045 ran; both `SELECT key FROM bot_tunables WHERE key LIKE 'lg.classifier_%'`
+   and `... LIKE 'lg.grammar_router_%'` return zero.
 
 8. **Data tables dropped.** `\d training_data` in psql returns
    "Did not find any relation named...". Same for `bot_intent_examples`,
-   `model_runs`, `bot_turn_feedback`. No drizzle code references them.
+   `model_runs`, `bot_turn_feedback`, `grammar_router_metrics`. No drizzle
+   code references them.
 
 9. **`gh workflow list`** shows neither `Cluster startup (morning)`
    active (already disabled) nor any classifier-related workflow.
@@ -367,34 +488,47 @@ If something breaks post-deploy:
    next deploy. The classifier pod doesn't auto-recreate from the
    helm template — you'd need to re-run helm install for it.
 
-The slice is significant code deletion (~3000+ LOC across multiple
-packages). The data tables are preserved deliberately — those are the
-valuable long-term artifact.
+The slice is significant code deletion (~3500+ LOC across multiple
+packages, including the grammar/extractors expansion). All data tables
+are dropped per user direction.
 
 ---
 
 ## Operational sequence (deploy day)
 
-1. Confirm `lg.classifier_enabled=false` for ALL tenants (not just
-   `00...001`):
+1. Confirm BOTH classifier AND grammar router are disabled for ALL
+   tenants (not just `00...001`). Grammar pre-router is critical to
+   disable BEFORE deploying — the bot's runner today expects a grammar
+   node to exist:
    ```sql
    UPDATE bot_tunables
       SET value_json = 'false'
-    WHERE key IN ('lg.classifier_enabled', 'lg.classifier_honor_decisions');
+    WHERE key IN (
+      'lg.classifier_enabled',
+      'lg.classifier_honor_decisions',
+      'lg.grammar_router_enabled'
+    );
    ```
 2. Wait one tunables-cache TTL (5 min) or restart bot.
-3. Smoke-test bot — confirm LLM-only path is healthy across tenants.
+3. Smoke-test bot — confirm LLM-only path is healthy across tenants
+   (including the disambiguation-needing case: "off-board sarah" where
+   multiple Sarahs exist; the LLM should ask "which Sarah?" in chat
+   instead of rendering a deterministic pickcard).
 4. Merge slice 61 PR.
 5. CI builds 4 services (was 5). Image pushed.
 6. Deploy bot, hr-service. (`kubectl set image` per the patterns we've
    used.)
-7. Run migration 045 (drops the tunable rows AND the 4 data tables).
-8. `helm uninstall intent-classifier --namespace cip-app` (or whatever
-   the release name is).
+7. Run migration 045 (drops the tunable rows AND the 5 data tables).
+8. `helm uninstall intent-classifier --namespace cip-app`.
 9. `kubectl -n cip-app delete deploy intent-classifier` (belt + suspenders).
 10. Wait an hour. Watch for any unexpected behaviors. Confirm Langfuse
-    scores landing from 👍/👎 clicks.
+    scores landing from 👍/👎 clicks. Confirm tool-using turns still
+    pick correctly without grammar fast-path.
 11. Update CONTEXT_WORKFLOW.md slice 58H status to CANCELLED.
+12. (Optional follow-up) Draft slice 62 for the per-tool ambiguity
+    contract — tools that previously relied on bot-side disambiguation
+    return `{status: 'ambiguous', candidates: [...]}` instead. Generic
+    bot-side renderer reads any tool's structured ambiguity response.
 
 ---
 
@@ -419,11 +553,15 @@ valuable long-term artifact.
 
 ## Estimated scope
 
-- **Deletions**: ~3000 LOC across `intent-classifier/`, `classifier-lifecycle/`, bot `intent/` files, slash command handlers
-- **Modifications**: ~10 files (workflow registry, worker, runner, slash registry, CI yaml, slice docs)
-- **New code**: ~30 LOC (rewritten `turn-feedback` handler) + 1 small migration
-- **Net**: solidly negative LOC. ~30:1 ratio of deleted to added code.
-- **Risk**: medium — touches the bot's hot path (LangGraph runner).
-  Mitigated by the prior smoke-test on the production tenant with
-  classifier disabled, which proved the LLM-only path works.
-- **Effort**: ~1–2 days of focused work + 1 day of monitoring after deploy.
+- **Deletions**: ~3500 LOC across `intent-classifier/`, `classifier-lifecycle/`, bot `intent/classifier-client.ts` + `intent/grammar/` + `intent/extractors/` (~10 files) + classifier-driven UX cards + grammar-route node + slash command handlers
+- **Modifications**: ~12 files (workflow registry, worker, runner with both nodes removed, slash registry, CI yaml, turn-metrics telemetry strip, drizzle schema, slice docs)
+- **New code**: ~30 LOC (rewritten `turn-feedback` handler) + 1 migration (045) doing tunable cleanup + 5 table drops
+- **Net**: solidly negative LOC. ~50:1 ratio of deleted to added code.
+- **Risk**: medium-high — touches the bot's hot path (LangGraph runner)
+  AND removes the deterministic tool-routing fast-path. Mitigated by the
+  prior smoke-test on the production tenant with classifier disabled
+  (LLM-only path proved fast + accurate). Grammar router was running
+  alongside; smoke-test before the grammar node is removed (set
+  `lg.grammar_router_enabled=false` and observe).
+- **Effort**: ~2–3 days of focused work + 2 days of monitoring after
+  deploy.
