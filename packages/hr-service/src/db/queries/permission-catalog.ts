@@ -23,7 +23,7 @@ export async function listCatalogEntries(
   const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
   const r = await client.query<CatalogEntry>(
     `SELECT service, module, permission, description
-       FROM permission_catalog
+       FROM cip_platform.permission_catalog
        ${whereSql}
        ORDER BY service, module, permission`,
     args,
@@ -37,7 +37,7 @@ export async function listCatalogEntries(
  */
 export async function listAllPermissionCodes(client: PoolClient): Promise<string[]> {
   const r = await client.query<{ permission: string }>(
-    `SELECT permission FROM permission_catalog ORDER BY permission`,
+    `SELECT permission FROM cip_platform.permission_catalog ORDER BY permission`,
   );
   return r.rows.map(row => row.permission);
 }

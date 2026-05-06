@@ -35,7 +35,7 @@ spec:
             - -c
             - |
               set -eu
-              REQUIRED="003_backfill_users.sql 004_user_identity_links.sql"
+              REQUIRED="003_backfill_users.sql 004_user_identity_links.sql 007_backfill_permissions.sql"
               for migration in $REQUIRED; do
                 echo "[wait] checking cip_platform.schema_migrations for $migration..."
                 until psql "$DATABASE_URL_HR" -tAc \

@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { eq, and } from 'drizzle-orm';
 import { getDb } from '../../../db/index.js';
 import { withTenantRLS } from '../../../db/rls.js';
-import { roles, employeeRoleAssignments } from '../../../db/schema.js';
+import { roles, userRoleAssignments } from '../../../db/schema.js';
 
 type IdentityType = 'aad_federated' | 'field_employee';
 
@@ -61,9 +61,11 @@ export async function assignDefaultRoleActivity(
       );
     }
 
-    await tx.insert(employeeRoleAssignments).values({
-      employeeId: input.employeeId,
-      roleId:     role.id,
+    // Slice 68: column rename employee_id → user_id (1:1 mapping from slice 64).
+    await tx.insert(userRoleAssignments).values({
+      userId:    input.employeeId,
+      roleId:    role.id,
+      tenantId:  input.tenantId,
     }).onConflictDoNothing();
 
     return AssignDefaultRoleOutputSchema.parse({ roleId: role.id });

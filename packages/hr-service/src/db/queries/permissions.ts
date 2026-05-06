@@ -28,10 +28,10 @@ export async function getPermissionsForEmployee(
 ): Promise<string[]> {
   const r = await client.query<{ p: string }>(
     `SELECT DISTINCT jsonb_array_elements_text(pg.permissions) AS p
-       FROM employee_role_assignments era
-       JOIN role_groups rg            ON rg.role_id  = era.role_id
-       JOIN permission_groups pg      ON pg.id       = rg.group_id
-      WHERE era.employee_id = $1`,
+       FROM cip_platform.user_role_assignments ura
+       JOIN cip_platform.role_groups rg       ON rg.role_id  = ura.role_id
+       JOIN cip_platform.permission_groups pg ON pg.id       = rg.group_id
+      WHERE ura.user_id = $1`,
     [employeeId],
   );
   const raw = r.rows.map(row => row.p);
@@ -63,9 +63,9 @@ export async function getRoleCodesForEmployee(
 ): Promise<string[]> {
   const r = await client.query<{ code: string }>(
     `SELECT r.code
-       FROM employee_role_assignments era
-       JOIN roles r ON r.id = era.role_id
-      WHERE era.employee_id = $1
+       FROM cip_platform.user_role_assignments ura
+       JOIN cip_platform.roles r ON r.id = ura.role_id
+      WHERE ura.user_id = $1
       ORDER BY r.code`,
     [employeeId],
   );
@@ -108,7 +108,7 @@ export async function countRolesForEmployee(
   employeeId: string,
 ): Promise<number> {
   const r = await client.query<{ n: string }>(
-    `SELECT COUNT(*)::text AS n FROM employee_role_assignments WHERE employee_id = $1`,
+    `SELECT COUNT(*)::text AS n FROM cip_platform.user_role_assignments WHERE user_id = $1`,
     [employeeId],
   );
   return parseInt(r.rows[0]?.n ?? '0', 10);

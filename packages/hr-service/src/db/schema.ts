@@ -94,25 +94,25 @@ export const userIdentityLinks = cipPlatform.table('user_identity_links', {
 // After 42C, every group has module IN ('cert', 'employee', 'compliance',
 // 'tenant') — no more 'general'. Cross-module bundling lives in `roles`.
 // keycloak_role moved to `roles` in 42C.
-export const permissionGroups = pgTable('permission_groups', {
+// Slice 68: moved to cip_platform.permission_groups. Drizzle generates
+// cip_platform.* SQL automatically. Note the column rename:
+// is_system_role → is_system. `capabilities` legacy column does not
+// exist on cip_platform.permission_groups — its drizzle field is dropped.
+export const permissionGroups = cipPlatform.table('permission_groups', {
   id:           uuid('id').primaryKey().defaultRandom(),
   tenantId:     uuid('tenant_id').notNull(),
   service:      text('service').notNull(),
-  module:       text('module').notNull(),                    // 'cert' | 'employee' | 'compliance' | 'tenant'
+  module:       text('module').notNull(),
   code:         text('code').notNull(),
   label:        text('label').notNull(),
   description:  text('description'),
-  capabilities: jsonb('capabilities').notNull().default({}), // legacy
-  permissions:  jsonb('permissions').notNull().default([]),  // permission code strings; literals + globs (cert.*, *)
-  isSystemRole: boolean('is_system_role').notNull().default(false),
+  permissions:  jsonb('permissions').notNull().default([]),
+  isSystem:     boolean('is_system').notNull().default(false),
   createdAt:    timestamp('created_at', { withTimezone: true }).defaultNow(),
 })
 
-// Slice 42C: business-concept role. Composes N module-scoped groups via
-// role_groups. Employees are assigned to roles, not groups directly. The
-// keycloak_role column documents which KC realm role this CIP role implies
-// (operators ensure both are granted in 42B's bootstrap flow).
-export const roles = pgTable('roles', {
+// Slice 68: moved to cip_platform.roles.
+export const roles = cipPlatform.table('roles', {
   id:            uuid('id').primaryKey().defaultRandom(),
   tenantId:      uuid('tenant_id').notNull(),
   code:          text('code').notNull(),
@@ -123,29 +123,30 @@ export const roles = pgTable('roles', {
   createdAt:     timestamp('created_at', { withTimezone: true }).defaultNow(),
 })
 
-// Slice 42C: many-to-many between roles and groups.
-export const roleGroups = pgTable('role_groups', {
-  roleId:  uuid('role_id').notNull().references(() => roles.id, { onDelete: 'cascade' }),
-  groupId: uuid('group_id').notNull().references(() => permissionGroups.id, { onDelete: 'cascade' }),
+// Slice 68: moved to cip_platform.role_groups. Cross-schema FK references
+// dropped (slice 62 hard rule 2); cip_platform's own schema enforces them.
+export const roleGroups = cipPlatform.table('role_groups', {
+  roleId:  uuid('role_id').notNull(),
+  groupId: uuid('group_id').notNull(),
 }, (table) => ({
   pk: primaryKey({ columns: [table.roleId, table.groupId] }),
 }))
 
-// Slice 42C: replaces 42A's employee_group_assignments. Employees are now
-// assigned to roles (which compose groups via role_groups).
-export const employeeRoleAssignments = pgTable('employee_role_assignments', {
-  employeeId: uuid('employee_id').notNull(),
-  roleId:     uuid('role_id').notNull().references(() => roles.id, { onDelete: 'cascade' }),
-  grantedBy:  uuid('granted_by'),
-  grantedAt:  timestamp('granted_at', { withTimezone: true }).notNull().defaultNow(),
+// Slice 68: renamed from employeeRoleAssignments. Column rename
+// employee_id → user_id (1:1 from slice 64). Now tenant-scoped via
+// explicit tenant_id column rather than implicit through role.
+export const userRoleAssignments = cipPlatform.table('user_role_assignments', {
+  userId:    uuid('user_id').notNull(),
+  roleId:    uuid('role_id').notNull(),
+  tenantId:  uuid('tenant_id').notNull(),
+  grantedBy: uuid('granted_by'),
+  grantedAt: timestamp('granted_at', { withTimezone: true }).notNull().defaultNow(),
 }, (table) => ({
-  pk: primaryKey({ columns: [table.employeeId, table.roleId] }),
+  pk: primaryKey({ columns: [table.userId, table.roleId] }),
 }))
 
-// Slice 42A: registry of every known permission code. Read by the resolver
-// to expand glob entries (cert.*) at lookup time. Seeded at hr-service
-// startup from a code-resident list.
-export const permissionCatalog = pgTable('permission_catalog', {
+// Slice 68: moved to cip_platform.permission_catalog.
+export const permissionCatalog = cipPlatform.table('permission_catalog', {
   service:     text('service').notNull(),
   module:      text('module').notNull(),
   permission:  text('permission').notNull(),

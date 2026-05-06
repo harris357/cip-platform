@@ -93,12 +93,13 @@ authRouter.post('/auth/resolve', async (req: Request, res: Response): Promise<vo
     await client.query('BEGIN')
     await client.query(`SELECT set_config('app.current_tenant_id', $1, true)`, [claims.tenantId])
 
+    // Slice 68: authorization tables moved to cip_platform — single-schema query.
     const permRes = await client.query<ResolvedRow>(
       `SELECT DISTINCT jsonb_array_elements_text(pg.permissions) AS p
-         FROM cip_hr.employee_role_assignments era
-         JOIN cip_hr.role_groups rg       ON rg.role_id = era.role_id
-         JOIN cip_hr.permission_groups pg ON pg.id      = rg.group_id
-        WHERE era.employee_id = $1`,
+         FROM cip_platform.user_role_assignments ura
+         JOIN cip_platform.role_groups rg       ON rg.role_id = ura.role_id
+         JOIN cip_platform.permission_groups pg ON pg.id      = rg.group_id
+        WHERE ura.user_id = $1`,
       [userRow.userId],
     )
     const raw = permRes.rows.map(r => r.p)
@@ -140,9 +141,9 @@ authRouter.post('/auth/resolve', async (req: Request, res: Response): Promise<vo
 
     const roleRes = await client.query<RoleRow>(
       `SELECT r.code
-         FROM cip_hr.employee_role_assignments era
-         JOIN cip_hr.roles r ON r.id = era.role_id
-        WHERE era.employee_id = $1
+         FROM cip_platform.user_role_assignments ura
+         JOIN cip_platform.roles r ON r.id = ura.role_id
+        WHERE ura.user_id = $1
         ORDER BY r.code`,
       [userRow.userId],
     )

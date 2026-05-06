@@ -56,8 +56,10 @@ export async function seedPermissionCatalog(pool: Pool): Promise<void> {
   const client = await pool.connect();
   try {
     for (const e of HR_SERVICE_CATALOG) {
+      // Slice 68: catalog moved to cip_platform.permission_catalog. hr-service
+      // still owns its own permission code list; just writes to the new home.
       await client.query(
-        `INSERT INTO permission_catalog (service, module, permission, description)
+        `INSERT INTO cip_platform.permission_catalog (service, module, permission, description)
          VALUES ($1, $2, $3, $4)
          ON CONFLICT (service, module, permission) DO UPDATE
            SET description = EXCLUDED.description`,

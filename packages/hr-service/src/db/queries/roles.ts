@@ -1,9 +1,11 @@
 import type { PoolClient } from 'pg';
 import { listAllPermissionCodes } from './permission-catalog.js';
 
-// Slice 42C: role-layer query helpers. Roles are CIP business-concept
-// "job functions" composed of module-scoped permission_groups via role_groups.
-// Employees are assigned to roles via employee_role_assignments.
+// Slice 68: authorization tables moved to cip_platform. Raw SQL prefixed
+// with cip_platform.* explicitly. Column rename: employee_role_assignments.
+// employee_id → user_role_assignments.user_id (1:1 from slice 64).
+// permission_groups.is_system_role → permission_groups.is_system.
+// EmployeeSummary now resolves email/full_name via cip_platform.users JOIN.
 
 export interface Role {
   id:            string;
@@ -28,7 +30,7 @@ export interface PermissionGroup {
   label:         string;
   description:   string | null;
   permissions:   string[];      // raw, may include globs
-  isSystemRole:  boolean;
+  isSystemRole:  boolean;       // sourced from is_system column post-slice-68
 }
 
 export interface EmployeeSummary {
@@ -38,28 +40,28 @@ export interface EmployeeSummary {
   fullName:  string;
 }
 
-// ─── Role assignment (replaces 42A's grantRoleByCode/revokeRoleByCode) ───────
+// ─── Role assignment ────────────────────────────────────────────────────────
 
 /**
- * Slice 42C: assign a role to an employee by role code. Idempotent.
+ * Slice 68: assign a role to a user by role code. Idempotent.
  */
 export async function assignRoleToEmployee(
   client: PoolClient,
   tenantId: string,
-  employeeId: string,
+  employeeId: string,   // == userId (slice 64 1:1)
   roleCode: string,
   grantedBy: string | null,
 ): Promise<void> {
   await client.query(
-    `INSERT INTO employee_role_assignments (employee_id, role_id, granted_by)
-     SELECT $1, id, $4 FROM roles WHERE tenant_id = $2 AND code = $3
+    `INSERT INTO cip_platform.user_role_assignments (user_id, role_id, tenant_id, granted_by)
+     SELECT $1, id, $2, $4 FROM cip_platform.roles WHERE tenant_id = $2 AND code = $3
      ON CONFLICT DO NOTHING`,
     [employeeId, tenantId, roleCode, grantedBy],
   );
 }
 
 /**
- * Slice 42C: revoke a role from an employee. Idempotent.
+ * Slice 68: revoke a role from a user. Idempotent.
  */
 export async function removeRoleFromEmployee(
   client: PoolClient,
@@ -68,9 +70,9 @@ export async function removeRoleFromEmployee(
   roleCode: string,
 ): Promise<void> {
   await client.query(
-    `DELETE FROM employee_role_assignments
-       WHERE employee_id = $1
-         AND role_id IN (SELECT id FROM roles WHERE tenant_id = $2 AND code = $3)`,
+    `DELETE FROM cip_platform.user_role_assignments
+       WHERE user_id = $1
+         AND role_id IN (SELECT id FROM cip_platform.roles WHERE tenant_id = $2 AND code = $3)`,
     [employeeId, tenantId, roleCode],
   );
 }
@@ -94,8 +96,8 @@ export async function listRolesByTenant(
             r.keycloak_role  AS "keycloakRole",
             r.is_system_role AS "isSystemRole",
             COUNT(rg.group_id)::text AS "groupCount"
-       FROM roles r
-       LEFT JOIN role_groups rg ON rg.role_id = r.id
+       FROM cip_platform.roles r
+       LEFT JOIN cip_platform.role_groups rg ON rg.role_id = r.id
       WHERE r.tenant_id = $1
       GROUP BY r.id
       ORDER BY r.code`,
@@ -115,7 +117,7 @@ export async function findRoleByCode(
             code, label, description,
             keycloak_role  AS "keycloakRole",
             is_system_role AS "isSystemRole"
-       FROM roles WHERE tenant_id = $1 AND code = $2 LIMIT 1`,
+       FROM cip_platform.roles WHERE tenant_id = $1 AND code = $2 LIMIT 1`,
     [tenantId, code],
   );
   return r.rows[0] ?? null;
@@ -127,16 +129,16 @@ export async function listGroupsForRole(
 ): Promise<PermissionGroup[]> {
   const r = await client.query<PermissionGroup>(
     `SELECT pg.id,
-            pg.tenant_id      AS "tenantId",
+            pg.tenant_id     AS "tenantId",
             pg.service,
             pg.module,
             pg.code,
             pg.label,
             pg.description,
             pg.permissions,
-            pg.is_system_role AS "isSystemRole"
-       FROM role_groups rg
-       JOIN permission_groups pg ON pg.id = rg.group_id
+            pg.is_system     AS "isSystemRole"
+       FROM cip_platform.role_groups rg
+       JOIN cip_platform.permission_groups pg ON pg.id = rg.group_id
       WHERE rg.role_id = $1
       ORDER BY pg.module, pg.code`,
     [roleId],
@@ -148,15 +150,16 @@ export async function listEmployeesForRole(
   client: PoolClient,
   roleId: string,
 ): Promise<EmployeeSummary[]> {
+  // Slice 68: cross-schema join — user_role_assignments → users (email, fullName).
   const r = await client.query<EmployeeSummary>(
-    `SELECT e.id,
-            e.tenant_id AS "tenantId",
-            e.email,
-            e.full_name AS "fullName"
-       FROM employee_role_assignments era
-       JOIN employees e ON e.id = era.employee_id
-      WHERE era.role_id = $1
-      ORDER BY e.email`,
+    `SELECT u.id,
+            u.tenant_id AS "tenantId",
+            u.email,
+            u.full_name AS "fullName"
+       FROM cip_platform.user_role_assignments ura
+       JOIN cip_platform.users u ON u.id = ura.user_id
+      WHERE ura.role_id = $1
+      ORDER BY u.email`,
     [roleId],
   );
   return r.rows;
@@ -175,11 +178,11 @@ export async function listGroupsByTenant(
   }
   const r = await client.query<PermissionGroup>(
     `SELECT id,
-            tenant_id      AS "tenantId",
+            tenant_id  AS "tenantId",
             service, module, code, label, description,
             permissions,
-            is_system_role AS "isSystemRole"
-       FROM permission_groups
+            is_system  AS "isSystemRole"
+       FROM cip_platform.permission_groups
       WHERE ${where.join(' AND ')}
       ORDER BY service, module, code`,
     args,
@@ -195,11 +198,11 @@ export async function findGroupByCode(
 ): Promise<PermissionGroup | null> {
   const r = await client.query<PermissionGroup>(
     `SELECT id,
-            tenant_id      AS "tenantId",
+            tenant_id  AS "tenantId",
             service, module, code, label, description,
             permissions,
-            is_system_role AS "isSystemRole"
-       FROM permission_groups
+            is_system  AS "isSystemRole"
+       FROM cip_platform.permission_groups
       WHERE tenant_id = $1 AND module = $2 AND code = $3
       LIMIT 1`,
     [tenantId, module, code],
@@ -217,8 +220,8 @@ export async function listRolesContainingGroup(
             r.code, r.label, r.description,
             r.keycloak_role  AS "keycloakRole",
             r.is_system_role AS "isSystemRole"
-       FROM role_groups rg
-       JOIN roles r ON r.id = rg.role_id
+       FROM cip_platform.role_groups rg
+       JOIN cip_platform.roles r ON r.id = rg.role_id
       WHERE rg.group_id = $1
       ORDER BY r.code`,
     [groupId],
@@ -257,10 +260,9 @@ export async function expandGroupPermissions(
 // ─── Cross-cutting: who has permission X? ────────────────────────────────────
 
 /**
- * Slice 42C: list employees holding a specific permission. Matches
- * literals AND globs that COVER the queried permission:
- *   `cert.approve` is held by anyone with literal 'cert.approve',
- *   the prefix-glob 'cert.*', or the all-glob '*'.
+ * Slice 68: list users holding a specific permission. Matches literals
+ * AND globs that COVER the queried permission. Identity (email, fullName)
+ * comes from cip_platform.users (cross-schema join).
  */
 export async function listEmployeesWithPermission(
   client: PoolClient,
@@ -271,18 +273,18 @@ export async function listEmployeesWithPermission(
     ? permission.split('.')[0] + '.*'
     : '*';
   const r = await client.query<EmployeeSummary>(
-    `SELECT DISTINCT e.id,
-            e.tenant_id AS "tenantId",
-            e.email,
-            e.full_name AS "fullName"
-       FROM employees e
-       JOIN employee_role_assignments era ON era.employee_id = e.id
-       JOIN role_groups rg                ON rg.role_id      = era.role_id
-       JOIN permission_groups pg          ON pg.id           = rg.group_id
+    `SELECT DISTINCT u.id,
+            u.tenant_id AS "tenantId",
+            u.email,
+            u.full_name AS "fullName"
+       FROM cip_platform.users u
+       JOIN cip_platform.user_role_assignments ura ON ura.user_id  = u.id
+       JOIN cip_platform.role_groups rg            ON rg.role_id   = ura.role_id
+       JOIN cip_platform.permission_groups pg      ON pg.id        = rg.group_id
        JOIN jsonb_array_elements_text(pg.permissions) AS p ON true
-      WHERE e.tenant_id = $1
+      WHERE u.tenant_id = $1
         AND (p = $2 OR p = $3 OR p = '*')
-      ORDER BY e.email`,
+      ORDER BY u.email`,
     [tenantId, permission, prefix],
   );
   return r.rows;
