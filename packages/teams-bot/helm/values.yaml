@@ -47,8 +47,12 @@ env:
   # map in the credentials secret). KEYCLOAK_CLIENT_SECRET (single value)
   # still works as a fallback for the realm named by KEYCLOAK_REALM_FALLBACK.
   KEYCLOAK_REALM_FALLBACK: cip-dev
-  # Slice 36: tenant resolver calls this endpoint with PLATFORM_ADMIN_TOKEN
-  # to map activity.channelData.tenant.id (Entra GUID) → CIP tenant + realm.
+  # Slice 63: tenant resolver now calls platform-core (was hr-service) with
+  # PLATFORM_ADMIN_TOKEN to map activity.channelData.tenant.id (Entra GUID)
+  # → CIP tenant + realm. Same path, same response shape.
+  PLATFORM_CORE_URL: http://platform-core.cip-app.svc.cluster.local:3001
+  # HR_SERVICE_URL still used by other bot calls (sync_employee,
+  # get_employee_permissions) until slice 66 moves those too.
   HR_SERVICE_URL: http://hr-service.cip-app.svc.cluster.local:3000
   # new keys — stubs; override at deploy time or via secret
   MCP_SERVER_URL: http://hr-service.cip-app.svc.cluster.local:4001/mcp

@@ -229,14 +229,14 @@ if [[ -n "$POSTGRES_POD" && -n "${PG_USER_PASSWORD:-}" ]]; then
   kubectl exec -i -n cip-infra "$POSTGRES_POD" -- \
     env PGPASSWORD="$PG_USER_PASSWORD" psql -U cipuser -d cip_hr -v ON_ERROR_STOP=1 <<SQL 2>&1 \
       | sed 's/^/      /' || true
-UPDATE tenant_identity_providers
+UPDATE cip_platform.tenant_identity_providers
    SET secret_ref = '${TENANT_KC_SECRET_NAME}', updated_at = NOW()
  WHERE tenant_id = '${TENANT_ID}'::uuid
    AND provider_type = 'aad_oidc';
 SQL
 else
   echo "      WARNING: skipping secret_ref UPDATE (postgres pod or PG_USER_PASSWORD missing)"
-  echo "      Manually: UPDATE tenant_identity_providers SET secret_ref='${TENANT_KC_SECRET_NAME}'"
+  echo "      Manually: UPDATE cip_platform.tenant_identity_providers SET secret_ref='${TENANT_KC_SECRET_NAME}'"
   echo "                WHERE tenant_id='${TENANT_ID}' AND provider_type='aad_oidc';"
 fi
 
@@ -552,8 +552,8 @@ Next steps to make this tenant usable:
        -n cip-app --set env.KEYCLOAK_REALM=$REALM \\
        --set envFrom[0].secretRef.name=teams-bot-credentials-$REALM
 
-3. Persist the LiteLLM virtual key into tenant_settings:
-     UPDATE tenant_settings SET litellm_virtual_key='${LITELLM_VKEY:-<key>}'
+3. Persist the LiteLLM virtual key into cip_platform.tenant_settings:
+     UPDATE cip_platform.tenant_settings SET litellm_virtual_key='${LITELLM_VKEY:-<key>}'
        WHERE tenant_id='$TENANT_ID';
 
 4. To create the first admin user in the realm, use KC admin console

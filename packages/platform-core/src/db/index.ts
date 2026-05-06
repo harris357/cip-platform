@@ -1,4 +1,4 @@
-import { drizzle } from 'drizzle-orm/node-postgres'
+import { drizzle, type NodePgDatabase } from 'drizzle-orm/node-postgres'
 import { Pool } from 'pg'
 import * as schema from './schema.js'
 
@@ -7,7 +7,9 @@ import * as schema from './schema.js'
 // consumer. Initialization is lazy so tests / scripts that don't
 // touch the DB don't require DATABASE_URL_PLATFORM.
 
-export type Db = ReturnType<typeof drizzle<typeof schema>>
+// Use the bare NodePgDatabase type so that both top-level db handles
+// AND inner transaction handles satisfy `Db` in query function signatures.
+export type Db = NodePgDatabase<typeof schema>
 
 let _pool: Pool | null = null
 let _db: Db | null = null

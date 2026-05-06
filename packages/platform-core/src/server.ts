@@ -1,6 +1,7 @@
 import express, { type Express } from 'express';
 import { tenantAuthMiddleware } from '@cip/shared/src/utils/tenant-context.js';
 import { healthRouter } from './routes/health.js';
+import { adminTenantsRouter } from './routes/admin-tenants.js';
 import { tenantRouter } from './routes/tenant.js';
 
 export function createApp(): Express {
@@ -8,6 +9,12 @@ export function createApp(): Express {
   app.use(express.json());
 
   app.use(healthRouter);
+
+  // Slice 63: admin tenant endpoints (ported from hr-service). Have their
+  // own X-Platform-Admin-Token middleware. Mount BEFORE tenantAuthMiddleware
+  // so they bypass JWT auth (used by operators + the bot's tenant-resolver
+  // which has no JWT yet at the moment it calls /admin/tenants/by-aad/...).
+  app.use(adminTenantsRouter);
 
   app.use(tenantAuthMiddleware);
   app.use(tenantRouter);

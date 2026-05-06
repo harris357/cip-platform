@@ -18,7 +18,7 @@ export async function listRoutingRulesByService(
 ): Promise<RoutingRule[]> {
   const r = await client.query<RoutingRule>(
     `SELECT service, purpose, alias, notes
-       FROM routing_rules
+       FROM cip_platform.routing_rules
       WHERE service = $1
       ORDER BY purpose`,
     [service],
@@ -38,7 +38,7 @@ export async function getRoutingRule(
   purpose: string,
 ): Promise<string | null> {
   const r = await client.query<{ alias: string }>(
-    `SELECT alias FROM routing_rules WHERE service = $1 AND purpose = $2`,
+    `SELECT alias FROM cip_platform.routing_rules WHERE service = $1 AND purpose = $2`,
     [service, purpose],
   );
   return r.rows[0]?.alias ?? null;
@@ -54,7 +54,7 @@ export async function getTenantRoutingOverrides(
 ): Promise<Record<string, string>> {
   const r = await client.query<{ overrides: Record<string, string> }>(
     `SELECT COALESCE(routing_overrides, '{}'::jsonb) AS overrides
-       FROM tenant_settings WHERE tenant_id = $1`,
+       FROM cip_platform.tenant_settings WHERE tenant_id = $1`,
     [tenantId],
   );
   return r.rows[0]?.overrides ?? {};

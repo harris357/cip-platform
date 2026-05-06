@@ -59,12 +59,14 @@ export async function resolveTenantContext(aadTenantId: string): Promise<Resolve
   const cached = cache.get(aadTenantId);
   if (cached && Date.now() < cached.expiresAt) return cached.ctx;
 
-  const hrUrl      = process.env['HR_SERVICE_URL']       ?? 'http://hr-service.cip-app.svc.cluster.local:3000';
-  const adminToken = process.env['PLATFORM_ADMIN_TOKEN'] ?? '';
+  // Slice 63: admin tenant routes moved from hr-service to platform-core.
+  // Same path, same X-Platform-Admin-Token guard, same response shape.
+  const platformUrl = process.env['PLATFORM_CORE_URL']    ?? 'http://platform-core.cip-app.svc.cluster.local:3001';
+  const adminToken  = process.env['PLATFORM_ADMIN_TOKEN'] ?? '';
   if (!adminToken) return { error: 'platform_admin_token_unset' };
 
   const resp = await fetch(
-    `${hrUrl}/admin/tenants/by-aad/${encodeURIComponent(aadTenantId)}`,
+    `${platformUrl}/admin/tenants/by-aad/${encodeURIComponent(aadTenantId)}`,
     { headers: { 'X-Platform-Admin-Token': adminToken } },
   );
   if (resp.status === 404) return { error: 'unknown_tenant' };

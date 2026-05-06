@@ -1,7 +1,6 @@
 import express, { type Express } from 'express';
 import { tenantAuthMiddleware } from '@cip/shared/src/utils/tenant-context.js';
 import { healthRouter } from './routes/health.js';
-import { adminTenantsRouter } from './routes/admin-tenants.js';
 import { adminEmployeesRouter } from './routes/admin-employees.js';
 import { adminRoutingRouter } from './routes/admin-routing.js';
 import { adminToolRetrievalRouter } from './routes/admin-tool-retrieval.js';
@@ -16,13 +15,12 @@ export function createApp(): Express {
   // Health is unauthenticated
   app.use(healthRouter);
 
-  // Admin tenants endpoints are platform-scoped (no tenant in URL); they
-  // have their own X-Platform-Admin-Token middleware. Mount BEFORE the
-  // tenant JWT middleware so they bypass it.
-  app.use(adminTenantsRouter);
+  // Slice 63: adminTenantsRouter moved to platform-core. The bot's tenant
+  // resolver and any operator scripts now hit platform-core directly.
 
   // Slice 39A: routing rules read by the bot's alias-resolver. Same
   // platform-admin token, mounted before the tenant JWT middleware.
+  // (Slice 63: queries now do cross-schema reads against cip_platform.routing_rules.)
   app.use(adminRoutingRouter);
 
   // Slice 58D-A: person_match_resolutions lookup for the bot's

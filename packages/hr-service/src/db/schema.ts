@@ -1,7 +1,12 @@
 import {
-  pgTable, uuid, text, boolean, integer, numeric, doublePrecision,
+  pgSchema, pgTable, uuid, text, boolean, integer, numeric, doublePrecision,
   timestamp, date, jsonb, primaryKey,
 } from 'drizzle-orm/pg-core'
+
+// Slice 63: tenant-related tables now live in cip_platform schema. hr-service
+// reads them via cross-schema queries (same Postgres instance for now;
+// when DBs split, these become HTTP/MCP API calls to platform-core).
+const cipPlatform = pgSchema('cip_platform')
 
 // ── Lookup tables (global, no tenant_id) ──────────────────────────────────
 
@@ -43,11 +48,17 @@ export const workflowStepNames = pgTable('workflow_step_names', {
 
 // ── Tenant-scoped tables ───────────────────────────────────────────────────
 
-export const tenantSettings = pgTable('tenant_settings', {
+// Slice 63: tenantSettings moved to cip_platform.tenant_settings. Drizzle
+// generates `cip_platform.tenant_settings` in queries automatically via the
+// schema-aware table object. Existing consumers (e.g., get-tenant-channel-config.ts)
+// keep working unchanged. RLS still applies — set app.current_tenant_id via
+// withTenantRLS before reading.
+export const tenantSettings = cipPlatform.table('tenant_settings', {
   id:                uuid('id').primaryKey().defaultRandom(),
   tenantId:          uuid('tenant_id').notNull().unique(),
   litellmVirtualKey: text('litellm_virtual_key').notNull().default(''),
   channelConfig:     jsonb('channel_config').notNull().default({}),
+  routingOverrides:  jsonb('routing_overrides').notNull().default({}),
   updatedAt:         timestamp('updated_at', { withTimezone: true }).defaultNow(),
 })
 

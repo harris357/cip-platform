@@ -57,14 +57,14 @@ if [[ -n "${TENANT_ID:-}" ]]; then
   kubectl exec -i -n cip-infra "$POSTGRES_POD" -- \
     env PGPASSWORD="$PG_USER_PASSWORD" psql -U cipuser -d cip_hr -v ON_ERROR_STOP=1 <<SQL 2>&1 \
       | sed 's/^/      /' || true
-INSERT INTO tenants (id, display_name, status, tier, admin_email, realm)
+INSERT INTO cip_platform.tenants (id, display_name, status, tier, admin_email, realm)
 VALUES (
   '00000000-0000-0000-0000-000000000001',
   'CIP Dev', 'active', 'standard', 'admin@cip-dev.local', 'cip-dev'
 )
 ON CONFLICT (id) DO UPDATE SET realm = EXCLUDED.realm, updated_at = NOW();
 
-INSERT INTO tenant_identity_providers (tenant_id, provider_type, alias, enabled, config)
+INSERT INTO cip_platform.tenant_identity_providers (tenant_id, provider_type, alias, enabled, config)
 VALUES (
   '00000000-0000-0000-0000-000000000001',
   'aad_oidc', 'aad', true,
