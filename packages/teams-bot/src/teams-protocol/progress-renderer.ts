@@ -1,11 +1,18 @@
 // Slice 58B-2b — bot-progress NATS subscriber + Teams proactive renderer.
+// (Updated post-slice-61: in-place status updates instead of stacked messages.)
 //
 // When the bot kicks off a doc-service upload, doc-service activities
 // publish progress events to `cip.bot.progress.{tenantId}.{conversationId}`.
-// This module subscribes per-conversation, transforms each event into a
-// fresh Teams message via `adapter.continueConversation(...)`, and tears
-// the subscription down after a TTL (so we don't leak NATS subscriptions
-// for conversations that have gone quiet).
+// This module subscribes per-conversation, sends ONE proactive message
+// per document on the first event, then UPDATES that same message in
+// place on each subsequent event (mirrors modern LLM streaming UX —
+// one rotating status line, not a stack of individual messages).
+//
+// Per-document state: we track the proactive activity id we sent for
+// each documentId. First event → sendActivity + capture id. Later
+// events → updateActivity(id, …). If the update fails (message too
+// old, Teams 1-day update window, etc.) we fall back to sendActivity
+// and rebind the id.
 //
 // Hard rules:
 //   - Best-effort. Subscribe failures, parse failures, and proactive-send
@@ -52,11 +59,15 @@ async function getAdapter(): Promise<Adapter> {
 }
 
 interface ActiveSubscription {
-  conversationRef: Partial<ConversationReference>;
-  unsubscribe:     () => void;
-  ttlTimer:        ReturnType<typeof setTimeout>;
-  documentIds:     Set<string>;
-  loop?:           Promise<void>;
+  conversationRef:    Partial<ConversationReference>;
+  unsubscribe:        () => void;
+  ttlTimer:           ReturnType<typeof setTimeout>;
+  documentIds:        Set<string>;
+  /** Per-document Teams activity id of the status message we're updating
+   *  in place. First event for a doc populates this; later events trigger
+   *  updateActivity with the captured id. */
+  statusActivityIds:  Map<string, string>;
+  loop?:              Promise<void>;
 }
 
 const ACTIVE = new Map<string /* tenantId|conversationId */, ActiveSubscription>();
@@ -122,21 +133,50 @@ export function formatProgressEvent(ev: BotProgressEvent): string | null {
   return null;
 }
 
-async function sendProactive(
-  ref:  Partial<ConversationReference>,
-  text: string,
-): Promise<void> {
+/**
+ * Send a new status line OR update an existing one in place.
+ *
+ * Returns the resulting Teams activity id. Caller stores it per
+ * documentId so the next event for that document updates this same
+ * message instead of stacking a new one.
+ *
+ * Update-failure fallback: if updateActivity throws (e.g. the message
+ * is older than Teams' update window, or the channel doesn't support
+ * updates), we send a fresh message and return its id.
+ */
+async function sendOrUpdateProactive(
+  ref:        Partial<ConversationReference>,
+  text:       string,
+  existingId: string | undefined,
+): Promise<string | undefined> {
   const botAppId = process.env['BOT_APP_ID'] ?? '';
   const ad = await getAdapter();
+  let resultId: string | undefined;
   await ad.continueConversation(
     botAppId,
     ref as ConversationReference,
     async (ctx: TurnContext) => {
-      // Activity is a thin discriminated-union type; constructing one
-      // via the plain shape (matches server.ts /proactive route).
-      await ctx.sendActivity({ type: 'message', text } as unknown as Activity);
+      if (existingId) {
+        try {
+          await ctx.updateActivity({
+            id:   existingId,
+            type: 'message',
+            text,
+          } as unknown as Activity);
+          resultId = existingId;
+          return;
+        } catch (err) {
+          console.warn(
+            `[progress-renderer] updateActivity failed (id=${existingId}): ${err instanceof Error ? err.message : String(err)} — sending new`,
+          );
+          // fall through to send a fresh message
+        }
+      }
+      const sent = await ctx.sendActivity({ type: 'message', text } as unknown as Activity);
+      resultId = (sent as { id?: string } | undefined)?.id;
     },
   );
+  return resultId;
 }
 
 async function readProgressTtlMs(tenantId: string): Promise<number> {
@@ -202,9 +242,10 @@ export async function startProgressRenderer(
 
   const sub: ActiveSubscription = {
     conversationRef,
-    unsubscribe:  () => natsSub.unsubscribe(),
+    unsubscribe:       () => natsSub.unsubscribe(),
     ttlTimer,
-    documentIds:  new Set([documentId]),
+    documentIds:       new Set([documentId]),
+    statusActivityIds: new Map(),
   };
   ACTIVE.set(k, sub);
 
@@ -219,7 +260,11 @@ export async function startProgressRenderer(
           if (!sub.documentIds.has(ev.documentId)) continue;
           const text = formatProgressEvent(ev);
           if (!text) continue;
-          await sendProactive(sub.conversationRef, text);
+          const existingId = sub.statusActivityIds.get(ev.documentId);
+          const newId = await sendOrUpdateProactive(sub.conversationRef, text, existingId);
+          if (newId) {
+            sub.statusActivityIds.set(ev.documentId, newId);
+          }
         } catch (err) {
           console.warn(`[progress-renderer] event handle failed: ${err instanceof Error ? err.message : String(err)}`);
         }
