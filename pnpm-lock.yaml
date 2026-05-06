@@ -21,6 +21,19 @@ importers:
         specifier: ^5.4.0
         version: 5.9.3
 
+  packages/auth:
+    dependencies:
+      jose:
+        specifier: ^6.2.3
+        version: 6.2.3
+    devDependencies:
+      '@types/node':
+        specifier: ^22.0.0
+        version: 22.19.17
+      typescript:
+        specifier: ^5.4.0
+        version: 5.9.3
+
   packages/document-service:
     dependencies:
       '@aws-sdk/client-s3':
@@ -29,6 +42,9 @@ importers:
       '@aws-sdk/s3-request-presigner':
         specifier: ^3.600.0
         version: 3.1035.0
+      '@cip/auth':
+        specifier: workspace:*
+        version: link:../auth
       '@cip/shared':
         specifier: workspace:*
         version: link:../shared
@@ -200,6 +216,9 @@ importers:
       '@aws-sdk/client-s3':
         specifier: ^3.600.0
         version: 3.1035.0
+      '@cip/auth':
+        specifier: workspace:*
+        version: link:../auth
       '@cip/shared':
         specifier: workspace:*
         version: link:../shared
@@ -3423,8 +3442,8 @@ packages:
   jose@5.10.0:
     resolution: {integrity: sha512-s+3Al/p9g32Iq+oqXxkW//7jk2Vig6FF1CFqzVXoTUXt2qz89YWbL+OwS17NFYEvxC35n0FKeGO2LGYSxeM2Gg==}
 
-  jose@6.2.2:
-    resolution: {integrity: sha512-d7kPDd34KO/YnzaDOlikGpOurfF0ByC2sEV4cANCtdqLlTfBlw2p14O/5d/zv40gJPbIQxfES3nSx1/oYNyuZQ==}
+  jose@6.2.3:
+    resolution: {integrity: sha512-YYVDInQKFJfR/xa3ojUTl8c2KoTwiL1R5Wg9YCydwH0x0B9grbzlg5HC7mMjCtUJjbQ/YnGEZIhI5tCgfTb4Hw==}
 
   js-tiktoken@1.0.21:
     resolution: {integrity: sha512-biOj/6M5qdgx5TKjDnFT1ymSpM5tbd3ylwDtrQvFQSu0Z7bBYko2dF+W/aUkXUPuk6IVpRxk/3Q2sHOzGlS36g==}
@@ -5689,7 +5708,7 @@ snapshots:
       express: 5.2.1
       express-rate-limit: 8.4.0(express@5.2.1)
       hono: 4.12.14
-      jose: 6.2.2
+      jose: 6.2.3
       json-schema-typed: 8.0.2
       pkce-challenge: 5.0.1
       raw-body: 3.0.2
@@ -7869,7 +7888,7 @@ snapshots:
 
   jose@5.10.0: {}
 
-  jose@6.2.2: {}
+  jose@6.2.3: {}
 
   js-tiktoken@1.0.21:
     dependencies:
@@ -7927,7 +7946,7 @@ snapshots:
     dependencies:
       '@types/jsonwebtoken': 9.0.6
       debug: 4.4.3
-      jose: 6.2.2
+      jose: 6.2.3
       limiter: 1.1.5
       lru-memoizer: 3.0.0
     transitivePeerDependencies:
@@ -8166,7 +8185,7 @@ snapshots:
 
   openid-client@6.8.4:
     dependencies:
-      jose: 6.2.2
+      jose: 6.2.3
       oauth4webapi: 3.8.6
 
   option@0.2.4: {}

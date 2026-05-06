@@ -1,15 +1,14 @@
-// Slice 58A — JWT extraction + permission check stub.
-//
-// extractAuthContext mirrors hr-service exactly: parses Keycloak JWT,
-// returns {tenantId, employeeId, roles}.  Pulled into doc-service as
-// a copy (not imported from hr-service per slice rule "no dependency
-// on hr-service code").  Future workspace cleanup can promote this to
-// @cip/shared.
-//
-// assertPermission is a STUB.  58A introduces no MCP tools, so the
-// stub is never invoked at runtime.  58B+ replaces it with the real
-// delegation pattern (HTTP call to hr-service's permission check
-// endpoint, JWT-forwarded).
+// Slice 67: doc-service uses @cip/auth. The previously stubbed
+// `assertPermission` now goes via @cip/auth → platform-core /auth/resolve
+// (cached 5 min). Identity extraction stays a thin local helper for the
+// edge cases where a tool only needs tenant/sub/roles without a network
+// hit (e.g., debug logging).
+
+import {
+  resolveAuthContext,
+  assertPermission as authAssertPermission,
+  PermissionDeniedError as AuthPermissionDeniedError,
+} from '@cip/auth'
 
 export interface DocServiceAuthContext {
   tenantId:    string
@@ -42,23 +41,21 @@ export function extractAuthContext(authInfo: { token: string } | undefined): Doc
   }
 }
 
-export class PermissionDeniedError extends Error {
-  readonly code = 'permission_denied'
-  constructor(public readonly required: string) {
-    super(`Permission denied: missing '${required}'`)
-    this.name = 'PermissionDeniedError'
-  }
-}
+// Re-export so callers can `import { PermissionDeniedError } from '../mcp-server/auth.js'`
+// without changing import paths post-67.
+export { AuthPermissionDeniedError as PermissionDeniedError }
 
 /**
- * Stub — replaced in 58B with HTTP delegation to hr-service.  Per
- * Non-Negotiable #7 stubs throw "not implemented" rather than return
- * undefined as any; 58A registers no MCP tools so this is never
- * invoked at runtime.
+ * Slice 67: real permission check via @cip/auth. resolveAuthContext does
+ * local JWT decode + cached remote permission resolve via platform-core.
+ * Throws PermissionDeniedError if the required code isn't in the resolved
+ * permission list.
  */
 export async function assertPermission(
-  _authInfo: { token: string } | undefined,
+  authInfo: { token: string } | undefined,
   required: string,
 ): Promise<void> {
-  throw new Error(`assertPermission not implemented (slice 58A — required='${required}')`)
+  if (!authInfo?.token) throw new Error('Missing bearer token in MCP auth context')
+  const ctx = await resolveAuthContext(authInfo.token)
+  authAssertPermission(ctx, required)
 }

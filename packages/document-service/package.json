@@ -12,6 +12,7 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@cip/auth": "workspace:*",
     "@cip/shared": "workspace:*",
     "drizzle-orm": "^0.41.0",
     "@temporalio/worker": "^1.17.0",
