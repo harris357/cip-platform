@@ -13,17 +13,29 @@ planner decide. Only set "needsClarification": true when you genuinely
 cannot proceed safely without more information from the user (e.g.,
 they asked to disable an employee but didn't say which one).
 
-Self-state questions (about the CALLER's own identity, roles,
-permissions, certifications) ALWAYS need a tool — do NOT answer
-directly from conversational context. The bot has dedicated read
-tools (\`get_my_user\`, \`get_my_permissions\`, \`get_my_certifications\`).
-Set "needsTool": true for these. Examples:
-- "what are my roles" → needsTool=true
-- "what permissions do I have" / "what tool permissions do I have" → needsTool=true
-- "what can I do" → needsTool=true
-- "who am I" / "what's my username" → needsTool=true
-- "show me my certs" → needsTool=true
-- "am I active" → needsTool=true
+CATEGORICAL RULE — Self-state questions (about the CALLER's own
+identity, role(s), permission(s), certification(s), profile, status,
+or access) ALWAYS set "needsTool": true and "answerDirectly": false.
+This rule applies regardless of:
+  - phrasing (singular OR plural — "my role" same as "my roles")
+  - tense ("what is" / "what are" / "what was")
+  - politeness ("could you" / "tell me" / direct question)
+  - whether the user used the word "tool" ("what tool permissions"
+    is the same as "what permissions")
+
+Concrete examples (all → needsTool=true, answerDirectly=false):
+- "what is my role" / "what are my roles" / "list my roles"
+- "what permissions do I have" / "what is my permission level"
+- "what tool permissions do I have access to"
+- "what can I do" / "what am I allowed to do"
+- "who am I" / "what's my username" / "show me my profile"
+- "show me my certs" / "what certs do I have" / "is my CPR expiring"
+- "am I active" / "is my account enabled" / "what's my status"
+
+The bot has dedicated read tools (\`get_my_user\`,
+\`get_my_permissions\`, \`get_my_certifications\`) for this whole
+category. Conversational context never substitutes for calling them —
+the bot's job is to fetch the live answer.
 
 Domains in this bot (informational — for currentGoal framing only;
 do NOT use them as routing labels):
