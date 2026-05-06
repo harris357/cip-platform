@@ -29,10 +29,22 @@ function attachBearerAuth(req: Request, _res: Response, next: NextFunction): voi
   next()
 }
 
-function createRegisteredServer(): McpServer {
+// Slice 69: per-module MCP endpoints. /mcp split into /mcp/ingest +
+// /mcp/routing. Each endpoint registers ONLY that module's tools.
+interface ModuleSpec {
+  path:     string
+  register: (s: McpServer) => void
+}
+
+const MODULES: ModuleSpec[] = [
+  { path: '/mcp/ingest',  register: registerIngestTools  },
+  { path: '/mcp/routing', register: registerRoutingTools },
+  // Future: /mcp/eval when slice 60's eval module ships.
+]
+
+function createModuleServer(register: (s: McpServer) => void): McpServer {
   const s = new McpServer({ name: 'document-service', version: '1.0.0' })
-  registerIngestTools(s)
-  registerRoutingTools(s)
+  register(s)
   return s
 }
 
@@ -63,21 +75,20 @@ export async function startServer(): Promise<void> {
     res.status(allOk ? 200 : 503).json({ status: allOk ? 'ok' : 'degraded', checks })
   })
 
-  // Stateless MCP — each POST gets its own server + transport so the
-  // Authorization header context is per-request. Mirrors hr-service.
-  app.post('/mcp', attachBearerAuth, async (req: Request, res: Response) => {
-    const s = createRegisteredServer()
-    const transport = new StreamableHTTPServerTransport({})
-    // SDK transport.onclose typed as required even though it's not — the
-    // cast keeps exactOptionalPropertyTypes-compliant call sites happy.
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await s.connect(transport as any)
-    await transport.handleRequest(req, res, req.body)
-  })
+  // Slice 69: per-module endpoints. Legacy /mcp removed (hard cut).
+  for (const mod of MODULES) {
+    app.post(mod.path, attachBearerAuth, async (req: Request, res: Response) => {
+      const s = createModuleServer(mod.register)
+      const transport = new StreamableHTTPServerTransport({})
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await s.connect(transport as any)
+      await transport.handleRequest(req, res, req.body)
+    })
+  }
 
   return new Promise((resolve) => {
     app.listen(PORT, () => {
-      console.log(`[server] document-service listening on :${PORT} (MCP at POST /mcp)`)
+      console.log(`[server] document-service listening on :${PORT} (MCP modules: ${MODULES.map(m => m.path).join(', ')})`)
       resolve()
     })
   })

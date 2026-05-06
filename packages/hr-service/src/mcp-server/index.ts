@@ -13,7 +13,6 @@ import { seedToolEmbeddings } from '../services/tool-embeddings-seed.js'
 
 // Pull the Bearer token off the HTTP request and attach it as req.auth so that
 // the MCP transport surfaces it to each tool handler as authInfo.token.
-// SDK signature: handleRequest(req: IncomingMessage & { auth?: AuthInfo }, ...)
 function attachBearerAuth(req: Request, _res: Response, next: NextFunction): void {
   const header = req.headers.authorization ?? ''
   if (header.startsWith('Bearer ')) {
@@ -25,7 +24,32 @@ function attachBearerAuth(req: Request, _res: Response, next: NextFunction): voi
   next()
 }
 
-function createRegisteredServer(): McpServer {
+// Slice 69: per-module MCP endpoints. Each path registers ONLY its module's
+// tools. Foundation for multi-agent (Arc 2) — each module is now an
+// addressable agent boundary. Legacy /mcp removed (hard cut).
+interface ModuleSpec {
+  path:     string
+  register: (s: McpServer) => void
+}
+
+const MODULES: ModuleSpec[] = [
+  { path: '/mcp/cert',       register: registerCertificationTools },
+  { path: '/mcp/employee',   register: registerEmployeeTools     },
+  { path: '/mcp/compliance', register: registerComplianceTools   },
+  { path: '/mcp/people',     register: registerPeopleTools       },
+  { path: '/mcp/settings',   register: registerSettingsTools     },
+  { path: '/mcp/admin',      register: registerAdminTools        },
+]
+
+function createModuleServer(register: (s: McpServer) => void): McpServer {
+  const s = new McpServer({ name: 'hr-service', version: '1.0.0' })
+  register(s)
+  return s
+}
+
+// Combined server kept ONLY for the tool-embeddings seed (it scans every tool
+// once at startup). Not exposed over HTTP.
+function createCombinedServerForSeed(): McpServer {
   const s = new McpServer({ name: 'hr-service', version: '1.0.0' })
   registerAdminTools(s)
   registerCertificationTools(s)
@@ -36,23 +60,15 @@ function createRegisteredServer(): McpServer {
   return s
 }
 
-export const server = createRegisteredServer()
+export const server = createCombinedServerForSeed()
 
 export async function startMcpServer(): Promise<void> {
-  // Slice 42A: seed the permission_catalog from the code-resident list before
-  // the proxy starts taking traffic. Idempotent ON CONFLICT — safe on every
-  // pod start. Resolver depends on this for glob expansion.
   try {
     await seedPermissionCatalog(getPool())
   } catch (err) {
     console.warn(`[catalog] seed failed: ${err instanceof Error ? err.message : String(err)}`)
-    // Non-fatal: glob expansion will skip unknown catalog entries; literals still work.
   }
 
-  // Slice 44: seed tool_embeddings (idempotent — only re-embeds tools whose
-  // description_hash changed since last pod start). Non-fatal: discoverTools
-  // falls back to the full permission-filtered list if the table is empty
-  // or this seed fails partway through.
   try {
     await seedToolEmbeddings(server, getPool())
   } catch (err) {
@@ -62,23 +78,21 @@ export async function startMcpServer(): Promise<void> {
   const app = express()
   app.use(express.json())
 
-  // Stateless: each POST gets its own McpServer + transport instance so
-  // Authorization header auth context is isolated per-request.
-  app.post('/mcp', attachBearerAuth, async (req: Request, res: Response) => {
-    const s = createRegisteredServer()
-    // sessionIdGenerator omitted → stateless mode (no session tracking)
-    const transport = new StreamableHTTPServerTransport({})
-    // Transport.onclose is required by the interface but typed as optional in the SDK
-    // under exactOptionalPropertyTypes — safe to cast at runtime.
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    await s.connect(transport as any)
-    await transport.handleRequest(req, res, req.body)
-  })
+  for (const mod of MODULES) {
+    app.post(mod.path, attachBearerAuth, async (req: Request, res: Response) => {
+      const s = createModuleServer(mod.register)
+      const transport = new StreamableHTTPServerTransport({})
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      await s.connect(transport as any)
+      await transport.handleRequest(req, res, req.body)
+    })
+  }
 
   const port = parseInt(process.env['MCP_PORT'] ?? '3001', 10)
   await new Promise<void>((resolve) => {
     app.listen(port, () => {
       console.log(`HR Service MCP Server listening on port ${port}`)
+      console.log(`  Modules: ${MODULES.map(m => m.path).join(', ')}`)
       resolve()
     })
   })

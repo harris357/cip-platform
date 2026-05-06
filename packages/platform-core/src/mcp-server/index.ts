@@ -2,9 +2,12 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js'
 import express, { type Request, type Response, type NextFunction, type Express } from 'express'
 import { registerSyncUser } from './tools/sync-user.js'
+import { registerGetMyUser } from './tools/get-my-user.js'
+import { registerGetMyPermissions } from './tools/get-my-permissions.js'
 
-// Slice 66: platform-core's first MCP server. Initially exposes only
-// sync_user. Slice 69 expands with user/role/tenant tools.
+// Slice 66: platform-core's first MCP server.
+// Slice 69: expanded with get_my_user + get_my_permissions (the latter
+// replaces hr-service's get_employee_permissions).
 
 function attachBearerAuth(req: Request, _res: Response, next: NextFunction): void {
   const header = req.headers.authorization ?? ''
@@ -20,6 +23,8 @@ function attachBearerAuth(req: Request, _res: Response, next: NextFunction): voi
 function createRegisteredServer(): McpServer {
   const s = new McpServer({ name: 'platform-core', version: '1.0.0' })
   registerSyncUser(s)
+  registerGetMyUser(s)
+  registerGetMyPermissions(s)
   return s
 }
 

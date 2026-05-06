@@ -25,22 +25,20 @@ export async function resolveAuthContext(
   const aadOid: string =
     ((context.activity.from as unknown) as Record<string, unknown>)['aadObjectId'] as string ?? '';
 
-  // Slice 66: two-call provisioning pattern.
-  //   1. platform-core sync_user — always (creates/updates User + identity links)
-  //   2. hr-service ensure_employee — may auto-create Employee per tenant flag
-  //   3. hr-service get_employee_permissions — for the permission map
-  // Steps 2 + 3 stay together for now since most bot turns invoke an HR tool.
-  // Future optimisation: move ensure_employee behind a per-turn check that
-  // skips it when no HR tool is in the candidate set.
+  // Slice 69: three-call provisioning pattern across module-scoped endpoints.
+  //   1. platform-core    sync_user           — User upsert + identity links
+  //   2. hr.employee      ensure_employee     — Employee row check / auto-create
+  //   3. platform-core    get_my_permissions  — permission resolution (was hr-service)
+  // platform-core now owns identity AND authorization end-to-end.
   const tConnect0 = Date.now();
-  const platformClient = await getMcpClientFor('platform-core', keycloakJwt);
-  const hrClient       = await getMcpClientFor('hr-service',    keycloakJwt);
+  const platformClient   = await getMcpClientFor('platform-core', keycloakJwt);
+  const hrEmployeeClient = await getMcpClientFor('hr.employee',   keycloakJwt);
   const tConnect = Date.now();
 
   await platformClient.callTool({ name: 'sync_user', arguments: {} });
   const tSyncUser = Date.now();
 
-  const ensureResult = await hrClient.callTool({ name: 'ensure_employee', arguments: {} });
+  const ensureResult = await hrEmployeeClient.callTool({ name: 'ensure_employee', arguments: {} });
   const tEnsure = Date.now();
 
   // ensure_employee may return user_not_found / not_provisioned_in_hr; in
@@ -54,7 +52,7 @@ export async function resolveAuthContext(
     console.log(`[auth-resolve] ensure_employee returned ${ensureResponse.error} (continuing)`);
   }
 
-  const permsResult = await hrClient.callTool({ name: 'get_employee_permissions', arguments: {} });
+  const permsResult = await platformClient.callTool({ name: 'get_my_permissions', arguments: {} });
   const tPerms = Date.now();
   console.log(
     `[auth-resolve] tenantId=${tenantCtx.cipTenantId} connect=${tConnect - tConnect0}ms ` +

@@ -24,7 +24,13 @@
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 
-export type ServerName = 'hr-service' | 'document-service' | 'platform-core';
+// Slice 69: module-scoped server names. Each module is now its own MCP
+// endpoint (foundation for Arc 2 multi-agent). Format: <service>.<module>.
+// platform-core stays unscoped — it's a single endpoint.
+export type ServerName =
+  | 'platform-core'
+  | 'hr.cert' | 'hr.employee' | 'hr.compliance' | 'hr.people' | 'hr.settings' | 'hr.admin'
+  | 'documents.ingest' | 'documents.routing';
 
 export interface ServerEntry {
   name: ServerName;
@@ -32,27 +38,26 @@ export interface ServerEntry {
 }
 
 function resolveServers(): ServerEntry[] {
-  // hr-service: prefer the explicit slot, fall back to the legacy
-  // MCP_SERVER_URL var (still set on every pod), then to the cluster default.
-  const hrUrl =
-    process.env['HR_SERVICE_MCP_URL'] ??
-    process.env['MCP_SERVER_URL'] ??
-    'http://hr-service.cip-app.svc.cluster.local:4001/mcp';
+  // Slice 69: each service has a base URL; per-module endpoints are sub-paths.
+  // Per-module env overrides (HR_CERT_MCP_URL, etc.) take precedence; otherwise
+  // we derive `${BASE}/mcp/<module>` from the base URL.
+  const hrBase   = process.env['HR_SERVICE_BASE_URL']       ?? 'http://hr-service.cip-app.svc.cluster.local:4001';
+  const docBase  = process.env['DOCUMENT_SERVICE_BASE_URL'] ?? 'http://document-service.cip-app.svc.cluster.local:3000';
+  const platform = process.env['PLATFORM_CORE_MCP_URL']     ?? 'http://platform-core.cip-app.svc.cluster.local:3001/mcp/platform';
 
-  const docUrl =
-    process.env['DOCUMENT_SERVICE_MCP_URL'] ??
-    'http://document-service.cip-app.svc.cluster.local:3000/mcp';
-
-  // Slice 66: platform-core MCP at /mcp/platform on its HTTP server (port 3001).
-  // Initially exposes sync_user only; slice 69 expands.
-  const platformUrl =
-    process.env['PLATFORM_CORE_MCP_URL'] ??
-    'http://platform-core.cip-app.svc.cluster.local:3001/mcp/platform';
+  const hrUrl    = (m: string): string => process.env[`HR_${m.toUpperCase()}_MCP_URL`]   ?? `${hrBase}/mcp/${m}`;
+  const docUrl   = (m: string): string => process.env[`DOCUMENTS_${m.toUpperCase()}_MCP_URL`] ?? `${docBase}/mcp/${m}`;
 
   return [
-    { name: 'hr-service',       url: hrUrl       },
-    { name: 'document-service', url: docUrl      },
-    { name: 'platform-core',    url: platformUrl },
+    { name: 'platform-core',     url: platform        },
+    { name: 'hr.cert',           url: hrUrl('cert')   },
+    { name: 'hr.employee',       url: hrUrl('employee') },
+    { name: 'hr.compliance',     url: hrUrl('compliance') },
+    { name: 'hr.people',         url: hrUrl('people') },
+    { name: 'hr.settings',       url: hrUrl('settings') },
+    { name: 'hr.admin',          url: hrUrl('admin')  },
+    { name: 'documents.ingest',  url: docUrl('ingest') },
+    { name: 'documents.routing', url: docUrl('routing') },
   ];
 }
 

@@ -61,10 +61,13 @@ env:
   # callers (auth/resolve-context, channel-registry) until those are
   # migrated to the multi-server registry. The two URLs below are the
   # canonical names the new code reads.
-  HR_SERVICE_MCP_URL:       http://hr-service.cip-app.svc.cluster.local:4001/mcp
-  DOCUMENT_SERVICE_MCP_URL: http://document-service.cip-app.svc.cluster.local:3000/mcp
-  # Slice 66: platform-core MCP server hosts sync_user (and grows in slice 69).
-  PLATFORM_CORE_MCP_URL:    http://platform-core.cip-app.svc.cluster.local:3001/mcp/platform
+  # Slice 69: per-module MCP endpoints. Bot derives URLs as
+  # `${BASE}/mcp/<module>` from these base URLs; per-module env overrides
+  # (HR_CERT_MCP_URL, HR_EMPLOYEE_MCP_URL, etc.) take precedence if set.
+  HR_SERVICE_BASE_URL:       http://hr-service.cip-app.svc.cluster.local:4001
+  DOCUMENT_SERVICE_BASE_URL: http://document-service.cip-app.svc.cluster.local:3000
+  # platform-core MCP at /mcp/platform; hosts sync_user, get_my_user, get_my_permissions.
+  PLATFORM_CORE_MCP_URL:     http://platform-core.cip-app.svc.cluster.local:3001/mcp/platform
   KEYCLOAK_CLIENT_ID: teams-bot
   OBJECT_STORE_BUCKET: cip-uploads     # override at deploy time per environment
   AWS_ENDPOINT_URL: https://s3.bhs.io.cloud.ovh.net

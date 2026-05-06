@@ -27,7 +27,10 @@ export async function executeTool(
   args: Record<string, unknown>,
   ctx: BotAuthContext,
 ): Promise<McpModuleResponse> {
-  const server: ServerName = getServerForTool(name) ?? 'hr-service';
+  // Slice 69: per-module endpoints. tool-discovery populates the routing
+  // map at catalog-warm time; fallback only fires for tools called before
+  // discovery (rare). Default to hr.employee (most general HR module).
+  const server: ServerName = getServerForTool(name) ?? 'hr.employee';
   const client = await getMcpClientFor(server, ctx.bearerToken);
   const result = await client.callTool({ name, arguments: args });
   return JSON.parse(extractText(result.content)) as McpModuleResponse;

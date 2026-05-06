@@ -1,6 +1,6 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { registerListStaff } from './list-staff.js';
-import { registerGetEmployeePermissions } from './get-employee-permissions.tool.js';
+// Slice 69: get_employee_permissions moved to platform-core as get_my_permissions.
 import { registerEmployeeGet } from './employee.get.tool.js';
 // Slice 66: ensure_employee replaces sync_employee. The bot calls
 // platform-core's sync_user first (creates User + identity links); then
@@ -25,7 +25,8 @@ export function registerEmployeeTools(server: McpServer): void {
   // Slice 66: ensure_employee (was sync_employee). Per-turn HR provisioning gate.
   registerEnsureEmployee(server);
   registerListStaff(server);
-  registerGetEmployeePermissions(server);
+  // Slice 69: get_employee_permissions removed; bot calls platform-core's
+  // get_my_permissions instead. Removed entirely (hard cut).
 
   // Slice 33 (HR-gated)
   registerEmployeeCreate(server);
