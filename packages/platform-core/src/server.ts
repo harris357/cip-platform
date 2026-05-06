@@ -12,22 +12,24 @@ export function createApp(): Express {
 
   app.use(healthRouter);
 
-  // Slice 63: admin tenant endpoints (ported from hr-service). Have their
-  // own X-Platform-Admin-Token middleware. Mount BEFORE tenantAuthMiddleware
-  // so they bypass JWT auth (used by operators + the bot's tenant-resolver
-  // which has no JWT yet at the moment it calls /admin/tenants/by-aad/...).
-  app.use(adminTenantsRouter);
+  // Slice 71b fix: mount MCP routes BEFORE adminTenantsRouter. The admin
+  // router's X-Platform-Admin-Token middleware uses router-level `.use()`
+  // with no path prefix — that runs for every request flowing through the
+  // app at this point in the chain, and was blocking GET /mcp/_modules
+  // (the discovery endpoint) with 401 unauthorized. Moving MCP mounts
+  // first lets unauthenticated discovery requests skip the admin gate.
+  mountMcpServer(app);
 
   // Slice 67: POST /auth/resolve — services call this with bearer token to
   // get back AuthContext (userId, permissions, roles). Bearer auth is
   // handled inside the route, not by tenantAuthMiddleware.
   app.use(authRouter);
 
-  // Slice 66: MCP server at /mcp/platform. Bearer-token authenticated;
-  // each POST builds a fresh McpServer + transport for per-request auth
-  // isolation. Sits before tenantAuthMiddleware (it owns its own bearer
-  // extraction).
-  mountMcpServer(app);
+  // Slice 63: admin tenant endpoints (ported from hr-service). Have their
+  // own X-Platform-Admin-Token middleware. Mount BEFORE tenantAuthMiddleware
+  // so they bypass JWT auth (used by operators + the bot's tenant-resolver
+  // which has no JWT yet at the moment it calls /admin/tenants/by-aad/...).
+  app.use(adminTenantsRouter);
 
   app.use(tenantAuthMiddleware);
   app.use(tenantRouter);
