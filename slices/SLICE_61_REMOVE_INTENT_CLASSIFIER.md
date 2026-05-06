@@ -108,18 +108,27 @@ packages/hr-service/src/mcp-server/index.ts                   MOD (drop classifi
 packages/teams-bot/src/slash-commands/handlers/turn-feedback.ts MOD (rewrite — see "Preserved with rewrite" below)
 ```
 
-### MODIFY — DB cleanup migration (a single drop migration; tables go later if at all)
+### MODIFY — DB cleanup migration
 
 ```
-packages/hr-service/src/db/migrations/045_remove_intent_classifier_tunables.sql  NEW
-  - DELETE FROM bot_tunables WHERE key LIKE 'lg.classifier_%';
-    (The 5 keys: lg.classifier_enabled, lg.classifier_honor_decisions,
-     lg.classifier_high_threshold, lg.classifier_uncertain_threshold,
-     lg.classifier_service_url, lg.classifier_timeout_ms — confirm exact list)
-  - Tables (bot_intent_examples, model_runs, bot_turn_feedback,
-    training_data) are PRESERVED for now. They hold labeled data we
-    might still want to mine for few-shots. Drop in a later cleanup
-    migration once we're confident.
+packages/hr-service/src/db/migrations/045_remove_intent_classifier.sql  NEW
+
+  -- Tunable rows (5–6 keys, exact list confirmed by grep before run)
+  DELETE FROM bot_tunables WHERE key LIKE 'lg.classifier_%';
+
+  -- Intent-classifier data tables (per user direction 2026-05-06: drop now)
+  -- IF EXISTS guards the renames in slice 029; CASCADE handles any
+  -- residual indexes / RLS policies / FK references.
+  DROP TABLE IF EXISTS training_data        CASCADE;
+  DROP TABLE IF EXISTS bot_intent_examples  CASCADE;
+  DROP TABLE IF EXISTS model_runs           CASCADE;
+  DROP TABLE IF EXISTS bot_turn_feedback    CASCADE;
+```
+
+```
+packages/hr-service/src/db/schema.ts                                   MOD
+  - Remove drizzle table definitions for the 4 dropped tables (if present)
+  - Remove any related types/exports
 ```
 
 ### MODIFY — slice docs (mark superseded / cancelled)
@@ -136,11 +145,12 @@ slices/CONTEXT_WORKFLOW.md                                     MOD (update 58H s
 
 ## Hard rules
 
-1. **Don't drop the data tables in this slice.** `bot_intent_examples`,
-   `model_runs`, `bot_turn_feedback`, `training_data` stay. They contain
-   real labeled data that's a future few-shot pool. The slice's migration
-   only drops the `lg.classifier_*` tunable rows (cleanup of disabled
-   config, not data).
+1. **Drop the data tables.** Per user direction (2026-05-06):
+   `training_data`, `bot_intent_examples`, `model_runs`, `bot_turn_feedback`
+   are all dropped in migration 045. No future few-shot pool will be
+   mined from them. Make sure migration 045 ships in the same release
+   as the code deletions so there's no transient window where the
+   tables exist but no code reads/writes them.
 
 2. **Preserve the 👍/👎 feedback UI** (verdict UI + `/turn-feedback` slash
    command). The button still appears in the response footer. The
@@ -183,12 +193,12 @@ slices/CONTEXT_WORKFLOW.md                                     MOD (update 58H s
 
 ## Preserved with rewrite — `/turn-feedback`
 
-Today the handler writes to `cip_hr.bot_turn_feedback` table, which is
+Today the handler writes to the `bot_turn_feedback` table, which is
 read by the trace-import workflow as a label-correction source. Under
-slice 61 the table stays but is no longer fed (or you can keep the
-write — it's harmless; admins might query it for analytics).
+slice 61 the table is **dropped** (migration 045) along with the
+trace-import workflow.
 
-The new write target is **Langfuse trace scores**:
+The new write target is **Langfuse trace scores only**:
 
 ```typescript
 // packages/teams-bot/src/slash-commands/handlers/turn-feedback.ts (rewritten)
@@ -215,10 +225,7 @@ export async function handleTurnFeedback(args: {
 
 The score becomes filterable in Langfuse: weekly review of low-scored
 traces drives prompt iteration. This replaces the retrain workflow.
-
-If you want to keep the `bot_turn_feedback` table write too as a
-secondary signal, that's fine — it's just a table append. But the
-Langfuse score is the new canonical signal.
+No DB-side feedback write — Langfuse is the only canonical store.
 
 ---
 
@@ -233,12 +240,12 @@ Langfuse score is the new canonical signal.
 | Bot `classifier-client.ts`, `classify.ts` node | **DELETE** | Bot-side caller |
 | Bot `disambiguation-card`, `clarification-templates`, `embed-cache`, `add-to-training-card` | **DELETE** | Classifier-driven UX surfaces |
 | `/turn-label`, `/teach` slash commands | **DELETE** | Training-data writers (no consumer left) |
-| `/turn-feedback` slash command | **KEEP, REWRITE** | Verdict UI is still useful — write to Langfuse score |
+| `/turn-feedback` slash command | **KEEP, REWRITE** | Verdict UI is still useful — write to Langfuse score only |
 | `lg.classifier_*` tunables (5–6 rows) | **DELETE** (migration 045) | Disabled config |
-| `cip_hr.training_data` table | **PRESERVE** | Real labeled data; future few-shot pool |
-| `cip_hr.bot_intent_examples` table | **PRESERVE** | Same |
-| `cip_hr.model_runs` table | **PRESERVE** | Audit trail of the deleted system |
-| `cip_hr.bot_turn_feedback` table | **PRESERVE** | Could still be written by `/turn-feedback` shim if you want |
+| `training_data` table | **DROP** (migration 045) | User direction 2026-05-06 — full cleanup |
+| `bot_intent_examples` table | **DROP** (migration 045) | Per slice 029 may already be renamed; IF EXISTS guards |
+| `model_runs` table | **DROP** (migration 045) | Audit trail of the deleted system; not preserved |
+| `bot_turn_feedback` table | **DROP** (migration 045) | New `/turn-feedback` writes to Langfuse only |
 | Slice 56 family docs | **MARK SUPERSEDED** | Keep for history |
 | Slice 58H | **MARK CANCELLED** | This slice cancels the plan |
 
@@ -316,9 +323,9 @@ runs after grammar.)
    045 ran; `SELECT key FROM bot_tunables WHERE key LIKE 'lg.classifier_%'`
    returns zero.
 
-8. **Data tables intact.** `SELECT count(*) FROM training_data` returns
-   the pre-slice-61 count. `bot_intent_examples`, `model_runs`,
-   `bot_turn_feedback` likewise.
+8. **Data tables dropped.** `\d training_data` in psql returns
+   "Did not find any relation named...". Same for `bot_intent_examples`,
+   `model_runs`, `bot_turn_feedback`. No drizzle code references them.
 
 9. **`gh workflow list`** shows neither `Cluster startup (morning)`
    active (already disabled) nor any classifier-related workflow.
@@ -381,7 +388,7 @@ valuable long-term artifact.
 5. CI builds 4 services (was 5). Image pushed.
 6. Deploy bot, hr-service. (`kubectl set image` per the patterns we've
    used.)
-7. Run migration 045 (drops the tunable rows).
+7. Run migration 045 (drops the tunable rows AND the 4 data tables).
 8. `helm uninstall intent-classifier --namespace cip-app` (or whatever
    the release name is).
 9. `kubectl -n cip-app delete deploy intent-classifier` (belt + suspenders).
@@ -399,18 +406,14 @@ valuable long-term artifact.
   but as a *cost optimization tool*, not as the brain.
 - **Slice 60 (eval harness)** generalizes after 61. The
   `eval_recent_reclassifications` MCP tool's data source becomes
-  Langfuse low-scored traces, not the deleted `training_data` table.
-  The slice 60 draft was already written assuming reclassify events;
-  61 just shifts where those events live.
+  Langfuse low-scored traces. No `training_data` table to read.
 - **Slice 58F-Lite (reclassify)** still ships independently — it's a
-  doc-side feedback signal (which writes to Langfuse + audit_events),
-  not a classifier-side training data write.
-- **Future few-shot pool from preserved tables**: a small follow-up
-  could mine `training_data` rows where `human_label != predicted_intent`
-  and inject them into the bot's triage prompt as few-shot examples.
-  Optional improvement; not blocking.
-- **Future cleanup migration** (call it 046+): drop the 4 preserved
-  tables once we're confident we won't mine them. Lowest priority.
+  doc-side feedback signal (writes to Langfuse + `audit_events`), not
+  a classifier-side training data write.
+- **No few-shot pool from data tables** — they're dropped. If we ever
+  want few-shot iteration, the source becomes Langfuse-scored traces:
+  filter for highly-rated traces in a domain, copy into the prompt as
+  examples. Manual or scripted; doesn't need a custom DB.
 
 ---
 
