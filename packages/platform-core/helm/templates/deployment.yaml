@@ -15,6 +15,17 @@ spec:
       labels:
         app: platform-core
     spec:
+      # Slice 62: cip_platform schema migrations run on every rollout.
+      # Idempotent via cip_platform.schema_migrations bookkeeping —
+      # re-running is a no-op when nothing's new. Failure aborts the
+      # rollout (Helm --atomic rolls back).
+      initContainers:
+        - name: migrate
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["node", "dist/db/migrate.js"]
+          envFrom:
+            {{- toYaml .Values.envFrom | nindent 12 }}
       containers:
         - name: platform-core
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"

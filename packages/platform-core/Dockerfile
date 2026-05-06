@@ -16,5 +16,9 @@ COPY --from=builder /app/packages/platform-core/dist ./dist
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/packages/shared/package.json ./node_modules/@cip/shared/package.json
 COPY --from=builder /app/packages/shared/dist ./node_modules/@cip/shared/dist
+# Slice 62: ship .sql migration files alongside the compiled migrate.js
+# so the Helm initContainer can apply them. tsc doesn't bundle non-TS
+# assets — copy explicitly. Mirrors the hr-service Dockerfile pattern.
+COPY --from=builder /app/packages/platform-core/src/db/migrations ./dist/db/migrations
 EXPOSE 3001
 CMD ["node", "dist/index.js"]
