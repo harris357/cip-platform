@@ -11,9 +11,8 @@ import { BOT_DOCUMENTS_SENSITIVITY_RUBRIC } from './bot-documents-sensitivity-ru
 import { BOT_DOCUMENTS_CLASSIFY }            from './bot-documents-classify.js';
 
 // Slice 47b: bot.intent_classify and bot.meta_compose removed — legacy
-// classifier+router pipeline was deleted. The Langfuse prompts may
-// still exist in the production label, but the bot no longer fetches
-// them. Safe to delete from Langfuse during a future cleanup.
+// classifier+router pipeline was deleted. Langfuse production versions
+// also deleted (Arc 1 cleanup, 2026-05-06).
 
 export const FALLBACKS: Record<string, string> = {
   'bot.triage':                          BOT_TRIAGE,
