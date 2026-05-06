@@ -1,5 +1,12 @@
 replicaCount: 1
 
+# Slice 71: platform-core's Temporal worker creates per-tenant K8s secrets
+# during tenant provisioning (replaces bash section 5a). Requires a
+# ServiceAccount with secrets:create/patch on cip-app.
+serviceAccount:
+  create: true
+  name:   platform-core
+
 image:
   repository: ghcr.io/harris357/platform-core
   tag: "latest"  # override per-deploy via helm --set image.tag=<sha>

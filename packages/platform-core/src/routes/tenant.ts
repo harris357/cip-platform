@@ -87,6 +87,7 @@ tenantRouter.post('/tenants', async (req, res) => {
     adminEmail:     body.adminEmail,
     tier:           (body.tier ?? 'standard') as TenantProvisioningInput['tier'],
     budgetLimitUsd: body.budgetLimitUsd ?? 100,
+    ...(body.aadTenantId ? { aadTenantId: body.aadTenantId } : {}),
   };
 
   try {

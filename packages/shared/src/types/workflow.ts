@@ -4,6 +4,8 @@ export interface TenantProvisioningInput {
   adminEmail: string;
   tier: 'standard' | 'premium' | 'enterprise';
   budgetLimitUsd: number;
+  /** Slice 71: Entra/AAD tenant GUID. When present, workflow wires AAD IDP federation. */
+  aadTenantId?: string;
 }
 
 export interface CertProcessingInput {
