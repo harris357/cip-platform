@@ -8,6 +8,7 @@ import {
 const EMPLOYEE_COLUMNS = `
   id,
   tenant_id       AS "tenantId",
+  user_id         AS "userId",
   email,
   full_name       AS "fullName",
   given_name      AS "givenName",
@@ -26,6 +27,7 @@ function rowToEmployee(row: unknown): Employee {
   return EmployeeSchema.parse({
     id:             r['id'],
     tenantId:       r['tenantId'],
+    userId:         r['userId'],
     email:          r['email'],
     fullName:       r['fullName'],
     givenName:      r['givenName'] ?? null,
@@ -75,10 +77,11 @@ export async function upsertEmployee(
 ): Promise<Employee> {
   const r = await client.query(
     `INSERT INTO employees
-       (id, tenant_id, email, full_name, given_name, surname, phone,
+       (id, tenant_id, user_id, email, full_name, given_name, surname, phone,
         aad_oid, keycloak_id, identity_type, employment_type)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
      ON CONFLICT (tenant_id, email) DO UPDATE SET
+       user_id         = EXCLUDED.user_id,
        full_name       = EXCLUDED.full_name,
        given_name      = EXCLUDED.given_name,
        surname         = EXCLUDED.surname,
@@ -92,6 +95,7 @@ export async function upsertEmployee(
     [
       input.id,
       input.tenantId,
+      input.userId,
       input.email,
       input.fullName,
       input.givenName ?? null,

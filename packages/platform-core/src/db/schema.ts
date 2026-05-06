@@ -126,6 +126,27 @@ export const userRoleAssignments = cipPlatform.table('user_role_assignments', {
   tenIdx:   index('user_role_assignments_tenant_idx').on(t.tenantId),
 }))
 
+// ── User identity links (tenant-scoped, RLS) ─────────────────────────────
+// Slice 64: 1..N identity providers per user. Replaces denormalized
+// users.keycloak_id + users.aad_oid columns long-term (slice 65+ may drop
+// them; slice 64 keeps both as cache).
+
+export const userIdentityLinks = cipPlatform.table('user_identity_links', {
+  id:        uuid('id').primaryKey().defaultRandom(),
+  userId:    uuid('user_id').notNull(),
+  tenantId:  uuid('tenant_id').notNull(),
+  provider:  text('provider').notNull(),
+  subject:   text('subject').notNull(),
+  metadata:  jsonb('metadata').notNull().default({}),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, t => ({
+  userProvider: uniqueIndex('user_identity_links_user_id_provider_key').on(t.userId, t.provider),
+  tenantSubject: uniqueIndex('user_identity_links_tenant_provider_subject_key').on(t.tenantId, t.provider, t.subject),
+  providerSubjectIdx: index('idx_uil_provider_subject').on(t.provider, t.subject),
+  userIdx: index('idx_uil_user_id').on(t.userId),
+}))
+
 // ── Permission catalog (global, no RLS) ──────────────────────────────────
 
 export const permissionCatalog = cipPlatform.table('permission_catalog', {

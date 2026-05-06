@@ -22,6 +22,33 @@ spec:
       # via schema_migrations bookkeeping, so re-running across
       # rollouts is safe and a no-op when nothing's new.
       initContainers:
+        # Slice 64: wait for cip_platform's slice-64 migrations to be
+        # recorded as applied. hr-service's 046_employees_user_id.sql
+        # backfills employees.user_id from cip_platform.users — racing
+        # ahead would find an empty cip_platform.users and fail the NOT
+        # NULL ALTER cryptically. initContainers run sequentially so
+        # `migrate` waits until this exits 0.
+        - name: wait-for-platform-migrations
+          image: postgres:16-alpine
+          command:
+            - sh
+            - -c
+            - |
+              set -eu
+              REQUIRED="003_backfill_users.sql 004_user_identity_links.sql"
+              for migration in $REQUIRED; do
+                echo "[wait] checking cip_platform.schema_migrations for $migration..."
+                until psql "$DATABASE_URL_HR" -tAc \
+                  "SELECT 1 FROM cip_platform.schema_migrations WHERE migration = '$migration'" \
+                  2>/dev/null | grep -q '^1$'; do
+                  echo "[wait]   not yet — sleeping 3s"
+                  sleep 3
+                done
+                echo "[wait] $migration confirmed applied"
+              done
+              echo "[wait] all slice-64 platform-core migrations applied; proceeding"
+          envFrom:
+            {{- toYaml .Values.envFrom | nindent 12 }}
         - name: migrate
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}

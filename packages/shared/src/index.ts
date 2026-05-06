@@ -1,5 +1,6 @@
 // Types — platform primitives only
 export * from './types/tenant.js';
+export * from './types/user.js';
 export * from './types/mcp.js';
 export * from './types/workflow.js';
 export * from './types/events.js';

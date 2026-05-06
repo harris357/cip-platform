@@ -62,6 +62,34 @@ export const tenantSettings = cipPlatform.table('tenant_settings', {
   updatedAt:         timestamp('updated_at', { withTimezone: true }).defaultNow(),
 })
 
+// Slice 64: cip_platform.users + cip_platform.user_identity_links cross-schema
+// references. hr-service reads/writes both via the same DATABASE_URL_HR pool
+// (cross-schema works same DB; future DB split = HTTP/MCP API call).
+export const users = cipPlatform.table('users', {
+  id:           uuid('id').primaryKey().defaultRandom(),
+  tenantId:     uuid('tenant_id').notNull(),
+  email:        text('email').notNull(),
+  fullName:     text('full_name').notNull(),
+  givenName:    text('given_name'),
+  surname:      text('surname'),
+  keycloakId:   text('keycloak_id'),
+  aadOid:       text('aad_oid'),
+  identityType: text('identity_type').notNull(),
+  createdAt:    timestamp('created_at', { withTimezone: true }).defaultNow(),
+  updatedAt:    timestamp('updated_at', { withTimezone: true }).defaultNow(),
+})
+
+export const userIdentityLinks = cipPlatform.table('user_identity_links', {
+  id:        uuid('id').primaryKey().defaultRandom(),
+  userId:    uuid('user_id').notNull(),
+  tenantId:  uuid('tenant_id').notNull(),
+  provider:  text('provider').notNull(),
+  subject:   text('subject').notNull(),
+  metadata:  jsonb('metadata').notNull().default({}),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+})
+
 // Slice 42A → 42C: permission_groups are module-scoped reusable bundles.
 // After 42C, every group has module IN ('cert', 'employee', 'compliance',
 // 'tenant') — no more 'general'. Cross-module bundling lives in `roles`.
@@ -129,6 +157,9 @@ export const permissionCatalog = pgTable('permission_catalog', {
 export const employees = pgTable('employees', {
   id:             uuid('id').primaryKey().defaultRandom(),
   tenantId:       uuid('tenant_id').notNull(),
+  // Slice 64: linkage to cip_platform.users.id (1:1 mapping for now). Not a
+  // Postgres FK — application enforces integrity via sync-employee triple-write.
+  userId:         uuid('user_id').notNull(),
   email:          text('email').notNull(),
   fullName:       text('full_name').notNull(),
   givenName:      text('given_name'),

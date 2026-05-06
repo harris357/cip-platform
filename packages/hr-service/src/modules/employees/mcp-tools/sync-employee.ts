@@ -1,10 +1,11 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { randomUUID } from 'crypto'
-import { eq, and } from 'drizzle-orm'
+import { eq, and, sql } from 'drizzle-orm'
 import type { McpModuleResponse } from '@cip/shared'
+import type { IdentityProvider } from '@cip/shared'
 import { getDb, getPool } from '../../../db/index.js'
 import { withTenantRLS } from '../../../db/rls.js'
-import { employees } from '../../../db/schema.js'
+import { employees, users, userIdentityLinks } from '../../../db/schema.js'
 import { assignRoleToEmployee } from '../../../db/queries/roles.js'
 import { getKcAdmin, kcAdminRequest } from '../../../services/keycloak-admin.js'
 
@@ -152,39 +153,97 @@ export function registerSyncEmployee(server: McpServer): void {
 
       const db = getDb()
 
+      // Slice 64: triple-write — user + identity links + employee within one
+      // transaction. Hard rule 8: refuse if no identity link can be derived
+      // from the JWT (this is the "≥1 identity per user" enforcement).
+      const linkValues: Array<{ provider: IdentityProvider; subject: string }> = []
+      if (keycloakId) linkValues.push({ provider: 'keycloak', subject: keycloakId })
+      if (aadOid)     linkValues.push({ provider: 'aad',      subject: aadOid })
+      if (linkValues.length === 0) {
+        throw new Error('sync_employee: JWT has no identity link (sub, oid, ...) — refusing to create orphan user')
+      }
+
       // isNewlyCreated tells us whether this turn's INSERT actually fired
       // (vs hitting the existing-row branch). Auto-elevation only fires on
       // first sync — re-syncs don't re-elevate (so a manual revoke isn't
       // undone by the user signing in again).
       const { employeeId, isNewlyCreated } = await withTenantRLS(db, tenantId, async (tx) => {
-        const existing = await tx
-          .select({ id: employees.id })
-          .from(employees)
-          .where(and(eq(employees.tenantId, tenantId), eq(employees.keycloakId, keycloakId)))
+        // 1. Find user by keycloak link (canonical: sub claim never changes).
+        const linkRow = await tx
+          .select({ userId: userIdentityLinks.userId })
+          .from(userIdentityLinks)
+          .where(and(
+            eq(userIdentityLinks.tenantId, tenantId),
+            eq(userIdentityLinks.provider, 'keycloak'),
+            eq(userIdentityLinks.subject, keycloakId),
+          ))
           .limit(1)
 
-        if (existing.length > 0) {
+        let userId: string
+        let userIsNew = false
+
+        if (linkRow.length > 0) {
+          userId = linkRow[0]!.userId
           await tx
-            .update(employees)
-            .set({ email, fullName, givenName, surname, aadOid, updatedAt: new Date() })
-            .where(and(eq(employees.tenantId, tenantId), eq(employees.keycloakId, keycloakId)))
-          return { employeeId: existing[0]!.id, isNewlyCreated: false }
+            .update(users)
+            .set({ email, fullName, givenName, surname, keycloakId, aadOid, updatedAt: sql`NOW()` })
+            .where(eq(users.id, userId))
+        } else {
+          userId = randomUUID()
+          userIsNew = true
+          await tx.insert(users).values({
+            id: userId,
+            tenantId,
+            email,
+            fullName,
+            givenName,
+            surname,
+            keycloakId,
+            aadOid,
+            identityType: 'aad_federated',
+          })
         }
 
-        const id = randomUUID()
-        await tx.insert(employees).values({
-          id,
-          tenantId,
-          email,
-          fullName,
-          givenName,
-          surname,
-          aadOid,
-          keycloakId,
-          identityType: 'aad_federated',
-          employmentType: 'employee',
-        })
-        return { employeeId: id, isNewlyCreated: true }
+        // 2. Upsert identity links (one row per provider seen in this sync).
+        for (const { provider, subject } of linkValues) {
+          await tx
+            .insert(userIdentityLinks)
+            .values({ userId, tenantId, provider, subject })
+            .onConflictDoUpdate({
+              target: [userIdentityLinks.userId, userIdentityLinks.provider],
+              set: { subject, updatedAt: sql`NOW()` },
+            })
+        }
+
+        // 3. Upsert employee with userId linkage. employees.id == users.id (1:1).
+        const existingEmp = await tx
+          .select({ id: employees.id })
+          .from(employees)
+          .where(eq(employees.userId, userId))
+          .limit(1)
+
+        if (existingEmp.length > 0) {
+          await tx
+            .update(employees)
+            .set({ email, fullName, givenName, surname, aadOid, keycloakId, updatedAt: sql`NOW()` })
+            .where(eq(employees.id, existingEmp[0]!.id))
+        } else {
+          await tx.insert(employees).values({
+            id: userId,            // 1:1 with users.id
+            tenantId,
+            userId,
+            email,
+            fullName,
+            givenName,
+            surname,
+            aadOid,
+            keycloakId,
+            identityType: 'aad_federated',
+            employmentType: 'employee',
+          })
+        }
+
+        return { employeeId: userId, isNewlyCreated: userIsNew }
       })
 
       // Slice 56D follow-up: fire admin auto-elevation on EVERY sync.

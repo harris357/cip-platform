@@ -118,9 +118,16 @@ export async function onboardEmployee(
       // Insert employees row. keycloak_id is null until the workflow's
       // createKeycloakUserActivity completes; a future activity (Slice 31
       // optional follow-up) writes it back.
+      // Slice 64: id is reused as both employee.id and user.id (1:1 mapping).
+      // sync-employee handles the user + links insert separately on the bot's
+      // first sync; this onboarding path is admin-driven and writes only the
+      // employee row. The user_id column gets the same UUID — when sync-employee
+      // later runs for this user (their first login), it'll find the user row
+      // (created here with this same id) and update it via the keycloak link.
       await upsertEmployee(client, {
         id,
         tenantId:       input.tenantId,
+        userId:         id,
         email,
         fullName:       input.fullName,
         identityType:   IdentityTypeSchema.parse(input.identityType),
