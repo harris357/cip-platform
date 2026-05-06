@@ -101,7 +101,9 @@ export async function discoverTools(
 
     // Fan out across servers in parallel. listFromServer tags each tool
     // with `_source` so we can populate the routing map below.
-    const servers = getServers();
+    // Slice 71b: getServers() is now async (discovers /mcp/_modules manifest
+    // from each base URL).
+    const servers = await getServers();
     const perServer = await Promise.all(
       servers.map(s => listFromServer(s.name, ctx.bearerToken, metadata)),
     );

@@ -38,4 +38,15 @@ export function mountMcpServer(app: Express): void {
     await s.connect(transport as any)
     await transport.handleRequest(req, res, req.body)
   })
+
+  // Slice 71b: discovery endpoint. Bot reads this at startup to know what
+  // MCP endpoints this service exposes. No hardcoded module list anywhere
+  // in the bot's plumbing.
+  app.get('/mcp/_modules', (_req: Request, res: Response) => {
+    res.json({
+      endpoints: [
+        { name: 'platform-core', path: '/mcp/platform' },
+      ],
+    })
+  })
 }

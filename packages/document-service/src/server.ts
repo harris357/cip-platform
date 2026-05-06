@@ -86,6 +86,17 @@ export async function startServer(): Promise<void> {
     })
   }
 
+  // Slice 71b: discovery endpoint. Bot reads this at startup; no hardcoded
+  // module list in the bot's plumbing.
+  app.get('/mcp/_modules', (_req: Request, res: Response) => {
+    res.json({
+      endpoints: MODULES.map(m => ({
+        name: `documents.${m.path.replace(/^\/mcp\//, '')}`,
+        path: m.path,
+      })),
+    })
+  })
+
   return new Promise((resolve) => {
     app.listen(PORT, () => {
       console.log(`[server] document-service listening on :${PORT} (MCP modules: ${MODULES.map(m => m.path).join(', ')})`)

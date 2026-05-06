@@ -88,6 +88,18 @@ export async function startMcpServer(): Promise<void> {
     })
   }
 
+  // Slice 71b: discovery endpoint. Each service tells the bot what
+  // endpoints it exposes. The bot doesn't hardcode this list.
+  app.get('/mcp/_modules', (_req: Request, res: Response) => {
+    res.json({
+      endpoints: MODULES.map(m => ({
+        // Path component becomes the ServerName segment after the service prefix.
+        name: `hr.${m.path.replace(/^\/mcp\//, '')}`,
+        path: m.path,
+      })),
+    })
+  })
+
   const port = parseInt(process.env['MCP_PORT'] ?? '3001', 10)
   await new Promise<void>((resolve) => {
     app.listen(port, () => {

@@ -1,75 +1,78 @@
-// Slice 58B-2b — multi-server MCP registry.
+// Slice 58B-2b → 71b — multi-server MCP registry.
 //
-// The bot now talks to TWO upstream MCP servers:
-//   - hr-service (legacy/baseline; HR + cert + tunables)
-//   - document-service (new; document_process, documents_status)
+// Slice 71b: the bot stops hardcoding module names. Each upstream service
+// exposes a discovery endpoint at GET /mcp/_modules that returns the
+// endpoints it serves. At first use, the bot fetches this list from each
+// configured BASE URL and assembles the full server registry.
 //
-// This module owns the per-server URL list, the per-(server, bearerToken)
-// `Client` instance cache, and the toolName → server lookup table that
-// `executeTool` uses to route calls.
+// The bot's configuration is just: a list of service base URLs. Module
+// identity, endpoint paths, and naming all come from the services
+// themselves — same source-of-truth pattern as MCP tool annotations.
 //
-// Design notes:
-//   - URLs come from env (HR_SERVICE_MCP_URL, DOCUMENT_SERVICE_MCP_URL)
-//     with cluster-internal defaults so a missing env var still produces
-//     a sane image. Existing pods read MCP_SERVER_URL — we honour that as
-//     a fallback for hr-service for backward compat.
-//   - One `Client` per (server, bearerToken) — same shape as the old
-//     `getMcpClient(bearerToken)` cache, just now keyed by server too.
-//     Clients are cached because `client.connect(transport)` is non-trivial
-//     work to repeat each call.
-//   - Collision detection lives in `setToolRouting` (called by
-//     `tool-discovery` at catalog-merge time): same tool name from two
-//     servers → throw, fail loud at startup. Hard rule #1.
+// ServerName is intentionally `string` — runtime-discovered, not a TS
+// union of hardcoded literals.
 
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 
-// Slice 69: module-scoped server names. Each module is now its own MCP
-// endpoint (foundation for Arc 2 multi-agent). Format: <service>.<module>.
-// platform-core stays unscoped — it's a single endpoint.
-export type ServerName =
-  | 'platform-core'
-  | 'hr.cert' | 'hr.employee' | 'hr.compliance' | 'hr.people' | 'hr.settings' | 'hr.admin'
-  | 'documents.ingest' | 'documents.routing';
+export type ServerName = string;
 
 export interface ServerEntry {
   name: ServerName;
   url:  string;
 }
 
-function resolveServers(): ServerEntry[] {
-  // Slice 69: each service has a base URL; per-module endpoints are sub-paths.
-  // Per-module env overrides (HR_CERT_MCP_URL, etc.) take precedence; otherwise
-  // we derive `${BASE}/mcp/<module>` from the base URL.
-  const hrBase   = process.env['HR_SERVICE_BASE_URL']       ?? 'http://hr-service.cip-app.svc.cluster.local:4001';
-  const docBase  = process.env['DOCUMENT_SERVICE_BASE_URL'] ?? 'http://document-service.cip-app.svc.cluster.local:3000';
-  const platform = process.env['PLATFORM_CORE_MCP_URL']     ?? 'http://platform-core.cip-app.svc.cluster.local:3001/mcp/platform';
-
-  const hrUrl    = (m: string): string => process.env[`HR_${m.toUpperCase()}_MCP_URL`]   ?? `${hrBase}/mcp/${m}`;
-  const docUrl   = (m: string): string => process.env[`DOCUMENTS_${m.toUpperCase()}_MCP_URL`] ?? `${docBase}/mcp/${m}`;
-
-  return [
-    { name: 'platform-core',     url: platform        },
-    { name: 'hr.cert',           url: hrUrl('cert')   },
-    { name: 'hr.employee',       url: hrUrl('employee') },
-    { name: 'hr.compliance',     url: hrUrl('compliance') },
-    { name: 'hr.people',         url: hrUrl('people') },
-    { name: 'hr.settings',       url: hrUrl('settings') },
-    { name: 'hr.admin',          url: hrUrl('admin')  },
-    { name: 'documents.ingest',  url: docUrl('ingest') },
-    { name: 'documents.routing', url: docUrl('routing') },
-  ];
+interface ModulesManifest {
+  endpoints: Array<{ name: string; path: string }>;
 }
 
-const SERVERS: ServerEntry[] = resolveServers();
+/**
+ * Service base URLs the bot fetches /mcp/_modules from at startup.
+ * Each service decides its own module list and naming. The bot just trusts
+ * the manifest.
+ */
+function resolveBaseUrls(): string[] {
+  const hrBase       = process.env['HR_SERVICE_BASE_URL']       ?? 'http://hr-service.cip-app.svc.cluster.local:4001';
+  const docBase      = process.env['DOCUMENT_SERVICE_BASE_URL'] ?? 'http://document-service.cip-app.svc.cluster.local:3000';
+  const platformBase = process.env['PLATFORM_CORE_BASE_URL']    ?? 'http://platform-core.cip-app.svc.cluster.local:3001';
+  return [hrBase, docBase, platformBase];
+}
 
-export function getServers(): ReadonlyArray<ServerEntry> {
-  return SERVERS;
+let serversPromise: Promise<ServerEntry[]> | null = null;
+
+async function fetchManifest(baseUrl: string): Promise<ServerEntry[]> {
+  const url = `${baseUrl.replace(/\/$/, '')}/mcp/_modules`;
+  const resp = await fetch(url, { method: 'GET' });
+  if (!resp.ok) {
+    console.warn(`[mcp-discovery] ${url} HTTP ${resp.status} — skipping`);
+    return [];
+  }
+  const manifest = (await resp.json()) as ModulesManifest;
+  return manifest.endpoints.map(ep => ({
+    name: ep.name,
+    url:  `${baseUrl.replace(/\/$/, '')}${ep.path}`,
+  }));
+}
+
+async function loadServers(): Promise<ServerEntry[]> {
+  const bases = resolveBaseUrls();
+  const lists = await Promise.all(bases.map(fetchManifest));
+  const flat = lists.flat();
+  if (flat.length === 0) {
+    throw new Error('mcp-discovery: no MCP endpoints discovered from any base URL');
+  }
+  console.log(`[mcp-discovery] discovered ${flat.length} endpoint(s):`,
+    flat.map(s => `${s.name}=${s.url}`).join(', '));
+  return flat;
+}
+
+export async function getServers(): Promise<ReadonlyArray<ServerEntry>> {
+  if (!serversPromise) serversPromise = loadServers();
+  return serversPromise;
 }
 
 // Per-(server, bearerToken) Client cache. Bearer tokens are short-lived
 // (Keycloak access tokens), so this map naturally drains as tokens rotate.
-// Same shape as the previous single-server cache that lived in client.ts.
 const clientCache = new Map<string, Client>();
 
 function cacheKey(server: ServerName, bearerToken: string): string {
@@ -84,15 +87,14 @@ export async function getMcpClientFor(
   const cached = clientCache.get(key);
   if (cached) return cached;
 
-  const entry = SERVERS.find(s => s.name === server);
-  if (!entry) throw new Error(`getMcpClientFor: unknown server "${server}"`);
+  const servers = await getServers();
+  const entry = servers.find(s => s.name === server);
+  if (!entry) throw new Error(`getMcpClientFor: unknown server "${server}" (discovered: ${servers.map(s => s.name).join(', ')})`);
 
   const transport = new StreamableHTTPClientTransport(new URL(entry.url), {
     requestInit: { headers: { Authorization: `Bearer ${bearerToken}` } },
   });
   const client = new Client({ name: 'teams-bot', version: '1.0.0' });
-  // SDK transport types omit sessionId at the boundary; safe cast,
-  // matches the pattern in the prior single-server client.ts.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   await client.connect(transport as any);
   clientCache.set(key, client);
@@ -101,12 +103,9 @@ export async function getMcpClientFor(
 
 // ─────────────────────────────────────────────────────────────────────
 // Tool → server routing table.
-//
 // Populated by tool-discovery when it merges per-server catalogs.
 // `executeTool` queries this map to know which Client to send a call to.
-//
-// Throws on collision: hard rule #1. The bot must never silently prefer
-// one server's `foo` over another's `foo`.
+// Throws on collision: hard rule #1.
 // ─────────────────────────────────────────────────────────────────────
 
 const toolRouting = new Map<string, ServerName>();
@@ -116,11 +115,6 @@ export interface ToolCollisionError {
   servers:  ServerName[];
 }
 
-/**
- * Register one tool's owning server. Throws if a different server has
- * already claimed the same name. Idempotent for repeat (toolName, server)
- * pairs (cache refreshes hit this path).
- */
 export function setToolRouting(toolName: string, server: ServerName): void {
   const existing = toolRouting.get(toolName);
   if (existing && existing !== server) {
@@ -141,4 +135,5 @@ export function getServerForTool(toolName: string): ServerName | undefined {
 export function _resetMultiServerCaches(): void {
   clientCache.clear();
   toolRouting.clear();
+  serversPromise = null;
 }
