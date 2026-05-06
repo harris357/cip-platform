@@ -17,8 +17,7 @@ function extractText(content: unknown): string {
  * discoverTools() time. If the tool name isn't in the table, we
  * fall back to hr-service — the legacy behaviour, and the right
  * default for any tool the bot calls before the catalog is warm
- * (e.g. `sync_employee` and `get_employee_permissions` during
- * resolveAuthContext).
+ * (e.g. tools used during resolveAuthContext).
  *
  * tenantId flows through the bearer token, NOT as a tool argument
  * (non-negotiable #6).

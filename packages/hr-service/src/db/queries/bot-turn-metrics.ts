@@ -215,37 +215,10 @@ export async function getOutliers(
 }
 
 
-// ── Slice 56F: explicit user verdict on bot turns ──────────────────────
-
-export interface RecordTurnFeedbackInput {
-  turnId:     string;
-  tenantId:   string;
-  verdict:    "positive" | "negative";
-  correction?: string | null;
-}
-
-/**
- * UPDATE bot_turn_metrics with the user's verdict on a specific turn.
- * Tenant-scoped: a verdict can only be recorded on a turn in the
- * caller's own tenant. Returns true if the row existed and was updated,
- * false otherwise (turn id not found or wrong tenant).
- *
- * Re-runnable: a later verdict on the same turn overwrites the earlier
- * one (operator changing their mind, or a 👎 followed by a correction
- * that supplies the missing detail).
- */
-export async function recordTurnFeedback(
-  pool: pg.Pool,
-  input: RecordTurnFeedbackInput,
-): Promise<boolean> {
-  const r = await pool.query(
-    `UPDATE bot_turn_metrics
-        SET user_verdict     = $3,
-            user_correction  = $4,
-            user_verdict_at  = NOW()
-      WHERE turn_id   = $1
-        AND tenant_id = $2`,
-    [input.turnId, input.tenantId, input.verdict, input.correction ?? null],
-  );
-  return (r.rowCount ?? 0) > 0;
-}
+// Slice 56F's `recordTurnFeedback` function and `RecordTurnFeedbackInput`
+// type were removed in slice 61. The bot's `/turn-feedback` handler
+// now writes Langfuse trace scores instead of bot_turn_metrics columns;
+// `bot_turn_metrics.user_verdict / user_correction / user_verdict_at`
+// columns are no longer written. The columns themselves stay in the
+// table for historical reads until a future cleanup migration drops
+// them.

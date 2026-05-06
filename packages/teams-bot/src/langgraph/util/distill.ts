@@ -4,13 +4,19 @@
 // across a multi-step turn without re-injecting raw tool output. NO LLM
 // CALL — pure string formatting.
 //
-// Per-tool hand-written formatters where the shape is known. Falls back
-// to a generic "<toolName> returned <N> keys" for unknown tools.
+// Slice 61: per-tool switch cases removed (the bot must not embed
+// domain-specific tool knowledge). Distillation is now fully generic
+// over the MCP envelope shape: refusal -> reason; array -> count;
+// object -> field summary; primitive -> typeof. Tools that want richer
+// summaries can include a `summary` field in their response envelope
+// (read below); the bot uses it verbatim if present.
 
 interface McpEnvelope {
   data?:    unknown;
   message?: string;
   card?:    unknown;
+  /** Optional explicit one-line summary; takes precedence when present. */
+  summary?: string;
 }
 
 function isObject(v: unknown): v is Record<string, unknown> {
@@ -25,108 +31,35 @@ export function distillFact(toolName: string, result: unknown): string {
     ? parseMcpResult(result)
     : (isObject(result) ? (result as McpEnvelope) : { data: result });
 
-  // Refusals first.
+  // Tool-supplied summary wins. Tools opt in by including `summary` in
+  // their response envelope; the LLM gets a clean line without the bot
+  // having to know the tool's data shape.
+  if (typeof env.summary === 'string' && env.summary.length > 0) {
+    return `${toolName}: ${env.summary.slice(0, 240)}`;
+  }
+
+  // Refusals.
   if (isObject(env.data) && env.data['refused']) {
     return `${toolName} refused: ${env.data['refused']}`;
   }
 
-  switch (toolName) {
-    case 'get_employee_permissions': {
-      const d = isObject(env.data) ? env.data : {};
-      const roles = (d['roles'] as string[] | undefined) ?? [];
-      const perms = (d['permissions'] as string[] | undefined) ?? [];
-      return `${toolName}: ${roles.length} role(s) [${roles.slice(0, 3).join(', ')}${roles.length > 3 ? ', …' : ''}], ${perms.length} permission(s)`;
-    }
-    case 'role_list': {
-      const d = isObject(env.data) ? env.data : {};
-      const roles = (d['roles'] as Array<{ code?: string }> | undefined) ?? [];
-      return `${toolName}: ${roles.length} role(s) — ${roles.slice(0, 4).map(r => r.code).join(', ')}${roles.length > 4 ? ', …' : ''}`;
-    }
-    case 'role_get': {
-      const d = isObject(env.data) ? env.data : {};
-      const role = isObject(d['role']) ? d['role'] : {};
-      const groups = (d['groups'] as unknown[] | undefined) ?? [];
-      const perms = (d['permissions'] as string[] | undefined) ?? [];
-      return `${toolName}: role=${role['code']}, ${groups.length} group(s), ${perms.length} permission(s)`;
-    }
-    case 'role_members':
-    case 'permission_holders': {
-      const d = isObject(env.data) ? env.data : {};
-      const total = d['total'] as number | undefined;
-      return `${toolName}: ${total ?? '?'} member(s)`;
-    }
-    case 'group_list': {
-      const d = isObject(env.data) ? env.data : {};
-      const groups = (d['groups'] as Array<{ code?: string }> | undefined) ?? [];
-      return `${toolName}: ${groups.length} group(s) — ${groups.slice(0, 4).map(g => g.code).join(', ')}${groups.length > 4 ? ', …' : ''}`;
-    }
-    case 'group_get': {
-      const d = isObject(env.data) ? env.data : {};
-      const perms = (d['permissions'] as string[] | undefined) ?? [];
-      const usedBy = (d['usedByRoles'] as unknown[] | undefined) ?? [];
-      return `${toolName}: ${perms.length} permission(s), used by ${usedBy.length} role(s)`;
-    }
-    case 'employee_list': {
-      const d = isObject(env.data) ? env.data : {};
-      const count = d['count'] as number | undefined;
-      return `${toolName}: ${count ?? '?'} employee(s)`;
-    }
-    case 'employee_find': {
-      const d = isObject(env.data) ? env.data : {};
-      const emp = isObject(d['employee']) ? d['employee'] : null;
-      if (!emp) return `${toolName}: not_found`;
-      return `${toolName}: ${emp['fullName']} <${emp['email']}> id=${emp['id']}`;
-    }
-    case 'employee_get': {
-      const d = isObject(env.data) ? env.data : {};
-      const emp = isObject(d['employee']) ? d['employee'] : {};
-      const roles = (d['roles'] as string[] | undefined) ?? [];
-      return `${toolName}: ${emp['fullName']} (${roles.length} role(s))`;
-    }
-    case 'employee_create':
-      return `${toolName}: employee created`;
-    case 'employee_assign_role':
-    case 'employee_revoke_role':
-    case 'employee_grant_permission':
-    case 'employee_revoke_permission': {
-      const d = isObject(env.data) ? env.data : {};
-      return `${toolName}: ${d['role']} on ${d['employeeId']}`;
-    }
-    case 'employee_disable':
-      return `${toolName}: disabled`;
-    case 'get_my_certifications': {
-      const certs = Array.isArray(env.data) ? env.data : [];
-      return `${toolName}: ${certs.length} cert(s)`;
-    }
-    case 'get_compliance_summary': {
-      const d = isObject(env.data) ? env.data : {};
-      return `${toolName}: ${d['valid'] ?? '?'} valid, ${d['expiring'] ?? '?'} expiring, ${d['expired'] ?? '?'} expired`;
-    }
-    case 'get_expiring_certifications': {
-      const groups = Array.isArray(env.data) ? env.data : [];
-      return `${toolName}: ${groups.length} employee(s) with expiring certs`;
-    }
-    case 'audit_log_list': {
-      const d = isObject(env.data) ? env.data : {};
-      return `${toolName}: ${d['total'] ?? '?'} event(s)`;
-    }
-    case 'permission_catalog_list': {
-      const d = isObject(env.data) ? env.data : {};
-      return `${toolName}: ${d['total'] ?? '?'} permission code(s)`;
-    }
-    case 'process_document': {
-      const d = isObject(env.data) ? env.data : {};
-      return `${toolName}: submissionId=${d['submissionId']}`;
-    }
-  }
-
-  // Generic fallback.
-  if (isObject(env.data)) {
-    const keys = Object.keys(env.data);
-    return `${toolName} returned ${keys.length} field(s): ${keys.slice(0, 5).join(', ')}`;
+  // Generic distillation over MCP envelope shape — no per-tool knowledge.
+  if (env.data === null || env.data === undefined) {
+    return typeof env.message === 'string' && env.message.length > 0
+      ? `${toolName}: ${env.message.slice(0, 200)}`
+      : `${toolName} returned no data`;
   }
   if (Array.isArray(env.data)) {
     return `${toolName} returned ${env.data.length} item(s)`;
+  }
+  if (isObject(env.data)) {
+    const d    = env.data;
+    const keys = Object.keys(d);
+    // Common count fields across MCP tools — a tiny, domain-agnostic
+    // convention. Tools that want a tight line set `summary` instead.
+    if (typeof d['total'] === 'number') return `${toolName}: ${d['total']} item(s)`;
+    if (typeof d['count'] === 'number') return `${toolName}: ${d['count']} item(s)`;
+    return `${toolName} returned ${keys.length} field(s): ${keys.slice(0, 5).join(', ')}${keys.length > 5 ? ', …' : ''}`;
   }
   return `${toolName} returned ${typeof env.data}`;
 }

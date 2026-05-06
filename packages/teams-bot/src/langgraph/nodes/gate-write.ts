@@ -54,9 +54,13 @@ export function makeGateWriteActionNode(ctx: BotAuthContext) {
   }
 
   const tunables = await getTunables(state.tenantId);
+  // Domain-neutral defaults. Tenants with domain-specific vocabulary
+  // (e.g. HR's "off-board" / "fire") add them via a tenant-scoped
+  // override on `lg.authorized_write_verbs`. The bot's default ships
+  // only generic platform verbs — no domain logic in teams-bot.
   const verbs = getTunable<string[]>(
     tunables, 'lg.authorized_write_verbs',
-    ['disable', 'off-board', 'offboard', 'create', 'add', 'assign', 'grant', 'revoke', 'remove', 'fire', 'approve', 'reject'],
+    ['disable', 'create', 'add', 'assign', 'grant', 'revoke', 'remove', 'approve', 'reject', 'delete', 'update'],
   );
 
   const candidateTools = await discoverTools(ctx, state.latestUserText);
