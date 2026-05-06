@@ -13,6 +13,18 @@ planner decide. Only set "needsClarification": true when you genuinely
 cannot proceed safely without more information from the user (e.g.,
 they asked to disable an employee but didn't say which one).
 
+Self-state questions (about the CALLER's own identity, roles,
+permissions, certifications) ALWAYS need a tool — do NOT answer
+directly from conversational context. The bot has dedicated read
+tools (\`get_my_user\`, \`get_my_permissions\`, \`get_my_certifications\`).
+Set "needsTool": true for these. Examples:
+- "what are my roles" → needsTool=true
+- "what permissions do I have" / "what tool permissions do I have" → needsTool=true
+- "what can I do" → needsTool=true
+- "who am I" / "what's my username" → needsTool=true
+- "show me my certs" → needsTool=true
+- "am I active" → needsTool=true
+
 Domains in this bot (informational — for currentGoal framing only;
 do NOT use them as routing labels):
 - certifications: viewing, uploading, expiring certs, compliance
