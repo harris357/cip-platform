@@ -9,6 +9,8 @@ const {
   createObjectStoreBuckets,
   initTenantDatabase,
   issueLiteLLMVirtualKey,
+  persistLiteLLMVirtualKey,
+  elevateAdminUser,
   provisionCompleteNotify,
 } = proxyActivities<typeof activities>({
   startToCloseTimeout: '10 minutes',
@@ -29,6 +31,28 @@ export async function TenantProvisioningWorkflow(
     tier: input.tier,
     budgetLimitUsd: input.budgetLimitUsd,
   });
+
+  // Slice 70: persist the vkey into tenant_settings so services that read
+  // it at request time see it without a manual operator step.
+  await persistLiteLLMVirtualKey({
+    tenantId: input.tenantId,
+    litellmVirtualKey,
+  });
+
+  // Slice 70: admin user DB-side elevation. Non-fatal — first-sync auto
+  // -elevation (sync_employee, slice 66) covers the failure mode if the
+  // admin signs in before operators retry. KC realm role grant (the other
+  // half of bash 7a) lands in slice 71.
+  try {
+    await elevateAdminUser({
+      tenantId:   input.tenantId,
+      adminEmail: input.adminEmail,
+    });
+  } catch (err) {
+    console.warn(
+      `[TenantProvisioningWorkflow] elevateAdminUser failed; bot first-sync will retry: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
 
   await provisionCompleteNotify({
     tenantId: input.tenantId,
