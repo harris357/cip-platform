@@ -13,8 +13,6 @@ import { StateGraph, START, END } from '@langchain/langgraph';
 import { StateAnnotation, type State } from './state.js';
 import { checkpointer } from './checkpointer.js';
 import { ingestNode } from './nodes/ingest.js';
-import { makeGrammarRouteNode, routeAfterGrammar } from './nodes/grammar-route.js';
-import { makeClassifyNode, routeAfterClassify } from './nodes/classify.js';
 import { makeTriageNode } from './nodes/triage.js';
 import { makePlanNode } from './nodes/plan.js';
 import { makeGateWriteActionNode, routeAfterGate } from './nodes/gate-write.js';
@@ -23,7 +21,6 @@ import { makeExecuteToolNode } from './nodes/execute.js';
 import { respondNode } from './nodes/respond.js';
 import { makeSummarizeNode, shouldSummarize } from './nodes/summarize.js';
 import { getTunables, getTunable } from './tunables.js';
-import { AIMessage } from '@langchain/core/messages';
 import { isAIMessage } from './util/message-types.js';
 import type { BotAuthContext } from '../auth/resolve-context.js';
 
@@ -68,25 +65,30 @@ async function routeOnSignals(state: State): Promise<'respond' | 'plan'> {
 /**
  * Conditional edge after executeTool:
  *   - stepCount ≥ MAX_STEPS → respond
- *   - grammar/classifier already produced the tool call → respond
- *     (Slice 55/56: the whole point of those layers is to skip the planner
- *      LLM. Without this branch the loop falls back to plan and we pay for
- *      a second LLM call to compose a response, defeating the fast-path.)
  *   - otherwise → plan (loop, true multi-step planning)
+ *
+ * Slice 61: removed the grammar/classifier deterministic-tool short-circuit
+ * (`extractionResult?.kind === 'complete'`). Both pre-LLM optimization
+ * layers are gone; tool execution always loops back through plan unless
+ * MAX_STEPS is hit. The planner still emits a final AIMessage on the
+ * last loop, which respond surfaces.
  */
 async function shouldContinue(state: State): Promise<'plan' | 'respond'> {
   const tunables = await getTunables(state.tenantId);
   const maxSteps = getTunable<number>(tunables, 'lg.max_steps', 5);
   if (state.stepCount >= maxSteps) return 'respond';
-  if (state.extractionResult?.kind === 'complete') return 'respond';
   return 'plan';
 }
 
 export function buildGraph(ctx: BotAuthContext) {
+  // Slice 61: classify + grammarRoute nodes removed. Both pre-LLM
+  // optimization layers (slice 55 grammar pre-router + slice 56 sklearn
+  // classifier) are gone. Final shape: ingest → triage → plan → execute
+  // → summarize. The LLM (triage) picks tools from MCP descriptions
+  // directly; ambiguity is handled inside individual MCP tools (future
+  // slice 62) or by the LLM clarifying in chat.
   const graph = new StateGraph(StateAnnotation)
     .addNode('ingest',       ingestNode)
-    .addNode('grammarRoute', makeGrammarRouteNode(ctx))
-    .addNode('classify',     makeClassifyNode(ctx))
     .addNode('triage',       makeTriageNode(ctx))
     .addNode('plan',         makePlanNode(ctx))
     .addNode('gateWrite',    makeGateWriteActionNode(ctx))
@@ -98,24 +100,8 @@ export function buildGraph(ctx: BotAuthContext) {
     // 46d: discover node removed. plan / gateWrite / execute each call
     // discoverTools(ctx, latestUserText) directly — cached 5-min per
     // (tenant, employee) so subsequent calls in the same turn are sub-ms.
-    //
-    // 55: grammarRoute (deterministic regex) runs FIRST after ingest.
-    // 56: classify (sklearn) runs SECOND if grammar didn't match.
-    // Each handles its own happy paths; no_match falls through to the
-    // existing triage → plan path unchanged.
     .addEdge(START, 'ingest')
-    .addEdge('ingest', 'grammarRoute')
-    .addConditionalEdges('grammarRoute', routeAfterGrammar, {
-      execute: 'execute',
-      respond: 'respond',
-      triage:  'classify',     // grammar miss → try sklearn classifier next
-    })
-    .addConditionalEdges('classify', routeAfterClassify, {
-      execute: 'execute',
-      respond: 'respond',
-      plan:    'plan',
-      triage:  'triage',
-    })
+    .addEdge('ingest', 'triage')
     .addConditionalEdges('triage', routeOnSignals, {
       respond: 'respond',
       plan:    'plan',

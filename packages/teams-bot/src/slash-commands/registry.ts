@@ -16,9 +16,7 @@ import type { BotAuthContext } from '../auth/resolve-context.js';
 import { helpHandler } from './handlers/help.js';
 import { aboutHandler } from './handlers/about.js';
 import { turnHandler } from './handlers/turn.js';
-import { teachHandler } from './handlers/teach.js';
 import { turnFeedbackHandler } from './handlers/turn-feedback.js';
-import { turnLabelHandler, turnLabelSubmitHandler } from './handlers/turn-label.js';
 
 export interface SlashCommandResult {
   /** Plain markdown reply. Sent verbatim if `card` is unset. */
@@ -74,37 +72,18 @@ export const REGISTRY: SlashCommand[] = [
     requires:    'bot.metrics.read',
     handler:     turnHandler,
   },
-  {
-    command:     '/teach',
-    description: 'Label a training example — usage: `/teach intent=X next_action=Y text="..."`',
-    requires:    'bot.metrics.read',
-    handler:     teachHandler,
-  },
   // Slice 56F: verdict commands fired by the response-footer adaptive card
-  // (👍/👎 buttons + the 👎 follow-up correction card). Not user-typed in
-  // practice but registered for /help discoverability and the dispatch
-  // path. Open to all authenticated users — they can only verdict their
-  // own tenant's turns (tenant-scoped DB UPDATE).
+  // (👍/👎 buttons). Not user-typed in practice but registered for /help
+  // discoverability and the dispatch path. Open to all authenticated
+  // users.
+  // Slice 61: rewritten to write Langfuse trace scores instead of the
+  // dropped bot_turn_feedback table. The 👎 follow-up correction card
+  // is gone; verdicts are positive/negative only.
   {
     command:     '/turn-feedback',
-    description: 'Record verdict on a bot turn — fired by 👍/👎 buttons. Usage: `/turn-feedback <id> positive|negative [correction]`',
+    description: 'Record verdict on a bot turn — fired by 👍/👎 buttons. Usage: `/turn-feedback <id> positive|negative`',
     requires:    null,
     handler:     turnFeedbackHandler,
-  },
-  // Slice 56K: "Add to training set" flow promised in slice 55. Two
-  // commands — /turn-label opens the prefill card; /turn-label-submit
-  // commits the labelled row to bot_intent_training_data.
-  {
-    command:     '/turn-label',
-    description: 'Open the "Add to training set" card for a turn. Usage: `/turn-label <id>` (usually fired by 📚 button)',
-    requires:    'bot.metrics.read',
-    handler:     turnLabelHandler,
-  },
-  {
-    command:     '/turn-label-submit',
-    description: 'Save a labelled training example from a turn — fired by the prefill card\'s Save action.',
-    requires:    'bot.metrics.read',
-    handler:     turnLabelSubmitHandler,
   },
 ];
 

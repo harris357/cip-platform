@@ -1,3 +1,7 @@
+> **⚠️ SUPERSEDED 2026-05-06 by [SLICE_61](../SLICE_61_REMOVE_INTENT_CLASSIFIER.md).**
+> The infrastructure described here was removed in slice 61.
+> Doc preserved for history.
+
 # Slice 56C — in-cluster classifier trainer
 
 Auto-retrain the intent classifier on a schedule, in-cluster. Removes

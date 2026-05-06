@@ -140,53 +140,11 @@ export const StateAnnotation = Annotation.Root({
     default: () => 0,
   }),
 
-  /**
-   * Slice 55: grammar router + extractor outcomes. `grammarMatch` is
-   * which pattern fired (or null); `extractionResult` is the per-tool
-   * extractor's verdict. Both are reset each turn — no cross-turn
-   * persistence beyond the single-turn duration.
-   */
-  grammarMatch: Annotation<{ name: string; toolName: string } | null>({
-    reducer: (_prev, next) => next,
-    default: () => null,
-  }),
-  extractionResult: Annotation<import('../intent/extractors/types.js').ExtractionResult | null>({
-    reducer: (_prev, next) => next,
-    default: () => null,
-  }),
-  /**
-   * Slice 55: when respond needs to send an adaptive card (e.g.,
-   * disambiguation), it sets this. Runner detects + sends as an
-   * attachment instead of a plain-text AIMessage.content.
-   */
-  outboundCard: Annotation<unknown | null>({
-    reducer: (_prev, next) => next,
-    default: () => null,
-  }),
-
-  /**
-   * Slice 56: sklearn classifier prediction + the routing decision the
-   * classify node made. Recorded in bot_turn_metrics for shadow analysis
-   * even when the decision is fallthrough.
-   */
-  classifierPrediction: Annotation<{
-    intent:             string;
-    next_action:        string;
-    tool:               string | null;
-    confidence:         number;
-    scores:             Record<string, number>;
-    normalized:         string;
-    classifier_version: string;
-  } | null>({
-    reducer: (_prev, next) => next,
-    default: () => null,
-  }),
-  classifierDecision: Annotation<
-    'fallthrough' | 'clarify' | 'skip' | 'disambiguate' | 'narrow_plan' | null
-  >({
-    reducer: (_prev, next) => next,
-    default: () => null,
-  }),
+  // Slice 61: removed grammarMatch, extractionResult, outboundCard,
+  // classifierPrediction, classifierDecision fields. The grammar pre-router
+  // (slice 55) and sklearn classifier (slice 56) are gone; nothing writes
+  // these any more, and the consumers in respond/plan/runner/turn-metrics
+  // were stripped in the same slice.
 });
 
 export type State = typeof StateAnnotation.State;

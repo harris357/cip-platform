@@ -1,3 +1,7 @@
+> **⚠️ SUPERSEDED 2026-05-06 by [SLICE_61](../SLICE_61_REMOVE_INTENT_CLASSIFIER.md).**
+> The infrastructure described here was removed in slice 61.
+> Doc preserved for history.
+
 # Slice 56 — Sklearn intent router with deterministic arg extraction
 
 > **Prerequisite:** Slice 48 deployed (`bot_turn_metrics` + Langfuse session correlation — required to measure win rates and bootstrap training data). Slice 46 deployed (PostgresSaver — narrow LLM extraction calls need the same trace context). Tool-annotation hotfix `11c67ce` deployed (so `sideEffectLevel` and `whenToUse` reach the planner; the classifier is a layer ABOVE this, not a replacement).

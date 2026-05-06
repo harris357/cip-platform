@@ -1,3 +1,7 @@
+> **⚠️ SUPERSEDED 2026-05-06 by [SLICE_61](../SLICE_61_REMOVE_INTENT_CLASSIFIER.md).**
+> The infrastructure described here was removed in slice 61.
+> Doc preserved for history.
+
 # Slice 56 family — alignment review (canonical)
 
 > **Status:** This document is the **canonical architecture** for the slice 56 family

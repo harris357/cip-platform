@@ -14,22 +14,16 @@ import {
   registerBotMetricsTools,
   registerBotMetricsOutliers,
 } from './bot-metrics.tools.js';
-import {
-  registerBotIntentTrainingDataAdd,
-  registerBotIntentTrainingDataListUnreviewed,
-  registerBotIntentModelRunsList,
-  registerBotIntentClassifierStatus,
-} from './bot-intent-training-data.tools.js';
-import { registerBotTurnFeedbackRecord } from './bot-turn-feedback.tools.js';
-import {
-  registerBotClassifierRetrain,
-  registerBotClassifierApprove,
-} from '../../classifier-lifecycle/mcp-tools/classifier-retrain.tool.js';
 
 // Slice 42A + 42C + 46e: admin / audit MCP tools — read-only
 // discoverability and compliance surface for HR + operators. 46e adds
 // the five bot_metrics_* tools that wrap the most common queries
 // against bot_turn_metrics.
+//
+// Slice 61: removed bot_intent_training_data_*, bot_intent_model_runs_*,
+// bot_intent_classifier_*, bot_turn_feedback_record, bot_classifier_*
+// tools. The intent-classifier subsystem is gone; verdicts now write
+// to Langfuse scores directly from the bot's /turn-feedback handler.
 export function registerAdminTools(server: McpServer): void {
   registerPermissionCatalogList(server);
   registerRoleList(server);
@@ -45,15 +39,4 @@ export function registerAdminTools(server: McpServer): void {
   registerBotMetricsTopN(server);
   registerBotMetricsTools(server);
   registerBotMetricsOutliers(server);
-  // Slice 55 → 56B (renamed)
-  registerBotIntentTrainingDataAdd(server);
-  registerBotIntentTrainingDataListUnreviewed(server);
-  // Slice 56B (new — model lifecycle)
-  registerBotIntentModelRunsList(server);
-  registerBotIntentClassifierStatus(server);
-  // Slice 56F: explicit user verdict recording
-  registerBotTurnFeedbackRecord(server);
-  // Slice 56N: classifier retrain workflow trigger + admin-approval signal
-  registerBotClassifierRetrain(server);
-  registerBotClassifierApprove(server);
 }

@@ -1,3 +1,7 @@
+> **⚠️ CANCELLED 2026-05-06 by [SLICE_61](SLICE_61_REMOVE_INTENT_CLASSIFIER.md).**
+> No doc-side classifier will be built; the LLM stays for document
+> classification. Doc preserved for history.
+
 # Slice 58H — per-tenant doc-type classifier (mirrors slice 56N)
 
 > **Why this exists:** 58C's LLM classifier is the v1 — works on

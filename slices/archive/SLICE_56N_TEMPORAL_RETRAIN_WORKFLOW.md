@@ -1,3 +1,7 @@
+> **⚠️ SUPERSEDED 2026-05-06 by [SLICE_61](../SLICE_61_REMOVE_INTENT_CLASSIFIER.md).**
+> The infrastructure described here was removed in slice 61.
+> Doc preserved for history.
+
 # Slice 56N — model lifecycle as a Temporal workflow
 
 > **Why this exists:** The slice 56C cron-bash chain (skip-check →

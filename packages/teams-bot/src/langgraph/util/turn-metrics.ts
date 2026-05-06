@@ -27,16 +27,12 @@ export interface TurnMetric {
   graphMs:            number;
   langfuseTraceId:    string | null;
   sessionId:          string | null;
-  // Slice 55 — grammar router + extractor telemetry
-  grammarMatched:     boolean;
-  grammarPattern:     string | null;
-  extractionOutcome:  string | null;
-  extractionTool:     string | null;
-  // Slice 56 — classifier shadow + active-routing telemetry
-  classifierIntent:     string | null;
-  classifierConfidence: number | null;
-  classifierVersion:    string | null;
-  classifierDecision:   string | null;   // fallthrough|clarify|skip|disambiguate|narrow_plan
+  // Slice 61: removed slice-55 grammar/extractor + slice-56 classifier
+  // telemetry fields. The columns themselves (grammar_matched,
+  // grammar_pattern, extraction_outcome, extraction_tool, classifier_*)
+  // remain in bot_turn_metrics for now; new rows simply don't write to
+  // them (defaults to NULL). A future cleanup migration will drop the
+  // columns once historical rows are no longer interesting.
 }
 
 export async function writeTurnMetric(m: TurnMetric): Promise<void> {
@@ -51,19 +47,14 @@ export async function writeTurnMetric(m: TurnMetric): Promise<void> {
          (turn_id, tenant_id, thread_id, employee_id, intent,
           tools_attempted, tools_refused, step_count, triage_confidence,
           clarification_fired, confirmation_fired, resumed,
-          total_ms, graph_ms, langfuse_trace_id, session_id,
-          grammar_matched, grammar_pattern, extraction_outcome, extraction_tool,
-          classifier_intent, classifier_confidence, classifier_version, classifier_decision)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16,
-               $17, $18, $19, $20, $21, $22, $23, $24)
+          total_ms, graph_ms, langfuse_trace_id, session_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
        ON CONFLICT (turn_id) DO NOTHING`,
       [
         m.turnId, m.tenantId, m.threadId, m.employeeId, m.intent,
         m.toolsAttempted, m.toolsRefused, m.stepCount, m.triageConfidence,
         m.clarificationFired, m.confirmationFired, m.resumed,
         m.totalMs, m.graphMs, m.langfuseTraceId, m.sessionId,
-        m.grammarMatched, m.grammarPattern, m.extractionOutcome, m.extractionTool,
-        m.classifierIntent, m.classifierConfidence, m.classifierVersion, m.classifierDecision,
       ],
     );
   } catch (err) {

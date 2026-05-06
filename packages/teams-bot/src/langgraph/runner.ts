@@ -242,19 +242,14 @@ export async function runLangGraph(args: {
   // `dispatchInvoke` (bot.ts) → `confirmWriteHandler`. The handler
   // resumes the graph with `Command({ resume: { decision } })`; the
   // confirm node's classifier accepts the structured payload.
-  // Slice 55: respond may emit a non-confirm card (disambiguation, etc.).
+  // Slice 61: removed the slice-55 outboundCard branch (disambiguation
+  // card via grammar/extractor). The pre-LLM optimization layers are
+  // gone; all card sends now flow through the confirm path.
   if (outboundConfirmCard) {
     await context.sendActivity(Activity.fromObject({
       type: 'message',
       attachments: [
         { contentType: 'application/vnd.microsoft.card.adaptive', content: outboundConfirmCard },
-      ],
-    }));
-  } else if ((result as { outboundCard?: unknown }).outboundCard) {
-    await context.sendActivity(Activity.fromObject({
-      type: 'message',
-      attachments: [
-        { contentType: 'application/vnd.microsoft.card.adaptive', content: (result as { outboundCard: unknown }).outboundCard },
       ],
     }));
   } else if (outbound) {
@@ -294,18 +289,11 @@ export async function runLangGraph(args: {
     : confirmationFired
       ? 'tool'
       : 'unknown';
-  // Compute classifier + grammar layer info BEFORE the footer so it
-  // can render "clf=skip:disable_employee(0.91)" / "grammar=verb_disable"
-  // as part of the inline debug line.
+  // Slice 61: removed grammar/classifier state reads — those state
+  // fields and their writers are gone.
   const finalState = await graph.getState(config);
   const finalSessionId = ((finalState?.values ?? {}) as { sessionId?: string }).sessionId
                        ?? sessionId;
-  const grammarMatch     = ((finalState?.values ?? {}) as { grammarMatch?: { name: string; toolName: string } | null }).grammarMatch ?? null;
-  const extractionResult = ((finalState?.values ?? {}) as { extractionResult?: { kind?: string } | null }).extractionResult ?? null;
-  const classifierPrediction = ((finalState?.values ?? {}) as {
-    classifierPrediction?: { intent: string; confidence: number; classifier_version: string } | null
-  }).classifierPrediction ?? null;
-  const classifierDecision = ((finalState?.values ?? {}) as { classifierDecision?: string | null }).classifierDecision ?? null;
 
   // Slice 56F: verdict UI master switch. Default true; per-tenant
   // override via lg.verdict_ui_enabled.
@@ -319,11 +307,6 @@ export async function runLangGraph(args: {
     intent:          `langgraph:${intent}`,
     routeMs:         graphMs,
     turnId,
-    grammarPattern:        grammarMatch?.name ?? null,
-    classifierDecision:    classifierDecision ?? null,
-    classifierIntent:      classifierPrediction?.intent ?? null,
-    classifierConfidence:  classifierPrediction?.confidence ?? null,
-    classifierVersion:     classifierPrediction?.classifier_version ?? null,
     verdictUiEnabled,
   });
 
@@ -341,8 +324,6 @@ export async function runLangGraph(args: {
     `clarificationFired=${clarificationFired} ` +
     `confirmationFired=${confirmationFired} ` +
     `resumed=${priorInterrupt !== null} ` +
-    `grammar=${grammarMatch?.name ?? 'none'} ` +
-    `classifier=${classifierDecision ?? 'na'}:${classifierPrediction?.intent ?? '-'}(${classifierPrediction?.confidence?.toFixed(2) ?? '-'}) ` +
     `totalMs=${totalMs} graphMs=${graphMs}`,
   );
 
@@ -374,14 +355,5 @@ export async function runLangGraph(args: {
     graphMs,
     langfuseTraceId:    langfuseTraceId ?? null,
     sessionId:          finalSessionId,
-    grammarMatched:     grammarMatch !== null,
-    grammarPattern:     grammarMatch?.name ?? null,
-    extractionOutcome:  extractionResult?.kind ?? null,
-    extractionTool:     grammarMatch?.toolName ?? null,
-    // Slice 56
-    classifierIntent:     classifierPrediction?.intent ?? null,
-    classifierConfidence: classifierPrediction?.confidence ?? null,
-    classifierVersion:    classifierPrediction?.classifier_version ?? null,
-    classifierDecision:   classifierDecision ?? null,
   });
 }

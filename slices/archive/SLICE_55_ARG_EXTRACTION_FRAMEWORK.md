@@ -1,3 +1,7 @@
+> **⚠️ SUPERSEDED 2026-05-06 by [SLICE_61](../SLICE_61_REMOVE_INTENT_CLASSIFIER.md).**
+> The infrastructure described here was removed in slice 61.
+> Doc preserved for history.
+
 # Slice 55 — Per-tool argument extraction framework + grammar router
 
 > **Prerequisite:** Slice 48 deployed (`bot_turn_metrics` for telemetry). Tool-annotation hotfix `11c67ce` deployed (so each tool's input schema reaches the bot reliably).

@@ -2,7 +2,6 @@ import { Worker } from '@temporalio/worker';
 import { createTemporalWorkerConnection } from '@cip/shared';
 import * as certActivities from '../modules/certifications/activities/index.js';
 import * as employeeActivities from '../modules/employees/activities/index.js';
-import * as classifierLifecycleActivities from '../modules/classifier-lifecycle/activities/index.js';
 import * as maintenanceActivities from '../modules/maintenance/activities/index.js';
 import * as peopleActivities from '../modules/people/activities/index.js';
 
@@ -21,7 +20,6 @@ export async function startTemporalWorker(): Promise<void> {
     activities: {
       ...certActivities,
       ...employeeActivities,
-      ...classifierLifecycleActivities,   // Slice 56N: RetrainModelWorkflow activities
       ...maintenanceActivities,           // Slice 57B: CheckpointGcWorkflow activities
       ...peopleActivities,                // Slice 58D-A: MatchPersonWorkflow activities
     },

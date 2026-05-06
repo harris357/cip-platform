@@ -57,27 +57,10 @@ export function makePlanNode(ctx: BotAuthContext) {
 
     // 46d: candidateTools no longer in state; recompute via the cached
     // discovery call (5-min TTL per tenant+employee, sub-ms after warmup).
-    let candidateTools = await discoverTools(ctx, state.latestUserText);
-
-    // Slice 56I: when the classifier decision was 'narrow_plan', filter
-    // the candidate tools down to JUST the predicted tool's schema.
-    // Saves ~5-15× prompt tokens on these turns. The original Slice 56
-    // promised this but the implementation never landed — until now,
-    // 'narrow_plan' was just a metric label with no behavioral effect.
-    //
-    // If the predicted tool is no longer in the candidate set (revoked
-    // permission, deprecated, etc.), fall back to the full catalog
-    // rather than presenting the planner with an empty tool list.
-    if (state.classifierDecision === 'narrow_plan' && state.classifierPrediction?.tool) {
-      const targetTool = state.classifierPrediction.tool;
-      const narrowed = candidateTools.filter(t => t.name === targetTool);
-      if (narrowed.length > 0) {
-        console.log(`[plan] narrow_plan active: tool=${targetTool} (was ${candidateTools.length} candidates)`);
-        candidateTools = narrowed;
-      } else {
-        console.warn(`[plan] narrow_plan requested ${targetTool} but not in candidate catalog — using full set`);
-      }
-    }
+    // Slice 61: removed the slice-56I narrow_plan branch — the classifier
+    // is gone; the planner sees the full permission-filtered catalog
+    // every turn (vector retrieval still narrows via slice 44).
+    const candidateTools = await discoverTools(ctx, state.latestUserText);
 
     const systemContent = prompt.compile({
       currentGoal:    state.triageSignals?.currentGoal ?? '',
