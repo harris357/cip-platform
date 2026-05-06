@@ -19,6 +19,7 @@ import { sendResponseTime } from './intent/debug-banner.js';
 import { executeTool } from './mcp/tool-executor.js';
 import { discoverTools } from './mcp/tool-discovery.js';
 import { runLangGraph } from './langgraph/runner.js';
+import { writeTurnMetric } from './langgraph/util/turn-metrics.js';
 import { dispatchSlashCommand } from './slash-commands/dispatch.js';
 import { buildWelcomeChips } from './slash-commands/welcome-chips.js';
 
@@ -282,6 +283,30 @@ export class CIPTeamsBot extends TeamsActivityHandler {
           execMs: tExec1 - tDl1,
           turnId,
         });
+
+        // Persist the turn so /turn <id> resolves for file uploads.
+        // The LangGraph runner has its own writeTurnMetric for chat turns;
+        // file uploads bypass the runner so we mirror its call here.
+        // Best-effort: failures only log (same policy as runner.ts:341).
+        void writeTurnMetric({
+          turnId,
+          tenantId:           ctx.tenantId,
+          threadId,
+          employeeId:         ctx.employeeId,
+          intent:             'tool',
+          toolsAttempted:     ['document_process'],
+          toolsRefused:       [],
+          stepCount:          1,
+          triageConfidence:   null,
+          clarificationFired: false,
+          confirmationFired:  false,
+          resumed:            false,
+          totalMs:            Date.now() - tStart,
+          graphMs:            tExec1 - tDl1,
+          langfuseTraceId:    null,
+          sessionId:          null,
+        });
+
         console.log(`[turn] tenantId=${ctx.tenantId} mode=file path=docservice turnId=${turnId} file=${fileName} docId=${docId ?? '?'} typing=${tTyping - tStart}ms auth=${tAuth - tTyping}ms registry=${tRegistry - tAuth}ms download=${tDl1 - tDl0}ms exec=${tExec1 - tDl1}ms render=${Date.now() - tExec1}ms total=${Date.now() - tStart}ms`);
       }
       return;
